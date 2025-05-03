@@ -6,7 +6,7 @@ import torch
 from ..tasks import SingleCombatTask
 from ..core.catalog import Catalog as c
 from ..core.simulatior import MissileSimulator
-from ..reward_functions import AltitudeReward, PostureReward, EventDrivenReward, MissilePostureReward
+from ..reward_functions import AltitudeReward, PostureReward, EventDrivenReward, MissilePostureReward, TeamPostureReward
 from ..termination_conditions import ExtremeState, LowAltitude, Overload, Timeout, SafeReturn
 from ..utils.utils import get_AO_TA_R, LLA2NEU, get_root_dir
 from ..model.baseline_actor import BaselineActor
@@ -19,7 +19,8 @@ class MultipleCombatTask(SingleCombatTask):
         self.reward_functions = [
             AltitudeReward(self.config),
             PostureReward(self.config),
-            EventDrivenReward(self.config)
+            EventDrivenReward(self.config),
+            TeamPostureReward(self.config)
         ]
 
         self.termination_conditions = [
