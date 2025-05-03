@@ -8,7 +8,7 @@ from ..core.catalog import Catalog as c
 from ..core.simulatior import MissileSimulator
 from ..reward_functions import AltitudeReward, PostureReward, EventDrivenReward, MissilePostureReward, \
     TeamPostureReward, EnmPostureReward
-from ..termination_conditions import ExtremeState, LowAltitude, Overload, Timeout, SafeReturn
+from ..termination_conditions import ExtremeState, LowAltitude, Overload, Timeout, SafeReturn, PartnerSafe
 from ..utils.utils import get_AO_TA_R, LLA2NEU, get_root_dir
 from ..model.baseline_actor import BaselineActor
 
@@ -31,6 +31,7 @@ class MultipleCombatTask(SingleCombatTask):
             Overload(self.config),
             LowAltitude(self.config),
             Timeout(self.config),
+            PartnerSafe(self.config),
         ]
 
     @property
