@@ -36,6 +36,7 @@ class TeamPostureReward(BaseRewardFunction):
             return -3
         elif R < self.min_dist:
             return -100
+        return 0
 
     def in_attack_angle(self, AO):
         if AO > -self.attack_angle and AO < self.attack_angle:
