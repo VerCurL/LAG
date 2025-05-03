@@ -41,27 +41,23 @@ class EnmPostureReward(BaseRewardFunction):
             return 10
         elif self.in_attack_angle(AOs[0]) or self.in_attack_angle(AOs[1]):
             return 5
-        else:
-            return 0
+        return 0
 
     def get_enm_attack_angle_function(self, TAs):
         if self.in_attack_angle(TAs[0]) and self.in_attack_angle(TAs[1]):
             return -10
         elif self.in_attack_angle(TAs[0]) or self.in_attack_angle(TAs[1]):
             return -5
-        else:
-            return 0
+        return 0
 
     def in_dist(self, R):
         if R < self.target_dist:
             return True
-        else:
-            return False
+        return False
 
     def get_target_dist_function(self, Rs):
         if self.in_dist(Rs[0]) and self.in_dist(Rs[1]):
             return 3
         elif self.in_dist(Rs[0]) or self.in_dist(Rs[1]):
             return 1
-        else:
-            return -10
+        return -10
