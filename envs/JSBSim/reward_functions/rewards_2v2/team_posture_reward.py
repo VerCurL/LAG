@@ -26,7 +26,7 @@ class TeamPostureReward(BaseRewardFunction):
                 PAO, _, _ = get_AO_TA_R(partner_feature, enm_feature)
                 PAOs.append(PAO)
 
-        new_reward += self.get_dist_function(R)
+        # new_reward += self.get_dist_function(R)
         new_reward += self.get_partner_function(R, PAOs)
 
         return self._process(new_reward, agent_id)

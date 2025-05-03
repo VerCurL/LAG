@@ -31,7 +31,7 @@ class MultipleCombatTask(SingleCombatTask):
             Overload(self.config),
             LowAltitude(self.config),
             Timeout(self.config),
-            PartnerSafe(self.config),
+            # PartnerSafe(self.config),
         ]
 
     @property
