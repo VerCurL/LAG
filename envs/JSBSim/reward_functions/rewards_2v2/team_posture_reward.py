@@ -6,9 +6,9 @@ from ...utils.utils import get_AO_TA_R
 class TeamPostureReward(BaseRewardFunction):
     def __init__(self, config):
         super().__init__(config)
-        self.min_dist = getattr(self.config, f'{self.__class__.__name__}_min_dist', 40)
-        self.max_dist = getattr(self.config, f'{self.__class__.__name__}_max_dist', 15)
-        self.attack_angle = getattr(self.config, f'{self.__class__.__name__}_max_attack_angle', 45)
+        self.min_dist = getattr(self.config, f'{self.__class__.__name__}_min_dist', 5)
+        self.max_dist = getattr(self.config, f'{self.__class__.__name__}_max_dist', 40)
+        self.attack_angle = getattr(self.config, f'EnmPostureReward_max_attack_angle', 45)
 
     def get_reward(self, task, env, agent_id):
         new_reward = 0

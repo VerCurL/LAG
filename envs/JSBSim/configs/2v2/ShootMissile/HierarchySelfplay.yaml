@@ -82,3 +82,6 @@ AltitudeReward_Kv: 0.2
 
 EnmPostureReward_max_attack_angle: 45
 EnmPostureReward_target_dist: 30
+
+TeamPostureReward_min_dist: 5
+TeamPostureReward_max_dist: 40
