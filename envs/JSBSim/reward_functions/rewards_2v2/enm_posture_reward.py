@@ -1,4 +1,5 @@
 import numpy as np
+import math
 from wandb import agent
 from envs.JSBSim.reward_functions.reward_function_base import BaseRewardFunction
 from envs.JSBSim.utils.utils import get_AO_TA_R
@@ -9,10 +10,12 @@ class EnmPostureReward(BaseRewardFunction):
         self.attack_angle = getattr(self.config, f'{self.__class__.__name__}_max_attack_angle', 45)
         self.target_dist = getattr(self.config, f'{self.__class__.__name__}_target_dist', 30)
 
+        self.attack_angle = math.radians(self.attack_angle)
+
     def get_reward(self, task, env, agent_id):
         new_reward = 0
-        AOs = []
-        TAs = []
+        egoAOs = []
+        enmAOs = []
         Rs = []
 
         ego_feature = np.hstack([env.agents[agent_id].get_position(),
@@ -22,33 +25,24 @@ class EnmPostureReward(BaseRewardFunction):
             enm_feature = np.hstack([enm.get_position(),
                                      enm.get_velocity()])
             AO, TA, R = get_AO_TA_R(ego_feature, enm_feature)
-            AOs.append(AO)
-            TAs.append(TA)
+            egoAOs.append(AO)
+            enmAOs.append(math.radians(180) - TA)
             Rs.append(R)
 
-        new_reward += self.get_env_attack_angle_function(AOs)
-        new_reward += self.get_enm_attack_angle_function(TAs)
+        # print("EnmPostureReward: ego_reward = {}, enm_reward = {}".format(self.get_env_attack_angle_function(egoAOs), self.get_env_attack_angle_function(enmAOs)))
+        new_reward += self.get_env_attack_angle_function(egoAOs)
+        new_reward -= self.get_env_attack_angle_function(enmAOs)
 
         return self._process(new_reward, agent_id)
 
-    def in_attack_angle(self, AO):
-        if AO > -self.attack_angle and AO < self.attack_angle:
-            return True
-        return False
 
     def get_env_attack_angle_function(self, AOs):
-        if self.in_attack_angle(AOs[0]) and self.in_attack_angle(AOs[1]):
+        if abs(AOs[0]) < self.attack_angle and abs(AOs[1]) < self.attack_angle:
             return 10
-        elif self.in_attack_angle(AOs[0]) or self.in_attack_angle(AOs[1]):
+        elif abs(AOs[0]) < self.attack_angle or abs(AOs[1]) < self.attack_angle:
             return 5
         return 0
 
-    def get_enm_attack_angle_function(self, TAs):
-        if self.in_attack_angle(TAs[0]) and self.in_attack_angle(TAs[1]):
-            return -10
-        elif self.in_attack_angle(TAs[0]) or self.in_attack_angle(TAs[1]):
-            return -5
-        return 0
 
     def in_dist(self, R):
         if R < self.target_dist:
