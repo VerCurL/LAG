@@ -84,6 +84,7 @@ class BaseTask(ABC):
         """
         reward = 0.0
         for reward_function in self.reward_functions:
+            # print(reward_function, "reward = ", reward_function.get_reward(self, env, agent_id))
             reward += reward_function.get_reward(self, env, agent_id)
         return reward, info
 

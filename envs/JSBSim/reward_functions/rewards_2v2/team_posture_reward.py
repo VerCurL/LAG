@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 from wandb import agent
 from ..reward_function_base import BaseRewardFunction
@@ -6,9 +8,11 @@ from ...utils.utils import get_AO_TA_R
 class TeamPostureReward(BaseRewardFunction):
     def __init__(self, config):
         super().__init__(config)
-        self.min_dist = getattr(self.config, f'{self.__class__.__name__}_min_dist', 5)
-        self.max_dist = getattr(self.config, f'{self.__class__.__name__}_max_dist', 40)
-        self.attack_angle = getattr(self.config, f'EnmPostureReward_max_attack_angle', 45)
+        self.min_dist = getattr(self.config, f'{self.__class__.__name__}_min_dist', 0.5)        # 单位：km
+        self.max_dist = getattr(self.config, f'{self.__class__.__name__}_max_dist', 20)         # 单位：km
+        self.attack_angle = getattr(self.config, f'EnmPostureReward_max_attack_angle', 45)      # 单位：°
+
+        self.attack_angle = math.radians(self.attack_angle)
 
     def get_reward(self, task, env, agent_id):
         new_reward = 0
@@ -20,6 +24,7 @@ class TeamPostureReward(BaseRewardFunction):
             partner_feature = np.hstack([partner.get_position(),
                                          partner.get_velocity()])
             _, _, R = get_AO_TA_R(ego_feature, partner_feature)
+            # print("TeamPostureReward: partner_R = {}".format(R))
             for enm in partner.enemies:
                 enm_feature = np.hstack([enm.get_position(),
                                          enm.get_velocity()])
@@ -29,19 +34,16 @@ class TeamPostureReward(BaseRewardFunction):
         # new_reward += self.get_dist_function(R)
         new_reward += self.get_partner_function(R, PAOs)
 
+        # print("TeamPostureReward: partner_reward = {}".format(new_reward))
+
         return self._process(new_reward, agent_id)
 
     def get_dist_function(self, R):
-        if R > self.max_dist:
+        if R > self.max_dist * 1000:
             return -3
-        elif R < self.min_dist:
+        elif R < self.min_dist * 1000:
             return -100
         return 0
-
-    def in_attack_angle(self, AO):
-        if AO > -self.attack_angle and AO < self.attack_angle:
-            return True
-        return False
 
     def in_partner_dist(self, R):
         if R < self.max_dist and R > self.min_dist:
@@ -49,9 +51,9 @@ class TeamPostureReward(BaseRewardFunction):
         return False
 
     def get_partner_function(self, R, PAOs):
-        if self.in_partner_dist(R):
-            if self.in_attack_angle(PAOs[0]) and self.in_attack_angle(PAOs[1]):
-                return 7
-            elif self.in_attack_angle(PAOs[0]) or self.in_attack_angle(PAOs[1]):
-                return 3
+        # if self.in_partner_dist(R):
+        if abs(PAOs[0]) < self.attack_angle and abs(PAOs[1]) < self.attack_angle:
+            return 7
+        elif abs(PAOs[0]) < self.attack_angle or abs(PAOs[1]) < self.attack_angle:
+            return 3
         return 0
