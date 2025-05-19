@@ -31,7 +31,8 @@ class EnmPostureReward(BaseRewardFunction):
 
         # print("EnmPostureReward: ego_reward = {}, enm_reward = {}".format(self.get_env_attack_angle_function(egoAOs), self.get_env_attack_angle_function(enmAOs)))
         new_reward += self.get_env_attack_angle_function(egoAOs)
-        new_reward -= self.get_env_attack_angle_function(enmAOs)
+        new_reward -= self.get_env_attack_angle_function(enmAOs) * 1.8
+        new_reward += self.get_target_dist_function(Rs)
 
         return self._process(new_reward, agent_id)
 
@@ -45,7 +46,7 @@ class EnmPostureReward(BaseRewardFunction):
 
 
     def in_dist(self, R):
-        if R < self.target_dist:
+        if R < self.target_dist * 1000:
             return True
         return False
 

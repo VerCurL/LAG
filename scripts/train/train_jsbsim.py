@@ -18,6 +18,16 @@ from envs.env_wrappers import SubprocVecEnv, DummyVecEnv, ShareSubprocVecEnv, Sh
 from runner.tacview import Tacview
 
 def make_train_env(all_args):
+    """
+    创建训练环境
+    根据指定的环境名称创建相应的训练环境实例，并根据线程数决定使用单线程或多线程环境包装器
+    
+    参数:
+        all_args: 命令行参数对象，包含环境配置信息
+        
+    返回:
+        打包好的向量化环境
+    """
     def get_env_fn(rank):
         def init_env():
             if all_args.env_name == "SingleCombat":
@@ -33,11 +43,13 @@ def make_train_env(all_args):
             return env
         return init_env
     if all_args.env_name == "MultipleCombat":
+        # 多机空战环境使用共享观察空间的向量环境
         if all_args.n_rollout_threads == 1:
             return ShareDummyVecEnv([get_env_fn(0)])
         else:
             return ShareSubprocVecEnv([get_env_fn(i) for i in range(all_args.n_rollout_threads)])
     else:
+        # 单机环境使用标准向量环境
         if all_args.n_rollout_threads == 1:
             return DummyVecEnv([get_env_fn(0)])
         else:
@@ -45,6 +57,16 @@ def make_train_env(all_args):
 
 
 def make_eval_env(all_args):
+    """
+    创建评估环境
+    与训练环境类似，但使用不同的随机种子以确保评估的独立性
+    
+    参数:
+        all_args: 命令行参数对象，包含环境配置信息
+        
+    返回:
+        打包好的向量化评估环境
+    """
     def get_env_fn(rank):
         def init_env():
             if all_args.env_name == "SingleCombat":
@@ -72,6 +94,16 @@ def make_eval_env(all_args):
 
 
 def parse_args(args, parser):
+    """
+    解析JSBSim环境特定的命令行参数
+    
+    参数:
+        args: 命令行参数列表
+        parser: 参数解析器对象
+        
+    返回:
+        解析后的参数对象
+    """
     group = parser.add_argument_group("JSBSim Env parameters")
     group.add_argument('--scenario-name', type=str, default='singlecombat_simple',
                        help="Which scenario to run on")
@@ -82,19 +114,26 @@ def parse_args(args, parser):
 
 
 def main(args):
+    """
+    主函数，负责初始化和运行训练过程
+    
+    参数:
+        args: 命令行参数列表
+    """
+    # 获取配置
     parser = get_config()
     all_args = parse_args(args, parser)
 
-    # seed
+    # 设置随机种子，确保实验可重现
     np.random.seed(all_args.seed)
     random.seed(all_args.seed)
     torch.manual_seed(all_args.seed)
     torch.cuda.manual_seed_all(all_args.seed)
 
-    # cuda
+    # 设置计算设备（GPU/CPU）
     if all_args.cuda and torch.cuda.is_available():
         logging.info("choose to use gpu...")
-        device = torch.device("cuda:0")  # use cude mask to control using which GPU
+        device = torch.device("cuda:0")  # 使用CUDA掩码控制使用哪个GPU
         torch.set_num_threads(all_args.n_training_threads)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = True
@@ -103,13 +142,13 @@ def main(args):
         device = torch.device("cpu")
         torch.set_num_threads(all_args.n_training_threads)
 
-    # run dir
+    # 创建运行目录
     run_dir = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + "/results") \
         / all_args.env_name / all_args.scenario_name / all_args.algorithm_name / all_args.experiment_name
     if not run_dir.exists():
         os.makedirs(str(run_dir))
 
-    # wandb
+    # 配置wandb日志记录
     if all_args.use_wandb:
         run = wandb.init(config=all_args,
                          project=all_args.env_name,
@@ -132,15 +171,17 @@ def main(args):
         if not run_dir.exists():
             os.makedirs(str(run_dir))
 
+    # 设置进程标题
     setproctitle.setproctitle(str(all_args.algorithm_name) + "-" + str(all_args.env_name)
                               + "-" + str(all_args.experiment_name) + "@" + str(all_args.user_name))
 
-    # env init
+    # 初始化训练和评估环境
     envs = make_train_env(all_args)
     eval_envs = make_eval_env(all_args) if all_args.use_eval else None
 
     render_mode = all_args.render_mode
     
+    # 配置训练参数
     config = {
         "all_args": all_args,
         "envs": envs,
@@ -150,21 +191,24 @@ def main(args):
         "render_mode": render_mode
     }
 
-    # run experiments
+    # 根据环境类型选择合适的Runner类并开始训练
     if all_args.env_name == "MultipleCombat":
+        # 多机空战使用ShareJSBSimRunner
         runner = ShareJSBSimRunner(config)
     else:
+        # 单机环境根据是否使用自对弈选择Runner
         if all_args.use_selfplay:
             from runner.selfplay_jsbsim_runner import SelfplayJSBSimRunner as Runner
         else:
             from runner.jsbsim_runner import JSBSimRunner as Runner
         runner = Runner(config)
     try:
+        # 开始训练
         runner.run()
     except BaseException:
         traceback.print_exc()
     finally:
-        # post process
+        # 关闭环境并结束wandb记录
         envs.close()
 
         if all_args.use_wandb:
