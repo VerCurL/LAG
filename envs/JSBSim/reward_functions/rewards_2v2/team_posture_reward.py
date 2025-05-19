@@ -32,7 +32,7 @@ class TeamPostureReward(BaseRewardFunction):
                 PAOs.append(PAO)
 
         # new_reward += self.get_dist_function(R)
-        new_reward += self.get_partner_function(R, PAOs)
+        new_reward += self.get_partner_function(PAOs)
 
         # print("TeamPostureReward: partner_reward = {}".format(new_reward))
 
@@ -45,13 +45,8 @@ class TeamPostureReward(BaseRewardFunction):
             return -100
         return 0
 
-    def in_partner_dist(self, R):
-        if R < self.max_dist and R > self.min_dist:
-            return True
-        return False
 
-    def get_partner_function(self, R, PAOs):
-        # if self.in_partner_dist(R):
+    def get_partner_function(self, PAOs):
         if abs(PAOs[0]) < self.attack_angle and abs(PAOs[1]) < self.attack_angle:
             return 7
         elif abs(PAOs[0]) < self.attack_angle or abs(PAOs[1]) < self.attack_angle:
