@@ -31,19 +31,11 @@ class TeamPostureReward(BaseRewardFunction):
                 PAO, _, _ = get_AO_TA_R(partner_feature, enm_feature)
                 PAOs.append(PAO)
 
-        # new_reward += self.get_dist_function(R)
         new_reward += self.get_partner_function(PAOs)
 
         # print("TeamPostureReward: partner_reward = {}".format(new_reward))
 
         return self._process(new_reward, agent_id)
-
-    def get_dist_function(self, R):
-        if R > self.max_dist * 1000:
-            return -3
-        elif R < self.min_dist * 1000:
-            return -100
-        return 0
 
 
     def get_partner_function(self, PAOs):
