@@ -7,3 +7,4 @@ from .missile_posture_reward import MissilePostureReward
 from .shoot_penalty_reward import ShootPenaltyReward
 from .rewards_2v2.enm_posture_reward import EnmPostureReward
 from .rewards_2v2.team_posture_reward import TeamPostureReward
+from .rewards_2v2.missile_avoid_reward import MissileAvoidReward

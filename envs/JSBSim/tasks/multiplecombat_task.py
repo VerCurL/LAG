@@ -7,7 +7,7 @@ from ..tasks import SingleCombatTask
 from ..core.catalog import Catalog as c
 from ..core.simulatior import MissileSimulator
 from ..reward_functions import AltitudeReward, PostureReward, EventDrivenReward, MissilePostureReward, \
-    TeamPostureReward, EnmPostureReward
+    TeamPostureReward, EnmPostureReward, MissileAvoidReward
 from ..termination_conditions import ExtremeState, LowAltitude, Overload, Timeout, SafeReturn, PartnerSafe
 from ..utils.utils import get_AO_TA_R, LLA2NEU, get_root_dir
 from ..model.baseline_actor import BaselineActor
@@ -323,7 +323,8 @@ class HierarchicalMultipleCombatShootTask(HierarchicalMultipleCombatTask):
             AltitudeReward(self.config),         # 高度奖励
             EventDrivenReward(self.config),      # 事件驱动奖励
             TeamPostureReward(self.config),      # 团队姿态奖励
-            EnmPostureReward(self.config)        # 敌方姿态奖励
+            EnmPostureReward(self.config),       # 敌方姿态奖励
+            MissileAvoidReward(self.config)      # 导弹躲避奖励
         ]
 
     def load_observation_space(self):

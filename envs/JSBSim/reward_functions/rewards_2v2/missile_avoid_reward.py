@@ -2,7 +2,7 @@ import numpy as np
 from envs.JSBSim.reward_functions.reward_function_base import BaseRewardFunction
 from envs.JSBSim.utils.utils import get_AO_TA_R
 
-class MissileDodgeReward(BaseRewardFunction):
+class MissileAvoidReward(BaseRewardFunction):
     def __init__(self, config):
         super().__init__(config)
         self.pre_missiles = {}
