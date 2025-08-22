@@ -75,13 +75,10 @@ PostureReward_scale: 15.0
 PostureReward_potential: true
 PostureReward_orientation_version: v2
 PostureReward_range_version: v3
+PostureReward_attack_window_version: v0
 
 AltitudeReward_safe_altitude: 4.0
 AltitudeReward_danger_altitude: 3.5
 AltitudeReward_Kv: 0.2
 
-EnmPostureReward_max_attack_angle: 45
-EnmPostureReward_target_dist: 30
-
-TeamPostureReward_min_dist: 5
-TeamPostureReward_max_dist: 40
+TeamPostureReward_min_dist: 0.5

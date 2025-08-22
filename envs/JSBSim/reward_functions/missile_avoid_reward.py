@@ -60,10 +60,7 @@ class MissileAvoidReward(BaseRewardFunction):
                 else:
                     new_reward -= 10
 
-
-
             # 计算导弹速度在该方向上的分量
-
             if sim.uid in self.prev_velocity_component:
                 pre_velocity_component = self.prev_velocity_component[sim.uid]
                 if velocity_component - pre_velocity_component < 0:

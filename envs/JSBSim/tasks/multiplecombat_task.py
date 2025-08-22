@@ -7,7 +7,7 @@ from ..tasks import SingleCombatTask
 from ..core.catalog import Catalog as c
 from ..core.simulatior import MissileSimulator
 from ..reward_functions import AltitudeReward, PostureReward, EventDrivenReward, MissilePostureReward, \
-    TeamPostureReward, EnmPostureReward, MissileAvoidReward
+    TeamPostureReward, MissileAvoidReward
 from ..termination_conditions import ExtremeState, LowAltitude, Overload, Timeout, SafeReturn, PartnerSafe
 from ..utils.utils import get_AO_TA_R, LLA2NEU, get_root_dir
 from ..model.baseline_actor import BaselineActor
@@ -33,7 +33,6 @@ class MultipleCombatTask(SingleCombatTask):
             PostureReward(self.config),           # 姿态奖励：鼓励智能体保持有利的战斗姿态
             EventDrivenReward(self.config),       # 事件驱动奖励：基于特定事件（如击落敌机）给予奖励
             TeamPostureReward(self.config),       # 团队姿态奖励：鼓励团队协作保持有利战术位置
-            EnmPostureReward(self.config)         # 敌方姿态奖励：考虑敌方状态的奖励因素
         ]
 
         # 设置终止条件列表
@@ -323,7 +322,6 @@ class HierarchicalMultipleCombatShootTask(HierarchicalMultipleCombatTask):
             AltitudeReward(self.config),         # 高度奖励
             EventDrivenReward(self.config),      # 事件驱动奖励
             TeamPostureReward(self.config),      # 团队姿态奖励
-            EnmPostureReward(self.config),       # 敌方姿态奖励
             MissileAvoidReward(self.config)      # 导弹躲避奖励
         ]
 

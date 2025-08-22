@@ -1,6 +1,6 @@
 import math
-from .reward_function_base import BaseRewardFunction
-from ..core.catalog import Catalog as c
+from ..reward_function_base import BaseRewardFunction
+from ...core.catalog import Catalog as c
 
 
 class HeadingReward(BaseRewardFunction):
