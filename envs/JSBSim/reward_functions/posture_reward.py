@@ -75,7 +75,8 @@ class PostureReward(BaseRewardFunction):
 
             # 总奖励 = 方向奖励 * 距离奖励
             new_reward += orientation_reward * range_reward + attack_window_reward + attack_window_penalty
-        
+
+        # print("PostureReward: ", new_reward)
         return self._process(new_reward, agent_id, (orientation_reward, range_reward, attack_window_reward))
 
     def get_attack_window_function(self, version):
@@ -118,5 +119,9 @@ class PostureReward(BaseRewardFunction):
         elif version == 'v3':
             # 版本3：分段函数（近距离恒定+中距离二次函数+远距离指数衰减）
             return lambda R: 1 * (R < 5) + (R >= 5) * np.clip(-0.032 * R**2 + 0.284 * R + 0.38, 0, 1) + np.clip(np.exp(-0.16 * R), 0, 0.2)
+        elif version == 'v4':
+            # 版本4：在v3的基础上，基于最大距离控制，保持敌我机能够在一定的距离范围之内
+            return lambda R: 1 * (R < 5) + (5 <= R < 30) * np.clip(-0.032 * R ** 2 + 0.284 * R + 0.38, 0, 1) + np.clip(
+                np.exp(-0.16 * R), 0, 0.2) - (R >= 30) * 10
         else:
             raise NotImplementedError(f"未知的距离函数版本: {version}")

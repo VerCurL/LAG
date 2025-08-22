@@ -32,6 +32,8 @@ class TeamPostureReward(BaseRewardFunction):
             pince_reward = self.pincer_attack_function(env, agent_id)
 
             new_reward += safe_dist_reward + help_reward + pince_reward
+
+        # print("TeamPostureReward: ", new_reward)
         return self._process(new_reward, agent_id)
 
     def safe_dist_function(self, version):
@@ -57,9 +59,7 @@ class TeamPostureReward(BaseRewardFunction):
         形成合围攻势的奖励函数
         """
         # 获得飞机对抗数
-        num_flight = 0
-        for _ in env.agents[agent_id].enemies:
-            num_flight += 1
+        num_flight = len(env.agents[agent_id].enemies)
 
         # 获取我机的特征
         ego_feature = np.hstack([env.agents[agent_id].get_position(),
