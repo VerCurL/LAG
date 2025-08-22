@@ -32,7 +32,7 @@ class PostureReward(BaseRewardFunction):
         # 获取方向奖励计算函数
         self.orientation_fn = self.get_orientation_function(self.orientation_version)
         # 获取距离奖励计算函数
-        self.range_fn = self.get_range_funtion(self.range_version)
+        self.range_fn = self.get_range_function(self.range_version)
         # 获取攻击窗口奖励计算函数
         self.attack_window_fn = self.get_attack_window_function(self.attack_window_version)
 
@@ -72,11 +72,13 @@ class PostureReward(BaseRewardFunction):
             attack_window_reward = self.attack_window_fn(AO, R / 1000)
             # 计算威胁窗口惩罚
             attack_window_penalty = -self.attack_window_fn(np.pi - TA, R / 1000)
+            # 控制最大距离，让尽量靠近敌人
+            dist_control_reward = self.dist_control_function(R / 1000)
 
             # 总奖励 = 方向奖励 * 距离奖励
-            new_reward += orientation_reward * range_reward + attack_window_reward + attack_window_penalty
+            new_reward += orientation_reward * range_reward + attack_window_reward + attack_window_penalty + dist_control_reward
 
-        # print("PostureReward: ", new_reward)
+        print("PostureReward: ", new_reward)
         return self._process(new_reward, agent_id, (orientation_reward, range_reward, attack_window_reward))
 
     def get_attack_window_function(self, version):
@@ -103,7 +105,7 @@ class PostureReward(BaseRewardFunction):
         else:
             raise NotImplementedError(f"未知的方向函数版本: {version}")
 
-    def get_range_funtion(self, version):
+    def get_range_function(self, version):
         """根据版本选择距离奖励计算函数"""
         if version == 'v0':
             # 版本0：高斯分布+逻辑函数组合
@@ -119,9 +121,8 @@ class PostureReward(BaseRewardFunction):
         elif version == 'v3':
             # 版本3：分段函数（近距离恒定+中距离二次函数+远距离指数衰减）
             return lambda R: 1 * (R < 5) + (R >= 5) * np.clip(-0.032 * R**2 + 0.284 * R + 0.38, 0, 1) + np.clip(np.exp(-0.16 * R), 0, 0.2)
-        elif version == 'v4':
-            # 版本4：在v3的基础上，基于最大距离控制，保持敌我机能够在一定的距离范围之内
-            return lambda R: 1 * (R < 5) + (5 <= R < 30) * np.clip(-0.032 * R ** 2 + 0.284 * R + 0.38, 0, 1) + np.clip(
-                np.exp(-0.16 * R), 0, 0.2) - (R >= 30) * 10
         else:
             raise NotImplementedError(f"未知的距离函数版本: {version}")
+
+    def dist_control_function(self, R):
+        return -(R > 30) * 10.
