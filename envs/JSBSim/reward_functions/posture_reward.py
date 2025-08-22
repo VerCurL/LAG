@@ -78,7 +78,6 @@ class PostureReward(BaseRewardFunction):
             # 总奖励 = 方向奖励 * 距离奖励
             new_reward += orientation_reward * range_reward + attack_window_reward + attack_window_penalty + dist_control_reward
 
-        print("PostureReward: ", new_reward)
         return self._process(new_reward, agent_id, (orientation_reward, range_reward, attack_window_reward))
 
     def get_attack_window_function(self, version):
@@ -125,4 +124,4 @@ class PostureReward(BaseRewardFunction):
             raise NotImplementedError(f"未知的距离函数版本: {version}")
 
     def dist_control_function(self, R):
-        return -(R > 30) * 10.
+        return -10. * (R > 30)

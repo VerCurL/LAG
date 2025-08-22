@@ -33,7 +33,6 @@ class TeamPostureReward(BaseRewardFunction):
 
             new_reward += safe_dist_reward + help_reward + pince_reward
 
-        # print("TeamPostureReward: ", new_reward)
         return self._process(new_reward, agent_id)
 
     def safe_dist_function(self, version):
