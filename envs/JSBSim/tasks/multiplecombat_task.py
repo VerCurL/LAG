@@ -7,7 +7,7 @@ from ..tasks import SingleCombatTask
 from ..core.catalog import Catalog as c
 from ..core.simulatior import MissileSimulator
 from ..reward_functions import AltitudeReward, PostureReward, EventDrivenReward, MissilePostureReward, \
-    TeamPostureReward, MissileAvoidReward
+    TeamPostureReward, MissileAvoidReward, TeamAttackDefenseReward
 from ..termination_conditions import ExtremeState, LowAltitude, Overload, Timeout, SafeReturn, PartnerSafe
 from ..utils.utils import get_AO_TA_R, LLA2NEU, get_root_dir
 from ..model.baseline_actor import BaselineActor
@@ -317,12 +317,12 @@ class HierarchicalMultipleCombatShootTask(HierarchicalMultipleCombatTask):
         
         # 设置奖励函数列表（增加了导弹相关奖励）
         self.reward_functions = [
-            PostureReward(self.config),          # 姿态奖励
-            MissilePostureReward(self.config),   # 导弹姿态奖励
-            AltitudeReward(self.config),         # 高度奖励
-            EventDrivenReward(self.config),      # 事件驱动奖励
-            TeamPostureReward(self.config),      # 团队姿态奖励
-            MissileAvoidReward(self.config)      # 导弹躲避奖励
+            AltitudeReward(self.config),            # 高度奖励
+            MissilePostureReward(self.config),      # 导弹姿态奖励
+            EventDrivenReward(self.config),         # 事件驱动奖励
+            TeamPostureReward(self.config),         # 团队姿态奖励
+            TeamAttackDefenseReward(self.config),   # 团队攻防奖励
+            MissileAvoidReward(self.config)         # 导弹躲避奖励
         ]
 
     def load_observation_space(self):

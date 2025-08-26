@@ -1,8 +1,8 @@
 import math
 import numpy as np
 from wandb import agent
-from .reward_function_base import BaseRewardFunction
-from ..utils.utils import get_AO_TA_R
+from envs.JSBSim.reward_functions.reward_function_base import BaseRewardFunction
+from envs.JSBSim.utils.utils import get_AO_TA_R
 
 class TeamPostureReward(BaseRewardFunction):
     def __init__(self, config):
@@ -52,41 +52,4 @@ class TeamPostureReward(BaseRewardFunction):
             return lambda R: 0.4 * np.exp(-(R - self.opt_attack_dist) ** 2 / self.dist_var)
         else:
             raise NotImplementedError(f"未知的队友支援奖励函数版本: {version}")
-
-    def pincer_attack_function(self, env, agent_id):
-        """
-        形成合围攻势的奖励函数
-        """
-        # 获得飞机对抗数
-        num_flight = len(env.agents[agent_id].enemies)
-
-        # 获取我机的特征
-        ego_feature = np.hstack([env.agents[agent_id].get_position(),
-                                 env.agents[agent_id].get_velocity()])
-
-        # 初始化返回奖励值
-        r = 0
-
-        # 先计算我机相对敌机的相对位置
-        s = 0
-        for enm in env.agents[agent_id].enemies:
-            enm_feature = np.hstack([enm.get_position(),
-                                     enm.get_velocity()])
-            _, _, _, side_flag = get_AO_TA_R(ego_feature, enm_feature, return_side=True)
-            s += side_flag
-        r += 1. - np.abs(s / num_flight)
-
-        # 计算友机相对敌机的相对位置
-        for partner in env.agents[agent_id].partners:
-            partner_feature = np.hstack([partner.get_position(),
-                                         partner.get_velocity()])
-            s = 0
-            for enm in partner.enemies:
-                enm_feature = np.hstack([enm.get_position(),
-                                         enm.get_velocity()])
-                _, _, _, side_flag = get_AO_TA_R(partner_feature, enm_feature, return_side=True)
-                s += side_flag
-            r += 1. - np.abs(s / num_flight)
-
-        return r
 

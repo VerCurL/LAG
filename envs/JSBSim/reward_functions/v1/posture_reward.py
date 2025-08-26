@@ -1,8 +1,8 @@
 import numpy as np
 import math
 from wandb import agent
-from .reward_function_base import BaseRewardFunction
-from ..utils.utils import get_AO_TA_R  # 导入角度计算工具
+from envs.JSBSim.reward_functions.reward_function_base import BaseRewardFunction
+from envs.JSBSim.utils.utils import get_AO_TA_R  # 导入角度计算工具
 
 
 class PostureReward(BaseRewardFunction):
@@ -20,8 +20,6 @@ class PostureReward(BaseRewardFunction):
         self.orientation_version = getattr(self.config, f'{self.__class__.__name__}_orientation_version', 'v2')
         # 距离奖励计算版本
         self.range_version = getattr(self.config, f'{self.__class__.__name__}_range_version', 'v3')
-        # 攻击窗口奖励计算版本
-        self.attack_window_version = getattr(self.config, f'{self.__class__.__name__}_attack_window_version', 'v0')
 
         # 理想目标距离（单位：公里）
         self.target_dist = getattr(self.config, f'{self.__class__.__name__}_target_dist', 3.0)
@@ -33,8 +31,6 @@ class PostureReward(BaseRewardFunction):
         self.orientation_fn = self.get_orientation_function(self.orientation_version)
         # 获取距离奖励计算函数
         self.range_fn = self.get_range_function(self.range_version)
-        # 获取攻击窗口奖励计算函数
-        self.attack_window_fn = self.get_attack_window_function(self.attack_window_version)
 
         # 奖励项名称（用于记录）
         self.reward_item_names = [self.__class__.__name__ + item for item in ['', '_orn', '_range']]
@@ -68,24 +64,11 @@ class PostureReward(BaseRewardFunction):
             orientation_reward = self.orientation_fn(AO, TA)
             # 计算距离奖励（转换为公里）
             range_reward = self.range_fn(R / 1000)
-            # 计算攻击窗口奖励
-            attack_window_reward = self.attack_window_fn(AO, R / 1000)
-            # 计算威胁窗口惩罚
-            attack_window_penalty = -self.attack_window_fn(np.pi - TA, R / 1000)
-            # 控制最大距离，让尽量靠近敌人
-            dist_control_reward = self.dist_control_function(R / 1000)
 
             # 总奖励 = 方向奖励 * 距离奖励
-            new_reward += orientation_reward * range_reward + attack_window_reward + attack_window_penalty + dist_control_reward
+            new_reward += orientation_reward * range_reward
 
-        return self._process(new_reward, agent_id, (orientation_reward, range_reward, attack_window_reward))
-
-    def get_attack_window_function(self, version):
-        """根据版本选择攻击窗口奖励计算函数"""
-        if version == 'v0':
-            return lambda AO, R: 1 * (R < self.target_dist and AO < self.attack_angle)
-        else:
-            raise NotImplementedError(f"未知的攻击窗口函数版本：{version}")
+        return self._process(new_reward, agent_id, (orientation_reward, range_reward))
 
     def get_orientation_function(self, version):
         """根据版本选择方向奖励计算函数"""
@@ -122,6 +105,3 @@ class PostureReward(BaseRewardFunction):
             return lambda R: 1 * (R < 5) + (R >= 5) * np.clip(-0.032 * R**2 + 0.284 * R + 0.38, 0, 1) + np.clip(np.exp(-0.16 * R), 0, 0.2)
         else:
             raise NotImplementedError(f"未知的距离函数版本: {version}")
-
-    def dist_control_function(self, R):
-        return -10. * (R > 30)

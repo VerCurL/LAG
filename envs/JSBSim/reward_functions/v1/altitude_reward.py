@@ -1,5 +1,5 @@
 import numpy as np
-from .reward_function_base import BaseRewardFunction  # 从基础奖励类继承
+from envs.JSBSim.reward_functions.reward_function_base import BaseRewardFunction  # 从基础奖励类继承
 
 
 class AltitudeReward(BaseRewardFunction):
