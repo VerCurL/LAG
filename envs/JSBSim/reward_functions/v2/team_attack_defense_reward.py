@@ -70,7 +70,10 @@ class TeamAttackDefenseReward(BaseRewardFunction):
 
         # 根据得分给我方飞机分配角色
         for enm, scores in enemies_scores.items():
-            sum_exp = np.sum(np.exp(scores.values()))
+            sum_exp = 0
+            for score in scores.values():
+                sum_exp += np.exp(score)
+
             for ego, score in scores.items():
                 self.score_values[enm] = {}
                 self.score_values[enm][ego] = np.exp(score) / sum_exp

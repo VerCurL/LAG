@@ -29,9 +29,8 @@ class TeamPostureReward(BaseRewardFunction):
 
             safe_dist_reward = self.safe_dist_fn(R / 1000)
             help_reward = self.help_fn(R / 1000)
-            pince_reward = self.pincer_attack_function(env, agent_id)
 
-            new_reward += safe_dist_reward + help_reward + pince_reward
+            new_reward += safe_dist_reward + help_reward
 
         return self._process(new_reward, agent_id)
 
