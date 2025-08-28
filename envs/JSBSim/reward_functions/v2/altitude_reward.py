@@ -53,4 +53,5 @@ class AltitudeReward(BaseRewardFunction):
         
         # 总奖励 = 速度惩罚 + 高度惩罚
         new_reward = Pv + PH
+
         return self._process(new_reward, agent_id, (Pv, PH))

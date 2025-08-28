@@ -70,6 +70,7 @@ class MissileAvoidReward(BaseRewardFunction):
             self.pre_missiles_v.update({sim.uid: relative_velocity})
             self.prev_velocity_component.update({sim.uid: velocity_component})
             self.pre_missiles.update({sim.uid: sim})
+
         return self._process(new_reward, agent_id)
 
 

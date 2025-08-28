@@ -30,7 +30,7 @@ class TeamPostureReward(BaseRewardFunction):
             safe_dist_reward = self.safe_dist_fn(R / 1000)
             help_reward = self.help_fn(R / 1000)
 
-            new_reward += safe_dist_reward + help_reward
+            new_reward += 5. * safe_dist_reward + 2 * help_reward
 
         return self._process(new_reward, agent_id)
 
@@ -39,7 +39,7 @@ class TeamPostureReward(BaseRewardFunction):
         和队友保持安全距离的奖励函数，R单位为km
         """
         if version == 'v0':
-            return lambda R: -5. * max(0., (self.min_dist - R) / self.min_dist)
+            return lambda R: -max(0., (self.min_dist - R) / self.min_dist)
         else:
             raise NotImplementedError(f"未知的队友安全距离函数版本: {version}")
 
@@ -48,7 +48,7 @@ class TeamPostureReward(BaseRewardFunction):
         队友支援的奖励函数，R单位为km
         """
         if version == 'v0':
-            return lambda R: 0.4 * np.exp(-(R - self.opt_attack_dist) ** 2 / self.dist_var)
+            return lambda R: np.exp(-(R - self.opt_attack_dist) ** 2 / self.dist_var)
         else:
             raise NotImplementedError(f"未知的队友支援奖励函数版本: {version}")
 
