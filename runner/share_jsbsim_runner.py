@@ -116,8 +116,6 @@ class ShareJSBSimRunner(Runner):
                 # 将数据插入缓冲区
                 self.insert(data)
 
-            input()
-
             # 计算回报并更新网络
             self.compute()
             train_infos = self.train()
