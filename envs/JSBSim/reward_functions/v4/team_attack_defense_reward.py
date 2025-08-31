@@ -53,11 +53,11 @@ class TeamAttackDefenseReward(BaseRewardFunction):
             AO, TA, R = get_AO_TA_R(ego_feature, enm_feature)
 
             if self.ego_self_role[enm.uid] == 1:    # shooter
-                new_reward += 8. * self.shooter_attack_function(env.agents[agent_id], enm)
+                new_reward += 5. * self.shooter_attack_function(env.agents[agent_id], enm)
                 new_reward += 3. * self.shoot_increase_function()
             elif self.ego_self_role[enm.uid] == 0:  # assist
                 new_reward += 3. * self.assist_pincer_function(env, enm)
-                new_reward += 0.01 * self.assist_approach_function(enm, R / 1000)
+                new_reward += 0.05 * self.assist_approach_function(enm, R / 1000)
 
             self.R_pre_time[enm.uid] = R / 1000
 
@@ -160,4 +160,4 @@ class TeamAttackDefenseReward(BaseRewardFunction):
             return 0
 
         # 光滑负奖励：在 R > R_opt 时变负
-        return (R > 16) * (R - self.shoot_opt_dist * 1.2) ** 2 - (self.R_pre_time[enm.uid] - self.shoot_opt_dist * 1.2) ** 2
+        return (R > self.shoot_opt_dist * 1.2) * ((R - self.shoot_opt_dist * 1.2) ** 2 - (self.R_pre_time[enm.uid] - self.shoot_opt_dist * 1.2) ** 2)
