@@ -63,7 +63,7 @@ class TeamAttackDefenseReward(BaseRewardFunction):
                 new_reward += 3. * self.shoot_increase_function()
             elif self.ego_self_role[enm.uid] == 0:  # assist
                 new_reward += 3. * self.assist_pincer_function(env, enm)
-                new_reward += 0.01 * self.assist_approach_function(enm, R / 1000)
+                new_reward += 0.05 * self.assist_approach_function(enm, R / 1000)
                 # print("assist_approach_reward: ", self.assist_approach_function(R / 1000))
 
             self.R_pre_time[enm.uid] = R / 1000
