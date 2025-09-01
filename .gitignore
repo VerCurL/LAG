@@ -1,5 +1,4 @@
 # ignore files
-envs/JSBSim/reward_functions/test
 results
 runs
 *.npy
@@ -140,4 +139,3 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
-/envs/JSBSim/reward_functions/test/
