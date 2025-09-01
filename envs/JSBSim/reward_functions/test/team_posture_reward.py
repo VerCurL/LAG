@@ -18,23 +18,25 @@ class TeamPostureReward(BaseRewardFunction):
         self.help_fn = self.help_function(self.help_version)
 
     def get_reward(self, task, env, agent_id):
-        new_reward = 0
+        safe_dist_reward = 0
+        help_reward = 0
         ego_feature = np.hstack([env.agents[agent_id].get_position(),
                                  env.agents[agent_id].get_velocity()])
+
 
         for partner in env.agents[agent_id].partners:
             partner_feature = np.hstack([partner.get_position(),
                                          partner.get_velocity()])
             _, _, R = get_AO_TA_R(ego_feature, partner_feature)
 
-            safe_dist_reward = self.safe_dist_fn(R / 1000)
-            help_reward = self.help_fn(R / 1000)
+            safe_dist_reward += 5. * self.safe_dist_fn(R / 1000)
+            help_reward += 4. * self.help_fn(R / 1000)
 
-            new_reward += 5. * safe_dist_reward + 4. * help_reward
+        new_reward = safe_dist_reward + help_reward
 
         file_path = "/mnt/d/FastProjects/ModelFlight/LAG/scripts/results/log/reward/team_posture_reward.txt"
         with open(file_path, "a", encoding="utf-8") as f:
-            f.write(str(new_reward) + "\n")
+            f.write(str(safe_dist_reward) + ", " + str(help_reward) + "\n")
 
         return self._process(new_reward, agent_id)
 

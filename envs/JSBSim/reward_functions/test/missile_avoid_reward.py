@@ -75,6 +75,7 @@ class MissileAvoidReward(BaseRewardFunction):
         with open(file_path, "a", encoding="utf-8") as f:
             f.write(str(new_reward) + "\n")
 
+
         return self._process(new_reward, agent_id)
 
 

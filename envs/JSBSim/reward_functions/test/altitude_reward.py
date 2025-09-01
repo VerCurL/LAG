@@ -56,6 +56,6 @@ class AltitudeReward(BaseRewardFunction):
 
         file_path = "/mnt/d/FastProjects/ModelFlight/LAG/scripts/results/log/reward/altitude_reward.txt"
         with open(file_path, "a", encoding="utf-8") as f:
-            f.write(str(new_reward) + "\n")
+            f.write(str(Pv) + ", " + str(PH) + "\n")
 
-        return self._process(new_reward, agent_id, (Pv, PH))
+        return self._process(new_reward, agent_id)

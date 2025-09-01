@@ -47,37 +47,41 @@ class TeamAttackDefenseReward(BaseRewardFunction):
         # print("self.ego_self_role: ", self.ego_self_role)
         # print("==========================")
 
-        # 计算奖励值
-        new_reward = 0
+        # 计算各项奖励值
+        shooter_attack_reward = 0
+        shooter_increase_reward = 0
+        assist_pincer_reward = 0
+        assist_approach_reward = 0
 
         # 获取自身状态：位置(北,东,下) + 速度(北,东,下)
         ego_feature = np.hstack([env.agents[agent_id].get_position(), env.agents[agent_id].get_velocity()])
 
-        # print("R_pre_time: ", self.R_pre_time)
+
         for enm in env.agents[agent_id].enemies:
             enm_feature = np.hstack([enm.get_position(), enm.get_velocity()])
             AO, TA, R = get_AO_TA_R(ego_feature, enm_feature)
 
             if self.ego_self_role[enm.uid] == 1:    # shooter
-                new_reward += 8. * self.shooter_attack_function(env.agents[agent_id], enm)
-                new_reward += 3. * self.shoot_increase_function()
+                shooter_attack_reward += 5. * self.shooter_attack_function(env.agents[agent_id], enm)
+                shooter_increase_reward += 2. * self.shooter_increase_function()
             elif self.ego_self_role[enm.uid] == 0:  # assist
-                new_reward += 3. * self.assist_pincer_function(env, enm)
-                new_reward += 0.05 * self.assist_approach_function(enm, R / 1000)
-                # print("assist_approach_reward: ", self.assist_approach_function(R / 1000))
+                assist_pincer_reward += 2. * self.assist_pincer_function(env, enm)
+                assist_approach_reward += 2. * self.assist_approach_function(enm, R / 1000)
 
             self.R_pre_time[enm.uid] = R / 1000
 
-        # print("R_cur_time: ", self.R_pre_time)
-
         file_path = "/mnt/d/FastProjects/ModelFlight/LAG/scripts/results/log/reward/team_attack_defense_reward.txt"
         with open(file_path, "a", encoding="utf-8") as f:
-            f.write(str(new_reward) + "\n")
+            f.write(str(shooter_attack_reward) + ", " + str(shooter_increase_reward) + ", "
+                    + str(assist_pincer_reward) + ", " + str(assist_approach_reward) + "\n")
 
+        new_reward = shooter_attack_reward + shooter_increase_reward + assist_pincer_reward + assist_approach_reward
         self.reset(task, env)
 
-        return self._process(new_reward, agent_id)
+        # reward_child = {"shooter_attack_reward": 5. * shooter_attack_reward, "shooter_increase_reward": 2. * shooter_increase_reward,
+        #                 "assist_pincer_reward": 2. * assist_pincer_reward, "assist_approach_reward": 2. * assist_approach_reward}
 
+        return self._process(new_reward, agent_id)
 
     def allocation(self, ego_self):
         """
@@ -136,7 +140,7 @@ class TeamAttackDefenseReward(BaseRewardFunction):
         """
         return self.score_values[enm.uid][ego_self.uid]
 
-    def shoot_increase_function(self):
+    def shooter_increase_function(self):
         """
         尽量增加射手的数量
         """
@@ -158,13 +162,23 @@ class TeamAttackDefenseReward(BaseRewardFunction):
         position = 0
         dist_reward = 0
         for assist_id in assist_ids:
+            # 计算相对位置的奖励
             assist = env.agents[assist_id]
             assist_feature = np.hstack([assist.get_position(), assist.get_velocity()])
             _, _, R, side_flag = get_AO_TA_R(assist_feature, enm_feature, return_side=True)
             position += side_flag
-            dist_reward += np.exp(-(R / 1000 - self.shoot_opt_dist * 1.2) ** 2 / 4)
-        position /= len(assist_ids)
 
+            # 保持队友之间距离不要过远
+            for other_assist_id in assist_ids:
+                if other_assist_id == assist_id:
+                    continue
+                other_assist = env.agents[other_assist_id]
+                other_assist_feature = np.hstack([other_assist.get_position(), other_assist.get_velocity()])
+                _, _, R_assist = get_AO_TA_R(assist_feature, other_assist_feature)
+                dist_reward += ((R_assist >= self.shoot_opt_dist) * np.exp(-(R_assist / 1000 - self.shoot_opt_dist) ** 2 / 4)
+                                + (R_assist < self.shoot_opt_dist) * 1.)
+
+        position /= len(assist_ids)
         return (1. - np.abs(position)) * (dist_reward / len(assist_ids))
 
     def assist_approach_function(self, enm, R):
@@ -176,4 +190,4 @@ class TeamAttackDefenseReward(BaseRewardFunction):
             return 0
 
         # 光滑负奖励：在 R > R_opt 时变负
-        return (R > self.shoot_opt_dist * 1.2) * ((R - self.shoot_opt_dist * 1.2) ** 2 - (self.R_pre_time[enm.uid] - self.shoot_opt_dist * 1.2) ** 2)
+        return (R > self.shoot_opt_dist * 1.2) * np.tanh((R - self.shoot_opt_dist * 1.2) ** 2 - (self.R_pre_time[enm.uid] - self.shoot_opt_dist * 1.2) ** 2)
