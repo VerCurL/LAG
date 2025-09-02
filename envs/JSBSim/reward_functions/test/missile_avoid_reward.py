@@ -71,9 +71,9 @@ class MissileAvoidReward(BaseRewardFunction):
             self.prev_velocity_component.update({sim.uid: velocity_component})
             self.pre_missiles.update({sim.uid: sim})
 
-        # file_path = "/mnt/d/FastProjects/ModelFlight/LAG/scripts/results/log/reward/missile_avoid_reward.txt"
-        # with open(file_path, "a", encoding="utf-8") as f:
-        #     f.write(str(new_reward) + "\n")
+        file_path = self.record_path + "/missile_avoid_reward.txt"
+        with open(file_path, "a", encoding="utf-8") as f:
+            f.write(str(new_reward) + "\n")
 
 
         return self._process(new_reward, agent_id)

@@ -70,16 +70,13 @@ class TeamAttackDefenseReward(BaseRewardFunction):
 
             self.R_pre_time[enm.uid] = R / 1000
 
-        # file_path = "/mnt/d/FastProjects/ModelFlight/LAG/scripts/results/log/reward/team_attack_defense_reward.txt"
-        # with open(file_path, "a", encoding="utf-8") as f:
-        #     f.write(str(shooter_attack_reward) + ", " + str(shooter_increase_reward) + ", "
-        #             + str(assist_pincer_reward) + ", " + str(assist_approach_reward) + "\n")
+        file_path = self.record_path + "/team_attack_defense_reward.txt"
+        with open(file_path, "a", encoding="utf-8") as f:
+            f.write(str(shooter_attack_reward) + ", " + str(shooter_increase_reward) + ", "
+                    + str(assist_pincer_reward) + ", " + str(assist_approach_reward) + "\n")
 
         new_reward = shooter_attack_reward + shooter_increase_reward + assist_pincer_reward + assist_approach_reward
         self.reset(task, env)
-
-        # reward_child = {"shooter_attack_reward": 5. * shooter_attack_reward, "shooter_increase_reward": 2. * shooter_increase_reward,
-        #                 "assist_pincer_reward": 2. * assist_pincer_reward, "assist_approach_reward": 2. * assist_approach_reward}
 
         return self._process(new_reward, agent_id)
 
