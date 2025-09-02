@@ -109,11 +109,11 @@ class TeamAttackDefenseReward(BaseRewardFunction):
             for ego_id, score in scores.items():
                 self.score_values[enm_id][ego_id] = np.exp(score) / sum_exp
 
-            # 将评分超过0.6的判定为shooter，低于0.6的判定为assist
+            # 将评分超过0.1的判定为shooter，低于0.1的判定为assist
             self.enemies_allocation[enm_id][0] = \
-                [ego_id for ego_id, softmax_score in self.score_values[enm_id].items() if softmax_score < 0.6]
+                [ego_id for ego_id, softmax_score in self.score_values[enm_id].items() if softmax_score < 0.1]
             self.enemies_allocation[enm_id][1] = \
-                [ego_id for ego_id, softmax_score in self.score_values[enm_id].items() if softmax_score >= 0.6]
+                [ego_id for ego_id, softmax_score in self.score_values[enm_id].items() if softmax_score >= 0.1]
 
         # 返回我机的所有身份信息
         enm_ids = []
