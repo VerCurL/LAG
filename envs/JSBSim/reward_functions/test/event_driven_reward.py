@@ -35,8 +35,8 @@ class EventDrivenReward(BaseRewardFunction):
             if missile.is_success:
                 reward += 200
 
-        file_path = "/mnt/d/FastProjects/ModelFlight/LAG/scripts/results/log/reward/event_driven_reward.txt"
-        with open(file_path, "a", encoding="utf-8") as f:
-            f.write(str(reward) + "\n")
+        # file_path = "/mnt/d/FastProjects/ModelFlight/LAG/scripts/results/log/reward/event_driven_reward.txt"
+        # with open(file_path, "a", encoding="utf-8") as f:
+        #     f.write(str(reward) + "\n")
 
         return self._process(reward, agent_id)

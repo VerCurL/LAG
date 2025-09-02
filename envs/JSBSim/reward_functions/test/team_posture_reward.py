@@ -34,9 +34,9 @@ class TeamPostureReward(BaseRewardFunction):
 
         new_reward = safe_dist_reward + help_reward
 
-        file_path = "/mnt/d/FastProjects/ModelFlight/LAG/scripts/results/log/reward/team_posture_reward.txt"
-        with open(file_path, "a", encoding="utf-8") as f:
-            f.write(str(safe_dist_reward) + ", " + str(help_reward) + "\n")
+        # file_path = "/mnt/d/FastProjects/ModelFlight/LAG/scripts/results/log/reward/team_posture_reward.txt"
+        # with open(file_path, "a", encoding="utf-8") as f:
+        #     f.write(str(safe_dist_reward) + ", " + str(help_reward) + "\n")
 
         return self._process(new_reward, agent_id)
 

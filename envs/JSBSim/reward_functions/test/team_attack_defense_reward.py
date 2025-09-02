@@ -70,10 +70,10 @@ class TeamAttackDefenseReward(BaseRewardFunction):
 
             self.R_pre_time[enm.uid] = R / 1000
 
-        file_path = "/mnt/d/FastProjects/ModelFlight/LAG/scripts/results/log/reward/team_attack_defense_reward.txt"
-        with open(file_path, "a", encoding="utf-8") as f:
-            f.write(str(shooter_attack_reward) + ", " + str(shooter_increase_reward) + ", "
-                    + str(assist_pincer_reward) + ", " + str(assist_approach_reward) + "\n")
+        # file_path = "/mnt/d/FastProjects/ModelFlight/LAG/scripts/results/log/reward/team_attack_defense_reward.txt"
+        # with open(file_path, "a", encoding="utf-8") as f:
+        #     f.write(str(shooter_attack_reward) + ", " + str(shooter_increase_reward) + ", "
+        #             + str(assist_pincer_reward) + ", " + str(assist_approach_reward) + "\n")
 
         new_reward = shooter_attack_reward + shooter_increase_reward + assist_pincer_reward + assist_approach_reward
         self.reset(task, env)
@@ -190,4 +190,4 @@ class TeamAttackDefenseReward(BaseRewardFunction):
             return 0
 
         # 光滑负奖励：在 R > R_opt 时变负
-        return (R > self.shoot_opt_dist * 1.2) * np.tanh((R - self.shoot_opt_dist * 1.2) ** 2 - (self.R_pre_time[enm.uid] - self.shoot_opt_dist * 1.2) ** 2)
+        return (R > self.shoot_opt_dist * 1.2) * np.tanh((R - self.shoot_opt_dist * 1.2) ** 2 - (self.R_pre_time[enm.uid] - self.shoot_opt_dist * 1.2) ** 2 - 50)
