@@ -41,11 +41,6 @@ class TeamAttackDefenseReward(BaseRewardFunction):
         """
         # 给团队角色进行分类（射手shooter和压侧/拖引assist）
         self.allocation(env.agents[agent_id])
-        # print("==========================")
-        # print("self.enemies_allocation: ", self.enemies_allocation)
-        # print("self.score_values: ", self.score_values)
-        # print("self.ego_self_role: ", self.ego_self_role)
-        # print("==========================")
 
         # 计算各项奖励值
         shooter_attack_reward = 0
@@ -107,7 +102,7 @@ class TeamAttackDefenseReward(BaseRewardFunction):
             enm_ids.append(enm.uid)
 
         for enm in ego_self.enemies:
-            self.ego_self_role[enm.uid] = 1 if ego_self in self.enemies_allocation[enm.uid][1] else 0
+            self.ego_self_role[enm.uid] = 1 if ego_self.uid in self.enemies_allocation[enm.uid][1] else 0
 
     def shoot_score(self, ego, enm):
         """
