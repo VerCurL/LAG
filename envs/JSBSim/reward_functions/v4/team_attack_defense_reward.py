@@ -87,30 +87,24 @@ class TeamAttackDefenseReward(BaseRewardFunction):
         for partner in ego_self.partners:
             for enm in partner.enemies:
                 enemies_scores[enm.uid][partner.uid] = self.shoot_score(partner, enm)
-        # print(enemies_scores)
 
         # 根据得分给我方飞机分配角色
         for enm_id, scores in enemies_scores.items():
             self.score_values[enm_id] = {}
 
-            sum_exp = 0
-            for score in scores.values():
-                sum_exp += np.exp(score)
-
             for ego_id, score in scores.items():
-                self.score_values[enm_id][ego_id] = np.exp(score) / sum_exp
+                self.score_values[enm_id][ego_id] = score
 
             # 将评分超过0.1的判定为shooter，低于0.1的判定为assist
             self.enemies_allocation[enm_id][0] = \
-                [ego_id for ego_id, softmax_score in self.score_values[enm_id].items() if softmax_score < 0.08]
+                [ego_id for ego_id, softmax_score in self.score_values[enm_id].items() if softmax_score < 0.1]
             self.enemies_allocation[enm_id][1] = \
-                [ego_id for ego_id, softmax_score in self.score_values[enm_id].items() if softmax_score >= 0.08]
+                [ego_id for ego_id, softmax_score in self.score_values[enm_id].items() if softmax_score >= 0.1]
 
         # 返回我机的所有身份信息
         enm_ids = []
         for enm in ego_self.enemies:
             enm_ids.append(enm.uid)
-        # print("self.enm_ids: ", enm_ids)
 
         for enm in ego_self.enemies:
             self.ego_self_role[enm.uid] = 1 if ego_self in self.enemies_allocation[enm.uid][1] else 0
@@ -122,7 +116,6 @@ class TeamAttackDefenseReward(BaseRewardFunction):
         ego_feature = np.hstack([ego.get_position(), ego.get_velocity()])
         enm_feature = np.hstack([enm.get_position(), enm.get_velocity()])
         AO, TA, R = get_AO_TA_R(ego_feature, enm_feature)
-        # print("AO = ", AO, ", TA = ", TA, ", R = ", R)
         return np.exp(-(R / 1000 - self.shoot_opt_dist) ** 2 / 4) * ((1 + np.cos(TA)) / 2) * np.exp(- AO ** 2 / (np.pi / 3) ** 2)
 
     def shooter_attack_function(self, ego_self, enm):
