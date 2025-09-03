@@ -61,7 +61,7 @@ class TeamAttackDefenseReward(BaseRewardFunction):
             AO, TA, R = get_AO_TA_R(ego_feature, enm_feature)
 
             if self.ego_self_role[enm.uid] == 1:    # shooter
-                shooter_attack_reward += 5. * self.shooter_attack_function(env.agents[agent_id], enm)
+                shooter_attack_reward += 10. * self.shooter_attack_function(env.agents[agent_id], enm)
                 shooter_increase_reward += 2. * self.shooter_increase_function()
             elif self.ego_self_role[enm.uid] == 0:  # assist
                 assist_pincer_reward += 2. * self.assist_pincer_function(env, enm)
@@ -102,9 +102,9 @@ class TeamAttackDefenseReward(BaseRewardFunction):
 
             # 将评分超过0.1的判定为shooter，低于0.1的判定为assist
             self.enemies_allocation[enm_id][0] = \
-                [ego_id for ego_id, softmax_score in self.score_values[enm_id].items() if softmax_score < 0.1]
+                [ego_id for ego_id, softmax_score in self.score_values[enm_id].items() if softmax_score < 0.08]
             self.enemies_allocation[enm_id][1] = \
-                [ego_id for ego_id, softmax_score in self.score_values[enm_id].items() if softmax_score >= 0.1]
+                [ego_id for ego_id, softmax_score in self.score_values[enm_id].items() if softmax_score >= 0.08]
 
         # 返回我机的所有身份信息
         enm_ids = []

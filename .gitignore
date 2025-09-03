@@ -3,6 +3,7 @@ results
 runs
 *.npy
 *.acmi
+/envs/JSBSim/reward_functions/test/
 
 # vscode config
 .vscode
