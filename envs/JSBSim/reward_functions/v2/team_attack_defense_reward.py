@@ -26,6 +26,9 @@ class TeamAttackDefenseReward(BaseRewardFunction):
         # 我机对每个敌机的角色定义（shooter/assist）
         self.ego_self_role = {}         # type: Dict[str, int]
 
+        # 存储上一时刻和敌机的距离的变量
+        self.R_pre_time = {}                # type: Dict[str, float]
+
     def reset(self, task, env):
         self.enemies_allocation.clear()
         self.score_values.clear()
@@ -39,8 +42,9 @@ class TeamAttackDefenseReward(BaseRewardFunction):
         # 给团队角色进行分类（射手shooter和压侧/拖引assist）
         self.allocation(env.agents[agent_id])
 
-        # 计算奖励值
-        new_reward = 0
+        # 计算各项奖励值
+        shooter_attack_reward = 0
+        assist_approach_reward = 0
 
         # 获取自身状态：位置(北,东,下) + 速度(北,东,下)
         ego_feature = np.hstack([env.agents[agent_id].get_position(), env.agents[agent_id].get_velocity()])
@@ -50,16 +54,16 @@ class TeamAttackDefenseReward(BaseRewardFunction):
             AO, TA, R = get_AO_TA_R(ego_feature, enm_feature)
 
             if self.ego_self_role[enm.uid] == 1:    # shooter
-                new_reward += 7. * self.shooter_attack_function(env.agents[agent_id], enm)
-                new_reward += 2. * self.shoot_increase_function()
+                shooter_attack_reward += 10. * self.shooter_attack_function(env.agents[agent_id], enm)
             elif self.ego_self_role[enm.uid] == 0:  # assist
-                new_reward += 3. * self.assist_pincer_function(env, enm)
-                new_reward += 3. * self.assist_approach_function(R)
+                assist_approach_reward += 2. * self.assist_approach_function(enm, R / 1000)
 
+            self.R_pre_time[enm.uid] = R / 1000
+
+        new_reward = shooter_attack_reward + assist_approach_reward
         self.reset(task, env)
 
         return self._process(new_reward, agent_id)
-
 
     def allocation(self, ego_self):
         """
@@ -79,18 +83,14 @@ class TeamAttackDefenseReward(BaseRewardFunction):
         for enm_id, scores in enemies_scores.items():
             self.score_values[enm_id] = {}
 
-            sum_exp = 0
-            for score in scores.values():
-                sum_exp += np.exp(score)
-
             for ego_id, score in scores.items():
-                self.score_values[enm_id][ego_id] = np.exp(score) / sum_exp
+                self.score_values[enm_id][ego_id] = score
 
-            # 将评分超过0.6的判定为shooter，低于0.6的判定为assist
+            # 将评分超过0.1的判定为shooter，低于0.1的判定为assist
             self.enemies_allocation[enm_id][0] = \
-                [ego_id for ego_id, softmax_score in self.score_values[enm_id].items() if softmax_score < 0.6]
+                [ego_id for ego_id, softmax_score in self.score_values[enm_id].items() if softmax_score < 0.1]
             self.enemies_allocation[enm_id][1] = \
-                [ego_id for ego_id, softmax_score in self.score_values[enm_id].items() if softmax_score >= 0.6]
+                [ego_id for ego_id, softmax_score in self.score_values[enm_id].items() if softmax_score >= 0.1]
 
         # 返回我机的所有身份信息
         enm_ids = []
@@ -98,7 +98,7 @@ class TeamAttackDefenseReward(BaseRewardFunction):
             enm_ids.append(enm.uid)
 
         for enm in ego_self.enemies:
-            self.ego_self_role[enm.uid] = 1 if ego_self in self.enemies_allocation[enm.uid][1] else 0
+            self.ego_self_role[enm.uid] = 1 if ego_self.uid in self.enemies_allocation[enm.uid][1] else 0
 
     def shoot_score(self, ego, enm):
         """
@@ -115,43 +115,13 @@ class TeamAttackDefenseReward(BaseRewardFunction):
         """
         return self.score_values[enm.uid][ego_self.uid]
 
-    def shoot_increase_function(self):
+    def assist_approach_function(self, enm, R):
         """
-        尽量增加射手的数量
+        辅助机需要靠近敌机，避免只在远处分散。
         """
-        return len([role for role in self.ego_self_role.values() if role == 1])
-
-    def assist_pincer_function(self, env, enm):
-        """
-        压侧形成合围攻势的奖励函数
-        """
-        # 如果没有assist则返回0
-        assist_ids = self.enemies_allocation[enm.uid][0]
-        if len(assist_ids) == 0:
+        # 如果已有射手存在，则辅助只做合围，不加此奖励
+        if 1 in self.ego_self_role.values() or enm.uid not in self.R_pre_time:
             return 0
 
-        # 计算每个敌机对战的所有压侧飞机的方位奖励
-        enm_feature = np.hstack([enm.get_position(), enm.get_velocity()])
-
-        # 计算该敌机对应的所有团队飞机的平均相对位置得分
-        position = 0
-        for assist_id in assist_ids:
-            assist = env.agents[assist_id]
-            assist_feature = np.hstack([assist.get_position(), assist.get_velocity()])
-            _, _, _, side_flag = get_AO_TA_R(assist_feature, enm_feature, return_side=True)
-            position += side_flag
-        position /= len(assist_ids)
-
-        return 1. - np.abs(position)
-
-    def assist_approach_function(self, R):
-        """
-        如果没有射手角色就靠近所有敌机
-        """
-        # 如果是射手，则返回
-        if 1 in self.ego_self_role.values():
-            return 0
-
-        # 如果距离比较远，则惩罚
-        if R > 16:
-            return -1
+        # 光滑负奖励：在 R > R_opt 时变负
+        return (R > self.shoot_opt_dist * 1.2) * np.tanh((R - self.shoot_opt_dist * 1.2) ** 2 - (self.R_pre_time[enm.uid] - self.shoot_opt_dist * 1.2) ** 2 - 50)
