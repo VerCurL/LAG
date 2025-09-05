@@ -191,23 +191,23 @@ class MultipleCombatTask(SingleCombatTask):
         norm_act[3] = action[3] * 0.5 / (self.action_space.nvec[3] - 1.) + 0.4 # 油门：[0.4, 0.9]
         return norm_act
 
-    def get_reward(self, env, agent_id, info: dict = ...) -> Tuple[float, dict]:
-        """
-        计算智能体的奖励
-        
-        参数:
-            env: 环境对象
-            agent_id: 智能体ID
-            info: 附加信息字典
-            
-        返回:
-            (奖励值, 更新后的信息字典)
-        """
-        # 只有智能体存活时才计算奖励，否则返回0
-        if env.agents[agent_id].is_alive:
-            return super().get_reward(env, agent_id, info=info)
-        else:
-            return 0.0, info
+    # def get_reward(self, env, agent_id, info: dict = ...) -> Tuple[float, dict]:
+    #     """
+    #     计算智能体的奖励
+    #
+    #     参数:
+    #         env: 环境对象
+    #         agent_id: 智能体ID
+    #         info: 附加信息字典
+    #
+    #     返回:
+    #         (奖励值, 更新后的信息字典)
+    #     """
+    #     # 只有智能体存活时才计算奖励，否则返回0
+    #     if env.agents[agent_id].is_alive:
+    #         return super().get_reward(env, agent_id, info=info)
+    #     else:
+    #         return 0.0, info
 
 
 class HierarchicalMultipleCombatTask(MultipleCombatTask):
@@ -450,26 +450,23 @@ class HierarchicalMultipleCombatShootTask(HierarchicalMultipleCombatTask):
         for agent_id, agent in env.agents.items():
             # [基于RL的导弹发射，带限制条件]
             # 确定是否可以向最近的敌机发射导弹
-            
-            # 计算所有敌机的相对位置和距离
-            target_list = list(map(lambda x: x.get_position() - agent.get_position(), agent.enemies))
-            target_distance = list(map(np.linalg.norm, target_list))
-            # 找出最近的敌机
+            target_list = list(map(lambda x: x.get_position() - agent.get_position(), agent.enemies))   # 所有敌机的相对位置
+            target_distance = list(map(np.linalg.norm, target_list))                                    # 所有敌机的和距离
             target_index = np.argmin(target_distance)
-            target = target_list[target_index]
-            # 获取本机航向和与目标的距离
-            heading = agent.get_velocity()
-            distance = target_distance[target_index]
-            # 计算攻击角度（飞机航向与目标方向的夹角）
-            attack_angle = np.rad2deg(
+            target = target_list[target_index]                                                          # 最近的敌机
+            heading = agent.get_velocity()                                                              # 本机航向
+            distance = target_distance[target_index]                                                    # 本机与目标的距离
+
+            attack_angle = np.rad2deg(                                                                  # 攻击角度（飞机航向与目标方向的夹角）
                 np.arccos(np.clip(np.sum(target * heading) / (distance * np.linalg.norm(heading) + 1e-8), -1, 1)))
-            # 计算距离上次发射的时间间隔
-            shoot_interval = env.current_step - self._last_shoot_time[agent_id]
+            shoot_interval = env.current_step - self._last_shoot_time[agent_id]                         # 距离上次发射的时间间隔
+            velocity = np.linalg.norm(heading)                                                          # 本机的速度值
 
             # 判断是否满足发射条件
-            shoot_flag = agent.is_alive and self._shoot_action[agent_id] and self._remaining_missiles[agent_id] > 0 \
-                         and attack_angle <= self.max_attack_angle and distance <= self.max_attack_distance and shoot_interval >= self.min_attack_interval
-            
+            shoot_flag = (agent.is_alive and self._shoot_action[agent_id] and self._remaining_missiles[agent_id] > 0 \
+                         and attack_angle <= self.max_attack_angle and distance <= self.max_attack_distance
+                         and shoot_interval >= self.min_attack_interval and velocity >= 150)
+            # shoot_flag = True
             # 如果满足发射条件，创建新导弹
             if shoot_flag:
                 # 创建唯一导弹ID
@@ -479,5 +476,7 @@ class HierarchicalMultipleCombatShootTask(HierarchicalMultipleCombatTask):
                     MissileSimulator.create(parent=agent, target=agent.enemies[target_index], uid=new_missile_uid))
                 # 减少剩余导弹数量
                 self._remaining_missiles[agent_id] -= 1
+                # 减少飞机类的剩余导弹数量
+                env.agents[agent_id].num_remaining_missiles -= 1
                 # 更新上次发射时间
                 self._last_shoot_time[agent_id] = env.current_step

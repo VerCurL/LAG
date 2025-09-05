@@ -128,6 +128,8 @@ class AircraftSimulator(BaseSimulator):
         # temp simulator links
         self.launch_missiles = []   # type: List[MissileSimulator]
         self.under_missiles = []    # type: List[MissileSimulator]
+        # 剩余弹量
+        self.num_remaining_missiles = self.num_missiles
         # initialize simulator
         self.reload()
 
