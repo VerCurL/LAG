@@ -465,7 +465,7 @@ class HierarchicalMultipleCombatShootTask(HierarchicalMultipleCombatTask):
             # 判断是否满足发射条件
             shoot_flag = (agent.is_alive and self._shoot_action[agent_id] and self._remaining_missiles[agent_id] > 0 \
                          and attack_angle <= self.max_attack_angle and distance <= self.max_attack_distance
-                         and shoot_interval >= self.min_attack_interval and velocity >= 150)
+                         and shoot_interval >= self.min_attack_interval and velocity > 150)
             # shoot_flag = True
             # 如果满足发射条件，创建新导弹
             if shoot_flag:
