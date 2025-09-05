@@ -59,7 +59,7 @@ class TeamAttackDefenseReward(BaseRewardFunction):
 
             # 无导弹飞机逃跑的奖励
             if self.ego_self_role[enm.uid] == 2:
-                runner_escape_reward += 2. * self.runner_escape_function(AO, R)
+                runner_escape_reward += 2. * self.runner_escape_function(enm, AO, R)
             # 有导弹飞机战斗的奖励
             else:
                 # 射手专属奖励
@@ -139,8 +139,8 @@ class TeamAttackDefenseReward(BaseRewardFunction):
         # 当距离过远，则让飞机有个靠近的趋势
         return (R > self.shoot_opt_dist * 1.25) * (np.tanh(self.R_pre_time[enm.uid] - R) + np.cos(AO))
 
-    def runner_escape_function(self, AO, R):
+    def runner_escape_function(self, enm, AO, R):
         """
         无导弹逃跑的奖励
         """
-        return np.tanh(R - self.R_pre_time[AO]) - np.cos(AO)
+        return np.tanh(R - self.R_pre_time[enm.uid]) - np.cos(AO)
