@@ -177,8 +177,6 @@ class SingleCombatTask(BaseTask):
                                                 enm.get_velocity()])
                         AO, _, R = get_AO_TA_R(ego_feature, enm_feature)
                         enm.bloods -= _orientation_fn(AO) * _distance_fn(R/1000)
-                        # if agent_id == 'A0100' and enm.uid == 'B0100':
-                        #     print(f"AO: {AO * 180 / np.pi}, {_orientation_fn(AO)}, dis:{R/1000}, {_distance_fn(R/1000)}")
 
     def get_reward(self, env, agent_id, info=...):
         if self._agent_die_flag.get(agent_id, False):
