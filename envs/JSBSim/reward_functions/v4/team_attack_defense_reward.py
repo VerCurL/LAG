@@ -128,7 +128,7 @@ class TeamAttackDefenseReward(BaseRewardFunction):
         """
         射手进攻咬尾奖励设置
         """
-        return self.score_values[enm.uid][ego_self.uid]
+        return self.score_values[enm.uid][ego_self.uid] - 0.35
 
     def approach_function(self, ego_id, enm_id, AO, R):
         """
