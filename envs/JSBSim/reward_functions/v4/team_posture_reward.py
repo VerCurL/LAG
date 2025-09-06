@@ -32,7 +32,7 @@ class TeamPostureReward(BaseRewardFunction):
         和队友保持安全距离的奖励函数，R单位为km
         """
         if version == 'v0':
-            return lambda R: max(0., R - self.min_dist)
+            return lambda R: min(0., R - self.min_dist)
         else:
             raise NotImplementedError(f"未知的队友安全距离函数版本: {version}")
 
