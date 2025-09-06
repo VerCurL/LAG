@@ -27,7 +27,7 @@ class TeamAttackDefenseReward(BaseRewardFunction):
         self.ego_self_role = {}         # type: Dict[str, int]
 
         # 存储上一时刻和敌机的距离的变量
-        self.R_pre_time = {}                # type: Dict[str, float]
+        self.R_pre_time = {}                # type: Dict[str, Dict[str, float]]
 
     def reset(self, task, env):
         self.enemies_allocation.clear()
@@ -41,6 +41,8 @@ class TeamAttackDefenseReward(BaseRewardFunction):
         """
         # 给团队角色进行分类（射手shooter和压侧/拖引assist）
         self.allocation(env, agent_id)
+        if agent_id not in self.R_pre_time:
+            self.R_pre_time[agent_id] = {}
 
         # 各项奖励值初始化
         shooter_attack_reward = 0
@@ -59,7 +61,7 @@ class TeamAttackDefenseReward(BaseRewardFunction):
 
             # 无导弹飞机逃跑的奖励
             if self.ego_self_role[enm.uid] == 2:
-                runner_escape_reward += 2. * self.runner_escape_function(enm, AO, R)
+                runner_escape_reward += 2. * self.runner_escape_function(agent_id, enm.uid, AO, R)
             # 有导弹飞机战斗的奖励
             else:
                 # 射手专属奖励
@@ -69,10 +71,10 @@ class TeamAttackDefenseReward(BaseRewardFunction):
                 elif self.ego_self_role[enm.uid] == 0:
                     pass
                 # 有导弹飞机的通用奖励
-                approach_reward += 2. * self.approach_function(enm, R, AO)
+                approach_reward += 2. * self.approach_function(agent_id, enm.uid, AO, R)
 
             # 记录上一时刻和敌机的距离
-            self.R_pre_time[enm.uid] = R
+            self.R_pre_time[agent_id][enm.uid] = R
 
         new_reward = shooter_attack_reward + approach_reward + runner_escape_reward
 
@@ -128,19 +130,18 @@ class TeamAttackDefenseReward(BaseRewardFunction):
         """
         return self.score_values[enm.uid][ego_self.uid]
 
-    def approach_function(self, enm, AO, R):
+    def approach_function(self, ego_id, enm_id, AO, R):
         """
         飞机需要靠近敌机，避免只在远处分散。
         """
-        # 如果已有射手存在，则辅助只做合围，不加此奖励
-        if 1 in self.ego_self_role.values() or enm.uid not in self.R_pre_time:
+        if enm_id not in self.R_pre_time[ego_id]:
             return 0
 
         # 当距离过远，则让飞机有个靠近的趋势
-        return (R > self.shoot_opt_dist * 1.25) * (np.tanh(self.R_pre_time[enm.uid] - R) + np.cos(AO))
+        return (R > self.shoot_opt_dist * 1.25) * (np.tanh(self.R_pre_time[ego_id][enm_id] - R) + np.cos(AO))
 
-    def runner_escape_function(self, enm, AO, R):
+    def runner_escape_function(self, ego_id, enm_id, AO, R):
         """
         无导弹逃跑的奖励
         """
-        return np.tanh(R - self.R_pre_time[enm.uid]) - np.cos(AO)
+        return np.tanh(R - self.R_pre_time[ego_id][enm_id]) - np.cos(AO)
