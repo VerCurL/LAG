@@ -1,4 +1,5 @@
 import numpy as np
+import os
 from envs.JSBSim.reward_functions.reward_function_base import BaseRewardFunction
 from envs.JSBSim.utils.utils import get_AO_TA_R
 
@@ -70,6 +71,7 @@ class MissileAvoidReward(BaseRewardFunction):
             self.pre_missiles_v.update({sim.uid: relative_velocity})
             self.prev_velocity_component.update({sim.uid: velocity_component})
             self.pre_missiles.update({sim.uid: sim})
+
         return self._process(new_reward, agent_id)
 
 

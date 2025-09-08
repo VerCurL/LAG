@@ -1,4 +1,5 @@
 import numpy as np
+import os
 from envs.JSBSim.reward_functions.reward_function_base import BaseRewardFunction  # 从基础奖励类继承
 
 
@@ -53,4 +54,5 @@ class AltitudeReward(BaseRewardFunction):
         
         # 总奖励 = 速度惩罚 + 高度惩罚
         new_reward = Pv + PH
-        return self._process(new_reward, agent_id, (Pv, PH))
+
+        return self._process(new_reward, agent_id)

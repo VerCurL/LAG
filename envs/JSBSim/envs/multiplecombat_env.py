@@ -11,7 +11,7 @@ class MultipleCombatEnv(BaseEnv):
     多飞机空战环境类
     实现了多智能体（2v2）的竞争性对抗环境
     """
-    def __init__(self, config_name: str):
+    def __init__(self, config_name: str, fix_position = False):
         """
         初始化多飞机空战环境
         
@@ -21,6 +21,7 @@ class MultipleCombatEnv(BaseEnv):
         super().__init__(config_name)
         # 环境特定初始化
         self._create_records = False
+        self.fix_position = fix_position
 
     @property
     def share_observation_space(self):
@@ -71,12 +72,14 @@ class MultipleCombatEnv(BaseEnv):
         重置所有模拟器的状态
         包括飞机模拟器和临时模拟器（如导弹）
         """
-        # # 重新加载所有飞机模拟器
-        # for sim in self._jsbsims.values():
-        #     sim.reload()
-        # # 清空临时模拟器（如导弹）
-        # self._tempsims.clear()
-        self.random_reset_simulators()
+        if self.fix_position:
+            # 重新加载所有飞机模拟器
+            for sim in self._jsbsims.values():
+                sim.reload()
+            # 清空临时模拟器（如导弹）
+            self._tempsims.clear()
+        else:
+            self.random_reset_simulators()
 
     def random_reset_simulators(self):
         # --- 常量定义 ---

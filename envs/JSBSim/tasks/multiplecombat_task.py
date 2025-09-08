@@ -8,7 +8,7 @@ from ..core.catalog import Catalog as c
 from ..core.simulatior import MissileSimulator
 from ..reward_functions import AltitudeReward, PostureReward, EventDrivenReward, MissilePostureReward, \
     TeamPostureReward, MissileAvoidReward, TeamAttackDefenseReward
-from ..termination_conditions import ExtremeState, LowAltitude, Overload, Timeout, SafeReturn, PartnerSafe
+from ..termination_conditions import ExtremeState, LowAltitude, Overload, Timeout, SafeReturn
 from ..utils.utils import get_AO_TA_R, LLA2NEU, get_root_dir
 from ..model.baseline_actor import BaselineActor
 
@@ -42,7 +42,6 @@ class MultipleCombatTask(SingleCombatTask):
             Overload(self.config),                # 过载：飞机超过最大过载限制
             LowAltitude(self.config),             # 低高度：飞机高度过低（有坠机风险）
             Timeout(self.config),                 # 超时：任务时间超过最大限制
-            # PartnerSafe(self.config),           # 队友安全：确保队友安全（当前未启用）
         ]
 
     @property
