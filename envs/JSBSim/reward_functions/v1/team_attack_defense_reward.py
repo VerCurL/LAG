@@ -62,7 +62,7 @@ class TeamAttackDefenseReward(BaseRewardFunction):
 
             # 无导弹飞机逃跑的奖励
             if self.ego_self_role[enm.uid] == 2:
-                runner_escape_reward += 20. * self.runner_escape_function(agent_id, enm.uid, AO, R)
+                runner_escape_reward += 2. * self.runner_escape_function(agent_id, enm.uid, AO, R)
             # 有导弹飞机战斗的奖励
             else:
                 # 射手专属奖励
