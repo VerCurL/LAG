@@ -27,11 +27,11 @@ def _t2n(x):
 # 配置要测试的模型
 num_agents = 4
 render = True
-ego_policy_index = 688
-enm_policy_index = 260
+ego_policy_index = 1040
+enm_policy_index = 311
 episode_rewards = 0
-ego_run_dir = "../scripts/results/MultipleCombat/2v2/ShootMissile/HierarchySelfplay/mappo/v1/run-v4/files"
-enm_run_dir = "../scripts/results/MultipleCombat/2v2/ShootMissile/HierarchySelfplay/mappo/v1/run-v4/files"
+ego_run_dir = "../scripts/results/MultipleCombat/2v2/ShootMissile/HierarchySelfplay/mappo/v1/run-v2/files"
+enm_run_dir = "../scripts/results/MultipleCombat/2v2/ShootMissile/HierarchySelfplay/mappo/v1/run-hyx/files"
 
 fix_position = False
 env = MultipleCombatEnv("2v2/ShootMissile/HierarchySelfplay", fix_position=fix_position)
@@ -47,10 +47,10 @@ ego_policy.load_state_dict(torch.load(ego_run_dir + f"/actor_{ego_policy_index}.
 enm_policy.load_state_dict(torch.load(enm_run_dir + f"/actor_{enm_policy_index}.pt"))
 
 # 开始测试
-num_render = 1
+num_render = 10
 ego_version = ego_run_dir.split('/')[-2].split('-')[-1]
 enm_version = enm_run_dir.split('/')[-2].split('-')[-1]
-experiment_file_name = "gaming_result/" + ego_version + ".vs." + enm_version + " [" + str(ego_policy_index) + "," + str(enm_policy_index) + "]/"
+experiment_file_name = "gaming_result/" + ego_version + ".vs." + enm_version + "/[" + str(ego_policy_index) + "," + str(enm_policy_index) + "]/"
 print("Start render")
 for i in range(num_render):
     if not fix_position:
