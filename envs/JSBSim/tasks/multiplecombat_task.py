@@ -49,7 +49,7 @@ class MultipleCombatTask(SingleCombatTask):
         """
         返回智能体数量（固定为4架飞机，表示2v2空战）
         """
-        return 4
+        return len(self.config.aircraft_configs)
 
     def load_variables(self):
         """
