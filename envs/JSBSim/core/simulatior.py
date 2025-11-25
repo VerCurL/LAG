@@ -335,6 +335,13 @@ class AircraftSimulator(BaseSimulator):
                 missiles.append(missile)
         return missiles
 
+    def update_missile_avoid_record(self):
+        missiles = []
+        for missile in self.under_missiles:
+            if not missile.is_alive and self.is_alive:
+                missiles.append(missile)
+        return missiles
+
 
 class MissileSimulator(BaseSimulator):
 
