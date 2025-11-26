@@ -128,8 +128,6 @@ class AircraftSimulator(BaseSimulator):
         # temp simulator links
         self.launch_missiles = []   # type: List[MissileSimulator]
         self.under_missiles = []    # type: List[MissileSimulator]
-        # 剩余弹量
-        self.num_remaining_missiles = self.num_missiles
         # initialize simulator
         self.reload()
 
@@ -327,20 +325,6 @@ class AircraftSimulator(BaseSimulator):
             if missile.is_alive:
                 return missile
         return None
-
-    def check_all_missile_warning(self):
-        missiles = []
-        for missile in self.under_missiles:
-            if missile.is_alive:
-                missiles.append(missile)
-        return missiles
-
-    def update_missile_avoid_record(self):
-        missiles = []
-        for missile in self.under_missiles:
-            if not missile.is_alive and self.is_alive:
-                missiles.append(missile)
-        return missiles
 
 
 class MissileSimulator(BaseSimulator):

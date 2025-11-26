@@ -8,46 +8,29 @@ from .mlp import MLPLayer
 
 class ACTLayer(nn.Module):
     def __init__(self, act_space, input_dim, hidden_size, activation_id, gain):
-        """
-        初始化动作层，根据不同的动作空间类型创建相应的输出层
-        参数:
-            act_space: 动作空间，可以是Discrete、Box、MultiBinary、MultiDiscrete或Tuple类型
-            input_dim: 输入维度
-            hidden_size: 隐藏层大小列表，如果为空则不使用MLP层
-            activation_id: 激活函数ID
-            gain: 权重增益
-        """
         super(ACTLayer, self).__init__()
+        self._mlp_actlayer = False
+        self._continuous_action = False
+        self._multidiscrete_action = False
+        self._mixed_action = False
+        self._shoot_action = False
 
-        # 初始化各种动作类型的标志位
-        self._mlp_actlayer = False  # 是否使用MLP层
-        self._continuous_action = False  # 是否为连续动作
-        self._multidiscrete_action = False  # 是否为多离散动作
-        self._mixed_action = False  # 是否为混合动作
-        self._shoot_action = False  # 是否为射击动作
-
-        # 如果指定了隐藏层大小，则创建MLP层
         if len(hidden_size) > 0:
             self._mlp_actlayer = True
             self.mlp = MLPLayer(input_dim, hidden_size, activation_id)
             input_dim = self.mlp.output_size
 
-        # 根据不同的动作空间类型创建相应的输出层
         if isinstance(act_space, gym.spaces.Discrete):
-            # 离散动作空间
             action_dim = act_space.n
             self.action_out = Categorical(input_dim, action_dim, gain)
         elif isinstance(act_space, gym.spaces.Box):
-            # 连续动作空间
             self._continuous_action = True
             action_dim = act_space.shape[0]
             self.action_out = DiagGaussian(input_dim, action_dim, gain)
         elif isinstance(act_space, gym.spaces.MultiBinary):
-            # 多二进制动作空间
             action_dim = act_space.shape[0]
             self.action_out = Bernoulli(input_dim, action_dim, gain)
         elif isinstance(act_space, gym.spaces.MultiDiscrete):
-            # 多离散动作空间
             self._multidiscrete_action = True
             action_dims = act_space.nvec
             action_outs = []

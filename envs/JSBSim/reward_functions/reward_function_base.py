@@ -16,7 +16,6 @@ class BaseRewardFunction(ABC):
         self.pre_rewards = defaultdict(float)
         self.reward_trajectory = defaultdict(list)
         self.reward_item_names = [self.__class__.__name__]
-        self.record_path = "results/log/reward"
 
     def reset(self, task, env):
         """Perform reward function-specific reset after episode reset.

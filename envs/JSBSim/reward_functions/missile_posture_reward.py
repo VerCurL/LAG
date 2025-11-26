@@ -1,5 +1,5 @@
 import numpy as np
-from envs.JSBSim.reward_functions.reward_function_base import BaseRewardFunction
+from .reward_function_base import BaseRewardFunction
 
 
 class MissilePostureReward(BaseRewardFunction):

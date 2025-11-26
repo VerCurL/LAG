@@ -1,7 +1,7 @@
-from .backup.relative_altitude_reward import RelativeAltitudeReward
-from .backup.heading_reward import HeadingReward
-from .backup.shoot_penalty_reward import ShootPenaltyReward
-from .backup.posture_reward import PostureReward
-
-from .v2 import (AltitudeReward, MissilePostureReward, EventDrivenReward,
-                 TeamPostureReward, TeamAttackDefenseReward, MissileAvoidReward)
+from .altitude_reward import AltitudeReward
+from .event_driven_reward import EventDrivenReward
+from .posture_reward import PostureReward
+from .relative_altitude_reward import RelativeAltitudeReward
+from .heading_reward import HeadingReward
+from .missile_posture_reward import MissilePostureReward
+from .shoot_penalty_reward import ShootPenaltyReward

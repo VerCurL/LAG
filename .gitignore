@@ -1,9 +1,9 @@
 # ignore files
+test.py
 results
 runs
 *.npy
 *.acmi
-/envs/JSBSim/reward_functions/test/
 
 # vscode config
 .vscode
@@ -140,4 +140,3 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
-/renders/gaming_result/

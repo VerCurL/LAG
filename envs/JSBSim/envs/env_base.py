@@ -1,6 +1,5 @@
 import logging
 import time
-import os
 import gymnasium
 from gymnasium.utils import seeding
 import numpy as np
@@ -204,9 +203,6 @@ class BaseEnv(gymnasium.Env):
         """
         if mode == "txt":
             if not self._create_records:
-                directory = os.path.dirname(filepath)
-                if directory and not os.path.exists(directory):
-                    os.makedirs(directory)
                 with open(filepath, mode='w', encoding='utf-8-sig') as f:
                     f.write("FileType=text/acmi/tacview\n")
                     f.write("FileVersion=2.1\n")
