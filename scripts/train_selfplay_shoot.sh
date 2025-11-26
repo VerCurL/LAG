@@ -11,7 +11,7 @@ CUDA_VISIBLE_DEVICES=1 python train/train_jsbsim.py \
     --scenario-name ${scenario} \
     --experiment-name ${exp} \
     --seed ${seed} \
-    --policy_type "xxx" \
+    --policy_type "bxy" \
     --n-training-threads 1 \
     --n-rollout-threads 32 \
     --cuda --log-interval 1 \
