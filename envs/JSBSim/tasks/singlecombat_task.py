@@ -6,7 +6,6 @@ from .task_base import BaseTask
 from ..core.simulatior import AircraftSimulator
 from ..core.catalog import Catalog as c
 from ..termination_conditions import ExtremeState, LowAltitude, Overload, Timeout, SafeReturn
-from ..reward_functions import AltitudeReward, PostureReward, EventDrivenReward
 from ..utils.utils import get_AO_TA_R, get2d_AO_TA_R, in_range_rad, LLA2NEU, get_root_dir
 from ..model.baseline_actor import BaselineActor
 
@@ -19,11 +18,17 @@ class SingleCombatTask(BaseTask):
         if self.use_baseline:
             self.baseline_agent = self.load_agent(self.config.baseline_type)
 
-        self.reward_functions = [
-            AltitudeReward(self.config),
-            PostureReward(self.config),
-            EventDrivenReward(self.config)
-        ]
+        if self.policy_type == "fkr":
+            pass
+        elif self.policy_type == "bxy":
+            from ..reward_functions import BXY_AltitudeReward, BXY_PostureReward, BXY_EventDrivenReward
+            self.reward_functions = [
+                BXY_AltitudeReward(self.config),
+                BXY_PostureReward(self.config),
+                BXY_EventDrivenReward(self.config)
+            ]
+        else:
+            raise NotImplementedError(f"Unknown policy type: {self.policy_type}")
 
         self.termination_conditions = [
             LowAltitude(self.config),

@@ -13,6 +13,7 @@ class BaseTask(ABC):
     """
     def __init__(self, config):
         self.config = config
+        self.policy_type = getattr(self.config, "policy_type", "fkr")
         self.reward_functions = []
         self.termination_conditions = []
         self.load_variables()

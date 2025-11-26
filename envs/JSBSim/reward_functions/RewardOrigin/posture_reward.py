@@ -1,7 +1,7 @@
 import numpy as np
 from wandb import agent
 from .reward_function_base import BaseRewardFunction
-from ..utils.utils import get_AO_TA_R
+from envs.JSBSim.utils.utils import get_AO_TA_R
 
 
 class PostureReward(BaseRewardFunction):
