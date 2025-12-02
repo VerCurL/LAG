@@ -20,6 +20,7 @@ def get_config():
     parser = _get_log_config(parser)
     parser = _get_eval_config(parser)
     parser = _get_render_config(parser)
+    parser = _get_policy_type(parser)
     return parser
 
 
@@ -299,6 +300,16 @@ def _get_render_config(parser: argparse.ArgumentParser):
     group.add_argument("--render-index", type=str, default='latest', help="the index of ego policy. by default latest")
     return parser
 
+def _get_policy_type(parser: argparse.ArgumentParser):
+    """
+    Optimizer parameters:
+        --lr <float>
+            learning rate parameter (default: 5e-4, fixed).
+    """
+    group = parser.add_argument_group("Policy parameters")
+    group.add_argument("--policy-type", type=str, default='fkr',
+                       help='the type of train policy. (default: fkr)')
+    return parser
 
 if __name__ == "__main__":
     parser = get_config()

@@ -21,11 +21,11 @@ def make_train_env(all_args):
     def get_env_fn(rank):
         def init_env():
             if all_args.env_name == "SingleCombat":
-                env = SingleCombatEnv(all_args.scenario_name)
+                env = SingleCombatEnv(all_args.scenario_name, all_args.policy_type)
             elif all_args.env_name == "SingleControl":
-                env = SingleControlEnv(all_args.scenario_name)
+                env = SingleControlEnv(all_args.scenario_name, all_args.policy_type)
             elif all_args.env_name == "MultipleCombat":
-                env = MultipleCombatEnv(all_args.scenario_name)
+                env = MultipleCombatEnv(all_args.scenario_name, all_args.policy_type)
             else:
                 logging.error("Can not support the " + all_args.env_name + "environment.")
                 raise NotImplementedError
@@ -48,11 +48,11 @@ def make_eval_env(all_args):
     def get_env_fn(rank):
         def init_env():
             if all_args.env_name == "SingleCombat":
-                env = SingleCombatEnv(all_args.scenario_name)
+                env = SingleCombatEnv(all_args.scenario_name, all_args.policy_type)
             elif all_args.env_name == "SingleControl":
-                env = SingleControlEnv(all_args.scenario_name)
+                env = SingleControlEnv(all_args.scenario_name, all_args.policy_type)
             elif all_args.env_name == "MultipleCombat":
-                env = MultipleCombatEnv(all_args.scenario_name)
+                env = MultipleCombatEnv(all_args.scenario_name, all_args.policy_type)
             else:
                 logging.error("Can not support the " + all_args.env_name + "environment.")
                 raise NotImplementedError

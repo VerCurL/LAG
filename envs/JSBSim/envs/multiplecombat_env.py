@@ -8,8 +8,8 @@ class MultipleCombatEnv(BaseEnv):
     """
     MultipleCombatEnv is an multi-player competitive environment.
     """
-    def __init__(self, config_name: str):
-        super().__init__(config_name)
+    def __init__(self, config_name: str, policy_type: str):
+        super().__init__(config_name, policy_type)
         # Env-Specific initialization here!
         self._create_records = False
 

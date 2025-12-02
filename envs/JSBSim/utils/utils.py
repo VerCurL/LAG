@@ -4,7 +4,7 @@ import pymap3d
 import numpy as np
 
 
-def parse_config(filename):
+def parse_config(filename, policy_type):
     """Parse JSBSim config file.
 
     Args:
@@ -18,7 +18,7 @@ def parse_config(filename):
         f'config path {filepath} does not exist. Please pass in a string that represents the file path to the config yaml.'
     with open(filepath, 'r', encoding='utf-8') as f:
         config_data = yaml.load(f, Loader=yaml.FullLoader)
-
+    config_data['policy_type'] = policy_type
     return type('EnvConfig', (object,), config_data)
 
 
