@@ -208,24 +208,13 @@ class SingleCombatShootMissileTask(SingleCombatDodgeMissileTask):
     def step(self, env):
         SingleCombatTask.step(self, env)
         for agent_id, agent in env.agents.items():
-            # [Rule-based missile launch]
-            target = agent.enemies[0].get_position() - agent.get_position()
-            heading = agent.get_velocity()
-            distance = np.linalg.norm(target)
-            attack_angle = np.rad2deg(
-                np.arccos(np.clip(np.sum(target * heading) / (distance * np.linalg.norm(heading) + 1e-8), -1, 1)))
-            self.lock_duration[agent_id].append(attack_angle < self.max_attack_angle)
-            shoot_interval = env.current_step - self._last_shoot_time[agent_id]
-
-            shoot_flag = agent.is_alive and np.sum(self.lock_duration[agent_id]) >= self.lock_duration[agent_id].maxlen \
-                         and distance <= self.max_attack_distance and self.remaining_missiles[
-                             agent_id] > 0 and shoot_interval >= self.min_attack_interval
+            # [RL-based missile launch with limited condition]
+            shoot_flag = agent.is_alive and self._shoot_action[agent_id] and self.remaining_missiles[agent_id] > 0
             if shoot_flag:
                 new_missile_uid = agent_id + str(self.remaining_missiles[agent_id])
                 env.add_temp_simulator(
                     MissileSimulator.create(parent=agent, target=agent.enemies[0], uid=new_missile_uid))
                 self.remaining_missiles[agent_id] -= 1
-                self._last_shoot_time[agent_id] = env.current_step
 
 
 class HierarchicalSingleCombatShootTask(HierarchicalSingleCombatTask, SingleCombatShootMissileTask):

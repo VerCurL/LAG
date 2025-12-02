@@ -5,6 +5,7 @@ from typing import Literal
 from .task_base import BaseTask
 from ..core.simulatior import AircraftSimulator
 from ..core.catalog import Catalog as c
+from ..reward_functions import BXY_AltitudeReward, BXY_PostureReward, BXY_EventDrivenReward
 from ..termination_conditions import ExtremeState, LowAltitude, Overload, Timeout, SafeReturn
 from ..utils.utils import get_AO_TA_R, get2d_AO_TA_R, in_range_rad, LLA2NEU, get_root_dir
 from ..model.baseline_actor import BaselineActor
@@ -21,7 +22,6 @@ class SingleCombatTask(BaseTask):
         if self.policy_type == "fkr":
             pass
         elif self.policy_type == "bxy":
-            from ..reward_functions import BXY_AltitudeReward, BXY_PostureReward, BXY_EventDrivenReward
             self.reward_functions = [
                 BXY_AltitudeReward(self.config),
                 BXY_PostureReward(self.config),
