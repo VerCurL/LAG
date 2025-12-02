@@ -4,6 +4,7 @@ from collections import deque
 
 from .singlecombat_task import SingleCombatTask, HierarchicalSingleCombatTask
 from ..core.simulatior import MissileSimulator
+from ..reward_functions import BXY_AltitudeReward, BXY_PostureReward, BXY_EventDrivenReward, BXY_VelReward, BXY_ShootPenaltyReward, BXY_MissilePostureReward
 from ..utils.utils import LLA2NEU, get_AO_TA_R
 
 
@@ -18,9 +19,8 @@ class SingleCombatDodgeMissileTask(SingleCombatTask):
         self.min_attack_interval = getattr(self.config, 'min_attack_interval', 125)
 
         if self.policy_type == "fkr":
-            pass
+            self.reward_functions = []
         elif self.policy_type == "bxy":
-            from ..reward_functions import BXY_AltitudeReward, BXY_PostureReward, BXY_MissilePostureReward, BXY_EventDrivenReward, BXY_ShootPenaltyReward
             self.reward_functions = [
                 BXY_PostureReward(self.config),
                 BXY_MissilePostureReward(self.config),
@@ -175,9 +175,8 @@ class SingleCombatShootMissileTask(SingleCombatDodgeMissileTask):
         super().__init__(config)
 
         if self.policy_type == "fkr":
-            pass
+            self.reward_functions = []
         elif self.policy_type == "bxy":
-            from ..reward_functions import BXY_AltitudeReward, BXY_PostureReward, BXY_MissilePostureReward, BXY_EventDrivenReward, BXY_ShootPenaltyReward
             self.reward_functions = [
                 BXY_PostureReward(self.config),
                 BXY_AltitudeReward(self.config),
@@ -234,9 +233,8 @@ class HierarchicalSingleCombatShootTask(HierarchicalSingleCombatTask, SingleComb
         HierarchicalSingleCombatTask.__init__(self, config)
 
         if self.policy_type == "fkr":
-            pass
+            self.reward_functions = []
         elif self.policy_type == "bxy":
-            from ..reward_functions import BXY_AltitudeReward, BXY_PostureReward, BXY_EventDrivenReward, BXY_VelReward, BXY_ShootPenaltyReward, BXY_MissilePostureReward
             self.reward_functions = [
                 BXY_PostureReward(self.config),
                 BXY_AltitudeReward(self.config),
