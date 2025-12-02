@@ -85,6 +85,21 @@ class BaseTask(ABC):
         """
         reward = 0.0
         for reward_function in self.reward_functions:
+            # # --- 新增：打印 reward function 的类名 和 定义位置 ---
+            # class_name = reward_function.__class__.__name__
+            # file_path = reward_function.__class__.__module__
+            # try:
+            #     # 获取文件实际路径
+            #     import inspect
+            #     source_file = inspect.getsourcefile(reward_function.__class__)
+            # except Exception:
+            #     source_file = "Unknown source file"
+            #
+            # print(f"[Reward Debug] Using reward function: {class_name}")
+            # print(f"               Module: {file_path}")
+            # print(f"               Source: {source_file}")
+            # print(f"               Score: {reward_function.get_reward(self, env, agent_id)}")
+            # # ---------------------
             reward += reward_function.get_reward(self, env, agent_id)
         return reward, info
 
