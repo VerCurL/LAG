@@ -5,13 +5,13 @@ algo="ppo"
 exp="v1"
 seed=1
 echo "env is ${env}, scenario is ${scenario}, algo is ${algo}, exp is ${exp}, seed is ${seed}"
-CUDA_VISIBLE_DEVICES=1 python train/train_jsbsim.py \
+CUDA_VISIBLE_DEVICES=0 python train/train_jsbsim.py \
     --env-name ${env}\
     --algorithm-name ${algo} \
     --scenario-name ${scenario} \
     --experiment-name ${exp} \
     --seed ${seed} \
-    --policy_type "bxy" \
+    --policy-type "bxy" \
     --n-training-threads 1 \
     --n-rollout-threads 32 \
     --cuda --log-interval 1 \
@@ -37,6 +37,4 @@ CUDA_VISIBLE_DEVICES=1 python train/train_jsbsim.py \
     --recurrent-hidden-layers 1 \
     --data-chunk-length 8 \
     --user-name "fkr" \
-    --use-wandb \
-    --wandb-name "thu_jsbsim" \
     --use-prior

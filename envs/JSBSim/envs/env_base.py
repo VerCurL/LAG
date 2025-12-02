@@ -149,7 +149,7 @@ class BaseEnv(gymnasium.Env):
         for agent_id in self.agents.keys():
             reward, info = self.task.get_reward(self, agent_id, info)
             rewards[agent_id] = [reward]
-        # print(f"[jsbsim_runner] rewards: {rewards}")
+        print(f"[reward debug] rewards: {rewards}")
         return self._pack(obs), self._pack(rewards), self._pack(dones), info
 
     def get_obs(self):
