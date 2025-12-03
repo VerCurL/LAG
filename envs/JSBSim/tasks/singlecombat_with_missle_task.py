@@ -4,7 +4,9 @@ from collections import deque
 
 from .singlecombat_task import SingleCombatTask, HierarchicalSingleCombatTask
 from ..core.simulatior import MissileSimulator
-from ..reward_functions import BXY_AltitudeReward, BXY_PostureReward, BXY_EventDrivenReward, BXY_VelReward, BXY_ShootPenaltyReward, BXY_MissilePostureReward
+from ..reward_functions import (
+    AltitudeReward, PostureReward, MissilePostureReward, EventDrivenReward, ShootPenaltyReward,
+    BXY_AltitudeReward, BXY_PostureReward, BXY_EventDrivenReward, BXY_VelReward, BXY_ShootPenaltyReward, BXY_MissilePostureReward)
 from ..utils.utils import LLA2NEU, get_AO_TA_R
 
 
@@ -18,7 +20,14 @@ class SingleCombatDodgeMissileTask(SingleCombatTask):
         self.max_attack_distance = getattr(self.config, 'max_attack_distance', np.inf)
         self.min_attack_interval = getattr(self.config, 'min_attack_interval', 125)
 
-        if self.policy_type == "fkr":
+        if self.policy_type == "default":
+            self.reward_functions = [
+                PostureReward(self.config),
+                MissilePostureReward(self.config),
+                AltitudeReward(self.config),
+                EventDrivenReward(self.config)
+            ]
+        elif self.policy_type == "fkr":
             self.reward_functions = []
         elif self.policy_type == "bxy":
             self.reward_functions = [
@@ -137,7 +146,14 @@ class HierarchicalSingleCombatDodgeMissileTask(HierarchicalSingleCombatTask, Sin
     def __init__(self, config: str):
         HierarchicalSingleCombatTask.__init__(self, config)
 
-        if self.policy_type == "fkr":
+        if self.policy_type == "default":
+            self.reward_functions = [
+                PostureReward(self.config),
+                MissilePostureReward(self.config),
+                AltitudeReward(self.config),
+                EventDrivenReward(self.config)
+            ]
+        elif self.policy_type == "fkr":
             pass
         elif self.policy_type == "bxy":
             from ..reward_functions import BXY_AltitudeReward, BXY_PostureReward, BXY_MissilePostureReward, BXY_EventDrivenReward, BXY_ShootPenaltyReward
@@ -174,7 +190,14 @@ class SingleCombatShootMissileTask(SingleCombatDodgeMissileTask):
     def __init__(self, config):
         super().__init__(config)
 
-        if self.policy_type == "fkr":
+        if self.policy_type == "default":
+            self.reward_functions = [
+                PostureReward(self.config),
+                AltitudeReward(self.config),
+                EventDrivenReward(self.config),
+                ShootPenaltyReward(self.config)
+            ]
+        elif self.policy_type == "fkr":
             self.reward_functions = []
         elif self.policy_type == "bxy":
             self.reward_functions = [
@@ -221,7 +244,14 @@ class HierarchicalSingleCombatShootTask(HierarchicalSingleCombatTask, SingleComb
     def __init__(self, config: str):
         HierarchicalSingleCombatTask.__init__(self, config)
 
-        if self.policy_type == "fkr":
+        if self.policy_type == "default":
+            self.reward_functions = [
+                PostureReward(self.config),
+                AltitudeReward(self.config),
+                EventDrivenReward(self.config),
+                ShootPenaltyReward(self.config)
+            ]
+        elif self.policy_type == "fkr":
             self.reward_functions = []
         elif self.policy_type == "bxy":
             self.reward_functions = [

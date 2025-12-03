@@ -307,8 +307,8 @@ def _get_policy_type(parser: argparse.ArgumentParser):
             learning rate parameter (default: 5e-4, fixed).
     """
     group = parser.add_argument_group("Policy parameters")
-    group.add_argument("--policy-type", type=str, default='fkr',
-                       help='the type of train policy. (default: fkr)')
+    group.add_argument("--policy-type", type=str, default='default',
+                       help='the type of train policy. ')
     return parser
 
 if __name__ == "__main__":
