@@ -60,7 +60,7 @@ class JSBSimRunner(Runner):
 
                 # insert data into buffer
                 self.insert(data)
-                print(f"               rewards:{self.buffer.rewards}")
+                # print(f"               rewards:{self.buffer.rewards}")
             # compute return and update network
             self.compute()
             train_infos = self.train()
