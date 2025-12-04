@@ -7,9 +7,9 @@ from ..utils.act import ACTLayer
 from ..utils.utils import check
 
 
-class PPOActor(nn.Module):
+class PPOMoEActor(nn.Module):
     def __init__(self, args, obs_space, act_space, device=torch.device("cpu")):
-        super(PPOActor, self).__init__()
+        super(PPOMoEActor, self).__init__()
         # network config
         self.gain = args.gain
         self.hidden_size = args.hidden_size

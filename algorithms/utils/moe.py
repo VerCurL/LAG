@@ -22,7 +22,8 @@ class MoELayer(nn.Module):
 
         # 专家层的层数，每层神经元个数，激活函数信息
         self._size = [input_dim] + list(map(int, hidden_size.split(' ')))
-        expert_size = " ".join(map(str, [x // self.total_experts for x in self._size[1:]]))
+        self.expert_size = [x // self.total_experts for x in self._size[1:]]
+        expert_size = " ".join(map(str, self.expert_size))
 
         # 通用专家
         self.general_experts = nn.ModuleList([
@@ -89,7 +90,7 @@ class MoELayer(nn.Module):
 
     @property
     def output_size(self) -> int:
-        return self._size[-1]
+        return self.total_experts * self.expert_size[-1]
 
     def get_info(self):
         return self.record_info

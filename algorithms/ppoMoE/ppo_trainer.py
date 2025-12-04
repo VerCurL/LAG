@@ -1,12 +1,12 @@
 import torch
 import torch.nn as nn
 from typing import Union, List
-from .ppo_policy import PPOPolicy
+from .ppo_policy import PPOMoEPolicy
 from ..utils.buffer import ReplayBuffer
 from ..utils.utils import check, get_gard_norm
 
 
-class PPOTrainer():
+class PPOMoETrainer():
     def __init__(self, args, device=torch.device("cpu")):
 
         self.device = device
@@ -24,7 +24,7 @@ class PPOTrainer():
         self.use_recurrent_policy = args.use_recurrent_policy
         self.data_chunk_length = args.data_chunk_length
 
-    def ppo_update(self, policy: PPOPolicy, sample):
+    def ppo_update(self, policy: PPOMoEPolicy, sample):
 
         obs_batch, actions_batch, masks_batch, old_action_log_probs_batch, advantages_batch, \
             returns_batch, value_preds_batch, rnn_states_actor_batch, rnn_states_critic_batch = sample
@@ -83,7 +83,7 @@ class PPOTrainer():
         return (policy_loss, value_loss, policy_entropy_loss, gate_entropy, gate_max_prob, expert_usage,
                 ratio, actor_grad_norm, critic_grad_norm)
 
-    def train(self, policy: PPOPolicy, buffer: Union[ReplayBuffer, List[ReplayBuffer]]):
+    def train(self, policy: PPOMoEPolicy, buffer: Union[ReplayBuffer, List[ReplayBuffer]]):
         train_info = {}
         train_info['value_loss'] = 0
         train_info['policy_loss'] = 0

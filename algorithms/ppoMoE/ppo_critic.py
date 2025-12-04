@@ -7,9 +7,9 @@ from ..utils.gru import GRULayer
 from ..utils.utils import check
 
 
-class PPOCritic(nn.Module):
+class PPOMoECritic(nn.Module):
     def __init__(self, args, obs_space, device=torch.device("cpu")):
-        super(PPOCritic, self).__init__()
+        super(PPOMoECritic, self).__init__()
         # network config
         self.hidden_size = args.hidden_size
         self.act_hidden_size = args.act_hidden_size

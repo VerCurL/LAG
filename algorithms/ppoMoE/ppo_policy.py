@@ -1,9 +1,9 @@
 import torch
-from .ppo_actor import PPOActor
-from .ppo_critic import PPOCritic
+from .ppo_actor import PPOMoEActor
+from .ppo_critic import PPOMoECritic
 
 
-class PPOPolicy:
+class PPOMoEPolicy:
     def __init__(self, args, obs_space, act_space, device=torch.device("cpu")):
 
         self.args = args
@@ -14,8 +14,8 @@ class PPOPolicy:
         self.obs_space = obs_space
         self.act_space = act_space
 
-        self.actor = PPOActor(args, self.obs_space, self.act_space, self.device)
-        self.critic = PPOCritic(args, self.obs_space, self.device)
+        self.actor = PPOMoEActor(args, self.obs_space, self.act_space, self.device)
+        self.critic = PPOMoECritic(args, self.obs_space, self.device)
 
         self.optimizer = torch.optim.Adam([
             {'params': self.actor.parameters()},
@@ -66,4 +66,4 @@ class PPOPolicy:
         self.critic.eval()
 
     def copy(self):
-        return PPOPolicy(self.args, self.obs_space, self.act_space, self.device)
+        return PPOMoEPolicy(self.args, self.obs_space, self.act_space, self.device)

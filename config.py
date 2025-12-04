@@ -137,6 +137,16 @@ def _get_network_config(parser: argparse.ArgumentParser):
                        help="The gain # of last action layer")
     group.add_argument("--use-prior", action='store_true', default=False,
                        help="Whether to use prior hunman info to update network, use only on missile shoot task")
+
+    # MoE层相关参数
+    group.add_argument("--expert-hidden-size", type=str, default='32 32',
+                       help="Dimension of hidden layers for moe pre-process networks (default '128 128')")
+    group.add_argument("--num-general-experts", type=int, default=2,
+                       help="Number of general experts (default 2)")
+    group.add_argument("--num-special-experts", type=int, default=6,
+                       help="Number of special experts (default 6)")
+    group.add_argument("--top-k", type=int, default=2,
+                       help="Number of top-k experts (default 2)")
     return parser
 
 

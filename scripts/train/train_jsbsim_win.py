@@ -176,7 +176,7 @@ if __name__ == "__main__":
     # 2v2参数配置
     main([
         '--env-name', 'SingleCombat',
-        '--algorithm-name', 'ppo',
+        '--algorithm-name', 'ppoMoE',
         '--scenario-name', '1v1/ShootMissile/HierarchySelfplay',
         '--experiment-name', 'v1',
         '--seed', '1',
@@ -203,6 +203,10 @@ if __name__ == "__main__":
         '--max-grad-norm', '2',
         '--entropy-coef', '1e-3',
         '--hidden-size', '128 128',
+        # MoE网络参数
+        '--num-general-experts', '2',
+        '--num-special-experts', '6',
+        '--top-k', '2',
         '--act-hidden-size', '128 128',
         '--recurrent-hidden-size', '128',
         '--recurrent-hidden-layers', '1',

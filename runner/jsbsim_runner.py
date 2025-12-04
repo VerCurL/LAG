@@ -22,6 +22,9 @@ class JSBSimRunner(Runner):
         if self.algorithm_name == "ppo":
             from algorithms.ppo.ppo_trainer import PPOTrainer as Trainer
             from algorithms.ppo.ppo_policy import PPOPolicy as Policy
+        elif self.algorithm_name == "ppoMoE":
+            from algorithms.ppoMoE.ppo_trainer import PPOMoETrainer as Trainer
+            from algorithms.ppoMoE.ppo_policy import PPOMoEPolicy as Policy
         else:
             raise NotImplementedError
         self.policy = Policy(self.all_args, self.obs_space, self.act_space, device=self.device)
