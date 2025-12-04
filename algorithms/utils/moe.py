@@ -85,7 +85,7 @@ class MoELayer(nn.Module):
 
     @property
     def output_size(self) -> int:
-        return self.total_experts * self.expert_size[-1]
+        return (self.num_general_experts + self.top_k) * self.expert_size[-1]
 
     def get_info(self):
         return self.record_info
