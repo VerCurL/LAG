@@ -93,11 +93,12 @@ class AlgorithmsLogger:
             data.get("gate_max_prob", None),
         ]
 
-        # 写入 expert_usage 展开
-        if expert_usage is None:
-            row += [None] * self.expert_usage_len
-        else:
-            row += list(expert_usage)
+        if self.algorithm_name == "ppoMoE":
+            # 写入 expert_usage 展开
+            if expert_usage is None:
+                row += [None] * self.expert_usage_len
+            else:
+                row += list(expert_usage)
 
         # # 写后续字段
         # row += [
