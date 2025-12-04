@@ -132,7 +132,7 @@ def main(args):
                               + "-" + str(all_args.experiment_name) + "@" + str(all_args.user_name))
 
     # logger init
-    logger = AlgorithmsLogger(str(run_dir / "logs"), filename="training_log.csv")
+    logger = AlgorithmsLogger(str(run_dir / "logs"), filename="training_log.csv", algorithm_name=all_args.algorithm_name)
 
     # env init
     envs = make_train_env(all_args)
