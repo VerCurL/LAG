@@ -156,7 +156,6 @@ class HierarchicalSingleCombatDodgeMissileTask(HierarchicalSingleCombatTask, Sin
         elif self.policy_type == "fkr":
             pass
         elif self.policy_type == "bxy":
-            from ..reward_functions import BXY_AltitudeReward, BXY_PostureReward, BXY_MissilePostureReward, BXY_EventDrivenReward, BXY_ShootPenaltyReward
             self.reward_functions = [
                 BXY_PostureReward(self.config),
                 BXY_MissilePostureReward(self.config),

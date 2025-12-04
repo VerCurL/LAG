@@ -71,6 +71,7 @@ class JSBSimRunner(Runner):
             # log information
             if episode % self.log_interval == 0:
                 end = time.time()
+                fps = int(self.total_num_steps / (end - start))
                 logging.info("\n Scenario {} Algo {} Exp {} updates {}/{} episodes, total num timesteps {}/{}, FPS {}.\n"
                              .format(self.all_args.scenario_name,
                                      self.algorithm_name,
@@ -79,8 +80,9 @@ class JSBSimRunner(Runner):
                                      episodes,
                                      self.total_num_steps,
                                      self.num_env_steps,
-                                     int(self.total_num_steps / (end - start))))
+                                     fps))
 
+                train_infos["fps"] = fps
                 train_infos["average_episode_rewards"] = self.buffer.rewards.sum() / (self.buffer.masks == False).sum()
                 logging.info("average episode rewards is {}".format(train_infos["average_episode_rewards"]))
 
@@ -91,11 +93,14 @@ class JSBSimRunner(Runner):
 
             # eval
             if episode % self.eval_interval == 0 and episode != 0 and self.use_eval:
-                    self.eval(self.total_num_steps)
+                self.eval(self.total_num_steps)
 
             # save model
             if (episode % self.save_interval == 0) or (episode == episodes - 1):
                 self.save(episode)
+
+            # logger record
+            self.logger.log(episode, train_infos)
 
     def warmup(self):
         # reset env

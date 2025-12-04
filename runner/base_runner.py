@@ -19,7 +19,8 @@ class Runner(object):
         self.eval_envs = config['eval_envs']
         self.device = config['device']
         self.render_mode = config['render_mode']
-        
+        self.logger = config['logger']
+
         # Tacview render obj
         self.tacview = None
         if self.render_mode == "real_time":
