@@ -180,7 +180,7 @@ if __name__ == "__main__":
         '--scenario-name', '1v1/ShootMissile/HierarchySelfplay',
         '--experiment-name', 'v1',
         '--seed', '1',
-        # '--policy-type', 'bxy',
+        '--policy-type', 'default',
         '--n-training-threads', '1',
         '--n-rollout-threads', '32',
         '--cuda',
@@ -202,8 +202,8 @@ if __name__ == "__main__":
         '--clip-params', '0.2',
         '--max-grad-norm', '2',
         '--entropy-coef', '1e-3',
-        '--hidden-size', '128 128',
         # MoE网络参数
+        '--hidden-size', '256 256',
         '--num-general-experts', '2',
         '--num-special-experts', '6',
         '--top-k', '2',
