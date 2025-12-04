@@ -44,9 +44,9 @@ class PPOMoETrainer():
         gate_entropy = -(gate_probs * torch.log(gate_probs + 1e-8)).sum(dim=1).mean().detach()
         gate_max_prob = gate_probs.max(dim=1)[0].mean().detach()
 
-        expert_usage = torch.zeros(gate_probs.size(1), device=self.device, dtype=torch.long)
+        expert_usage = torch.zeros(gate_probs.size(1), device=self.device, dtype=torch.float32)
         unique, counts = record_info["top_k_idx"].flatten().unique(return_counts=True)
-        expert_usage[unique] = counts
+        expert_usage[unique] = counts.float()
         expert_usage = expert_usage.detach()
 
         # Obtain the loss function
@@ -123,7 +123,12 @@ class PPOMoETrainer():
 
         num_updates = self.ppo_epoch * self.num_mini_batch
 
-        for k in train_info.keys():
-            train_info[k] /= num_updates
+        for k, v in train_info.items():
+            if isinstance(v, list):
+                # 列表情况：每个元素都除 num_updates
+                train_info[k] = [x / num_updates for x in v]
+            else:
+                # 标量情况
+                train_info[k] = v / num_updates
 
         return train_info
