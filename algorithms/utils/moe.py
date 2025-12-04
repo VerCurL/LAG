@@ -64,24 +64,19 @@ class MoELayer(nn.Module):
         # gating选择专业专家
         gate_logits = self.gate(x)                                  # [batch_size, special_num]
         gate_probs = torch.softmax(gate_logits, dim=1)              # [batch_size, special_num]
-
         top_k_vals, top_k_idx = torch.topk(gate_probs, self.top_k, dim=-1)          # [batch_size, top_k]
         self.record_info = {
             "gate_probs": gate_probs,
             "top_k_idx": top_k_idx,
         }
 
-        mask = torch.zeros_like(gate_probs)                         # 创建一个与gate_probs形状相同的全零张量
-        mask.scatter_(1, top_k_idx, 1.0)                            # 将top_k_idx对应位置的值设为1.0
-
-        masked_gate = gate_probs * mask                             # 将原始概论分布与掩码相乘，只保留top-k个专家的概论分布
-        masked_gate = masked_gate / (masked_gate.sum(-1, keepdim=True) + 1e-8)          # 归一化，确保概论总和为1，添加1e-8防止除零错误
+        # 用高级索引取出 top-k 专家
+        selected_special = special_outputs.gather(                  # [batch_size, top_k, expert_dim]
+            1, top_k_idx.unsqueeze(-1).expand(-1, -1, special_outputs.shape[-1])
+        )
 
         # 加权求和专业专家输出
-        weighted_special = torch.bmm(
-            masked_gate.unsqueeze(1),               # [batch_size, 1, special_num]
-            special_outputs                         # [batch_size, special_num, expert_dim]
-        ).reshape(batch_size, -1)                   # [batch_size, special_num * expert_dim]
+        weighted_special = selected_special.reshape(batch_size, -1)                 # [batch_size, top_k * expert_dim]
 
         # 将通用专家和专业专家输出拼接
         x = torch.cat([general_outputs, weighted_special], dim=-1)
