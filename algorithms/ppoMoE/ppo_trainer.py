@@ -44,7 +44,7 @@ class PPOMoETrainer():
         gate_entropy = -(gate_probs * torch.log(gate_probs + 1e-8)).sum(dim=1).mean().detach()
         gate_max_prob = gate_probs.max(dim=1)[0].mean().detach()
 
-        expert_usage = torch.zeros(gate_probs.size(1), device=self.device)
+        expert_usage = torch.zeros(gate_probs.size(1), device=self.device, dtype=torch.long)
         unique, counts = record_info["top_k_idx"].flatten().unique(return_counts=True)
         expert_usage[unique] = counts
         expert_usage = expert_usage.detach()
