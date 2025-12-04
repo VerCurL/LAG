@@ -19,12 +19,10 @@ class AlgorithmsLogger:
         # 记录当前所记录的算法名称
         self.algorithm_name = algorithm_name
 
-    def _write_header(self, expert_usage_len):
+    def _write_header(self, info):
         """
         在第一次 log 时写入表头
         """
-        self.expert_usage_len = expert_usage_len
-
         # 写入表头
         if self.first_write:
             if self.algorithm_name == "ppo":
@@ -43,6 +41,7 @@ class AlgorithmsLogger:
                 ]
                 self.writer.writerow(header)
             elif self.algorithm_name == "ppoMoE":
+                self.expert_usage_len = info["expert_usage_len"]
                 header = [
                     "episode",
                     "policy_loss",
@@ -54,7 +53,7 @@ class AlgorithmsLogger:
                     "gate_max_prob",
                 ]
                 # 添加 expert_usage 的展开列
-                header += [f"expert_usage_{i + 1}" for i in range(expert_usage_len)]
+                header += [f"expert_usage_{i + 1}" for i in range(self.expert_usage_len)]
                 # # 继续后面的指标
                 # header += [
                 #     "value_mean",
@@ -74,8 +73,12 @@ class AlgorithmsLogger:
 
         # 在第一次 log 时写入表头（因为这时才能拿到 expert_usage 的长度）
         if self.first_write:
+            info = {}
+            if self.algorithm_name == "ppoMoE":
+                info["expert_usage_len"] = len(expert_usage)
+
             # expert_usage 必须可迭代
-            self._write_header(len(expert_usage))
+            self._write_header(info)
             self.first_write = False
 
         # 写入数据
