@@ -13,6 +13,7 @@ from datetime import datetime
 import setproctitle
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))))
 from config import get_config
+from utils.logger import AlgorithmsLogger
 from runner.share_jsbsim_runner import ShareJSBSimRunner
 from envs.JSBSim.envs import SingleCombatEnv, SingleControlEnv, MultipleCombatEnv
 from envs.env_wrappers import SubprocVecEnv, DummyVecEnv, ShareSubprocVecEnv, ShareDummyVecEnv
@@ -130,6 +131,9 @@ def main(args):
     setproctitle.setproctitle(str(all_args.algorithm_name) + "-" + str(all_args.env_name)
                               + "-" + str(all_args.experiment_name) + "@" + str(all_args.user_name))
 
+    # logger init
+    logger = AlgorithmsLogger(str(run_dir / "logs"), filename="training_log.csv")
+
     # env init
     envs = make_train_env(all_args)
     eval_envs = make_eval_env(all_args) if all_args.use_eval else None
@@ -140,6 +144,7 @@ def main(args):
         "all_args": all_args,
         "envs": envs,
         "eval_envs": eval_envs,
+        "logger": logger,
         "device": device,
         "run_dir": run_dir,
         "render_mode": render_mode
@@ -175,7 +180,7 @@ if __name__ == "__main__":
         '--scenario-name', '1v1/ShootMissile/HierarchySelfplay',
         '--experiment-name', 'v1',
         '--seed', '1',
-        '--policy-type', 'bxy',
+        # '--policy-type', 'bxy',
         '--n-training-threads', '1',
         '--n-rollout-threads', '32',
         '--cuda',
