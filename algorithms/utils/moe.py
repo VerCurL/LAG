@@ -12,7 +12,7 @@ class MoELayer(nn.Module):
     - num_special_experts：专业专家数量（用于 gating top-k）
     - MoE_k：每次选择 top-k 个专业专家
     """
-    def __init__(self, input_dim, hidden_size, activation_id, num_general_experts, num_special_experts, top_k):
+    def __init__(self, input_dim, expert_hidden_size, activation_id, num_general_experts, num_special_experts, top_k):
         super(MoELayer, self).__init__()
         # 专家数量，选择专业专家数
         self.num_general_experts = num_general_experts
@@ -20,20 +20,20 @@ class MoELayer(nn.Module):
         self.top_k = top_k
         self.total_experts = num_general_experts + num_special_experts
 
-        # 专家层的层数，每层神经元个数，激活函数信息
-        self._size = [input_dim] + list(map(int, hidden_size.split(' ')))
-        self.expert_size = [x // self.total_experts for x in self._size[1:]]
-        expert_size = " ".join(map(str, self.expert_size))
+        # # 专家层的层数，每层神经元个数，激活函数信息
+        self._size = [input_dim] + list(map(int, expert_hidden_size.split(' ')))
+        # self.expert_size = [x // self.total_experts for x in self._size[1:]]
+        # expert_size = " ".join(map(str, self.expert_size))
 
         # 通用专家
         self.general_experts = nn.ModuleList([
-            MLPLayer(input_dim, expert_size, activation_id)
+            MLPLayer(input_dim, expert_hidden_size, activation_id)
             for _ in range(num_general_experts)
         ])
 
         # 专业专家
         self.special_experts = nn.ModuleList([
-            MLPLayer(input_dim, expert_size, activation_id)
+            MLPLayer(input_dim, expert_hidden_size, activation_id)
             for _ in range(num_special_experts)
         ])
 
@@ -85,16 +85,16 @@ class MoELayer(nn.Module):
 
     @property
     def output_size(self) -> int:
-        return (self.num_general_experts + self.top_k) * self.expert_size[-1]
+        return (self.num_general_experts + self.top_k) * self._size[-1]
 
     def get_info(self):
         return self.record_info
 
 class MoEBase(nn.Module):
-    def __init__(self, obs_space, hidden_size, activation_id, use_feature_normalization,
+    def __init__(self, obs_space, expert_hidden_size, activation_id, use_feature_normalization,
                  num_general_experts, num_special_experts, top_k):
         super().__init__()
-        self._hidden_size = hidden_size
+        self._expert_hidden_size = expert_hidden_size
         self._activation_id = activation_id
         self._use_feature_normalization = use_feature_normalization
         self._num_general_experts = num_general_experts
@@ -106,7 +106,7 @@ class MoEBase(nn.Module):
         if self._use_feature_normalization:
             self.feature_norm = nn.LayerNorm(input_dim)
         self.MoE = MoELayer(
-            input_dim=input_dim,  hidden_size=self._hidden_size, activation_id=self._activation_id,
+            input_dim=input_dim,  expert_hidden_size=self._expert_hidden_size, activation_id=self._activation_id,
             num_general_experts=self._num_general_experts, num_special_experts=self._num_special_experts, top_k=self._top_k
         )
 

@@ -46,8 +46,8 @@ def _t2n(x):
 
 num_agents = 2
 render = True
-ego_policy_index = 505
-enm_policy_index = 579
+ego_policy_index = 102
+enm_policy_index = 117
 episode_rewards = 0
 ego_run_dir = "D:/FastProjects/ModelFlight/LAGMoE/scripts/results/SingleCombat/1v1/ShootMissile/HierarchySelfplay/ppoMoE/v1/run-test"
 enm_run_dir = "D:/FastProjects/ModelFlight/LAGMoE/scripts/results/SingleCombat/1v1/ShootMissile/HierarchySelfplay/ppo/v1/run-test"

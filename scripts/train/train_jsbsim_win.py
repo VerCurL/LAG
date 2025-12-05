@@ -182,7 +182,7 @@ if __name__ == "__main__":
         '--seed', '1',
         '--policy-type', 'default',
         '--n-training-threads', '1',
-        '--n-rollout-threads', '32',
+        '--n-rollout-threads', '1',
         '--cuda',
         '--log-interval', '1',
         '--save-interval', '1',
@@ -203,7 +203,7 @@ if __name__ == "__main__":
         '--max-grad-norm', '2',
         '--entropy-coef', '1e-3',
         # MoE网络参数
-        '--hidden-size', '256 256',
+        '--expert_hidden_size', '32 32',
         '--num-general-experts', '2',
         '--num-special-experts', '6',
         '--top-k', '2',

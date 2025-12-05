@@ -12,7 +12,7 @@ class PPOMoEActor(nn.Module):
         super(PPOMoEActor, self).__init__()
         # network config
         self.gain = args.gain
-        self.hidden_size = args.hidden_size
+        self.expert_hidden_size = args.expert_hidden_size
         self.act_hidden_size = args.act_hidden_size
         self.activation_id = args.activation_id
         self.use_feature_normalization = args.use_feature_normalization
@@ -26,7 +26,7 @@ class PPOMoEActor(nn.Module):
         self.num_general_experts = args.num_general_experts
         self.num_special_experts = args.num_special_experts
         self.top_k = args.top_k
-        self.base = MoEBase(obs_space, self.hidden_size, self.activation_id, self.use_feature_normalization,
+        self.base = MoEBase(obs_space, self.expert_hidden_size, self.activation_id, self.use_feature_normalization,
                             self.num_general_experts, self.num_special_experts, self.top_k)
         # (2) rnn module
         input_size = self.base.output_size
