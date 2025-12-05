@@ -237,14 +237,13 @@ class SingleCombatShootMissileTask(SingleCombatDodgeMissileTask):
         SingleCombatTask.step(self, env)
         for agent_id, agent in env.agents.items():
             # [基于RL的导弹发射，带限制条件]
-            target = agent.enemies[0]
-            target_vec = target.get_position() - agent.get_position()       # 敌机的相对位置
-            target_distance = np.linalg.norm(target_vec)                    # 敌机的距离
+            target_loc = agent.enemies[0].get_position() - agent.get_position()       # 敌机的相对位置
+            target_distance = np.linalg.norm(target_loc)                    # 敌机的距离
             heading = agent.get_velocity()                                  # 本机航向
             velocity = np.linalg.norm(heading)                              # 本机的速度值
 
             attack_angle = np.rad2deg(                                      # 攻击角度（飞机航向与目标方向的夹角）
-                np.arccos(np.clip(np.sum(target * heading) / (target_distance * np.linalg.norm(heading) + 1e-8), -1, 1)))
+                np.arccos(np.clip(np.sum(target_loc * heading) / (target_distance * np.linalg.norm(heading) + 1e-8), -1, 1)))
             shoot_interval = env.current_step - self._last_shoot_time[agent_id]  # 距离上次发射的时间间隔
 
             # 判断是否满足发射条件
