@@ -31,6 +31,9 @@ class SelfplayJSBSimRunner(JSBSimRunner):
         elif self.algorithm_name == "ppoMoE":
             from algorithms.ppoMoE.ppo_trainer import PPOMoETrainer as Trainer
             from algorithms.ppoMoE.ppo_policy import PPOMoEPolicy as Policy
+        elif self.algorithm_name == "ppoMoEBalance":
+            from algorithms.ppoMoEBalance.ppo_trainer import PPOMoETrainer as Trainer
+            from algorithms.ppoMoEBalance.ppo_policy import PPOMoEPolicy as Policy
         else:
             raise NotImplementedError
         self.policy = Policy(self.all_args, self.obs_space, self.act_space, device=self.device)

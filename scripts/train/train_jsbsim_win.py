@@ -176,13 +176,13 @@ if __name__ == "__main__":
     # 2v2参数配置
     main([
         '--env-name', 'SingleCombat',
-        '--algorithm-name', 'ppoMoE',
+        '--algorithm-name', 'ppoMoEBalance',
         '--scenario-name', '1v1/ShootMissile/HierarchySelfplay',
         '--experiment-name', 'v1',
         '--seed', '1',
         '--policy-type', 'default',
         '--n-training-threads', '1',
-        '--n-rollout-threads', '1',
+        '--n-rollout-threads', '32',
         '--cuda',
         '--log-interval', '1',
         '--save-interval', '1',
