@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from ..utils.moe import MoEBase
+from ..utils.moe_balance import MoEBase
 from ..utils.gru import GRULayer
 from ..utils.act import ACTLayer
 from ..utils.utils import check

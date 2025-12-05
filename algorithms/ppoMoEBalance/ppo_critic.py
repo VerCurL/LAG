@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 from ..utils.mlp import MLPLayer
-from ..utils.moe import MoEBase
+from ..utils.moe_balance import MoEBase
 from ..utils.gru import GRULayer
 from ..utils.utils import check
 
