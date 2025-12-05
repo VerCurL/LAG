@@ -16,9 +16,9 @@ class SingleCombatDodgeMissileTask(SingleCombatTask):
     def __init__(self, config):
         super().__init__(config)
 
-        self.max_attack_angle = getattr(self.config, 'max_attack_angle', 180)
-        self.max_attack_distance = getattr(self.config, 'max_attack_distance', np.inf)
-        self.min_attack_interval = getattr(self.config, 'min_attack_interval', 125)
+        self.max_attack_angle = getattr(self.config, 'max_attack_angle', 180)           # 最大攻击角度
+        self.max_attack_distance = getattr(self.config, 'max_attack_distance', np.inf)  # 最大攻击距离
+        self.min_attack_interval = getattr(self.config, 'min_attack_interval', 125)     # 最小攻击间隔（冷却时间）
 
         if self.policy_type == "default":
             self.reward_functions = [
@@ -223,21 +223,40 @@ class SingleCombatShootMissileTask(SingleCombatDodgeMissileTask):
         return super().normalize_action(env, agent_id, action[:-1].astype(np.int32))
     
     def reset(self, env):
+        # 初始化上次发射导弹的时间（设为负值表示初始可发射）
+        self._last_shoot_time = {agent_id: -self.min_attack_interval for agent_id in env.agents.keys()}
+
+        # 初始化发射动作标识
         self._shoot_action = {agent_id: 0 for agent_id in env.agents.keys()}
+
+        # 初始化剩余导弹数量
         self.remaining_missiles = {agent_id: agent.num_missiles for agent_id, agent in env.agents.items()}
         super().reset(env)
     
     def step(self, env):
         SingleCombatTask.step(self, env)
         for agent_id, agent in env.agents.items():
-            # [RL-based missile launch with limited condition]
-            shoot_flag = agent.is_alive and self._shoot_action[agent_id] and self.remaining_missiles[agent_id] > 0
+            # [基于RL的导弹发射，带限制条件]
+            target = agent.enemies[0]
+            target_vec = target.get_position() - agent.get_position()       # 敌机的相对位置
+            target_distance = np.linalg.norm(target_vec)                    # 敌机的距离
+            heading = agent.get_velocity()                                  # 本机航向
+            velocity = np.linalg.norm(heading)                              # 本机的速度值
+
+            attack_angle = np.rad2deg(                                      # 攻击角度（飞机航向与目标方向的夹角）
+                np.arccos(np.clip(np.sum(target * heading) / (target_distance * np.linalg.norm(heading) + 1e-8), -1, 1)))
+            shoot_interval = env.current_step - self._last_shoot_time[agent_id]  # 距离上次发射的时间间隔
+
+            # 判断是否满足发射条件
+            shoot_flag = (agent.is_alive and self._shoot_action[agent_id] and self.remaining_missiles[agent_id] > 0
+                          and attack_angle <= self.max_attack_angle and target_distance <= self.max_attack_distance
+                          and shoot_interval >= self.min_attack_interval and velocity > 200)
             if shoot_flag:
                 new_missile_uid = agent_id + str(self.remaining_missiles[agent_id])
                 env.add_temp_simulator(
                     MissileSimulator.create(parent=agent, target=agent.enemies[0], uid=new_missile_uid))
                 self.remaining_missiles[agent_id] -= 1
-
+                self._last_shoot_time[agent_id] = env.current_step
 
 class HierarchicalSingleCombatShootTask(HierarchicalSingleCombatTask, SingleCombatShootMissileTask):
     def __init__(self, config: str):
