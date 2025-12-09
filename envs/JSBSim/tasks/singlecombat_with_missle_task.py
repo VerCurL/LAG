@@ -246,10 +246,15 @@ class SingleCombatShootMissileTask(SingleCombatDodgeMissileTask):
                 np.arccos(np.clip(np.sum(target_loc * heading) / (target_distance * np.linalg.norm(heading) + 1e-8), -1, 1)))
             shoot_interval = env.current_step - self._last_shoot_time[agent_id]  # 距离上次发射的时间间隔
 
+            # print("[debug noShoot]attack_angle: ", attack_angle, "self.max_attack_angle: ", self.max_attack_angle)
+            # print("               target_distance: ", target_distance, "self.max_target_distance: ", self.max_attack_distance)
+            # print("               shoot_interval: ", shoot_interval, "self.min_attack_interval: ", self.min_attack_interval)
+            # print("               velocity: ", velocity)
+
             # 判断是否满足发射条件
             shoot_flag = (agent.is_alive and self._shoot_action[agent_id] and self.remaining_missiles[agent_id] > 0
                           and attack_angle <= self.max_attack_angle and target_distance <= self.max_attack_distance
-                          and shoot_interval >= self.min_attack_interval and velocity > 200)
+                          and shoot_interval >= self.min_attack_interval and velocity > 150)
             if shoot_flag:
                 new_missile_uid = agent_id + str(self.remaining_missiles[agent_id])
                 env.add_temp_simulator(

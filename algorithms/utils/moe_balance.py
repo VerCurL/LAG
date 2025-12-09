@@ -104,8 +104,10 @@ class MoELayer(nn.Module):
         with torch.no_grad():
             # 对每个 token 选的 top-k 做计数
             flat_idx = top_k_idx.reshape(-1)
-            for idx in flat_idx:
-                self.load_counter[idx] += 1
+            with torch.no_grad():
+                # flat_idx shape: [batch_size * top_k]
+                counts = torch.bincount(flat_idx, minlength=self.num_special_experts)
+                self.load_counter += counts.to(self.load_counter.dtype)
 
         # -------- gather 专业专家输出 --------
         selected_special = special_outputs.gather(                              # [batch_size, top_k, expert_dim]

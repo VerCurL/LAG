@@ -142,3 +142,4 @@ dmypy.json
 .pyre/
 render_backup/
 gaming_result/
+backup/
