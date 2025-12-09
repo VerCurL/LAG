@@ -74,32 +74,54 @@ class MoELayer(nn.Module):
         # -------------------------------------------------
         # 3) Sparse MoE：仅计算 top-k 专家（避免计算全部专家）
         # -------------------------------------------------
-        # flatten B×k → one expert list
-        unique_ids = torch.unique(top_k_idx)  # 去重后真正需要的专家数量
-        # 专家一般重复率高：比如 top-k=2, S=16 → unique 数通常≈3–6个
+        # 展开 topk_idx → [B*k]
+        flat_idx = top_k_idx.reshape(-1)
+        # 对应的 batch id → [0,0,1,1,2,2,...]
+        batch_ids = torch.arange(batch_size, device=x.device).repeat_interleave(self.top_k)
 
-        special_outputs = {}
-        for idx in unique_ids.tolist():
-            # 对每个真正选择到的专家执行一次 MLP
-            out = self.special_experts[idx](x)  # [batch_size, H]
-            special_outputs[idx] = out  # 缓存结果避免重复计算
+        # 对 flat_idx 排序，使得相同 expert_id 聚到一起
+        sort_val, sort_idx = torch.sort(flat_idx)
+        sorted_expert_ids = sort_val                    # [batch_size * top_k]
+        sorted_batch_ids = batch_ids[sort_idx]          # 与 expert 对应的样本 id
+
+        # 找出 unique expert 及其分组位置（完全 GPU）
+        unique_experts, counts = torch.unique_consecutive(sorted_expert_ids, return_counts=True)
+
+        # 拆分 sorted_batch_ids 为列表，每个列表对应同一个 expert 的 batch
+        batch_splits = torch.split(sorted_batch_ids, counts.tolist())
 
         # -------------------------------------------------
-        # 4) 根据 top-k 索引将专家结果组合成 [B, k*H]
+        # 4) 对每个专业专家执行专业版 MLP（仅针对需要的 batch 子集）
         # -------------------------------------------------
-        selected = []
-        for i in range(self.top_k):
-            expert_idx = top_k_idx[:, i]  # [batch_size]
-            # vector gather：按 expert_idx 取出对应专家输出
-            # 为避免 gather 的随机访问 → 用列表索引构造 batch 输出
-            batch_out = torch.stack(
-                [special_outputs[e.item()][b] for b, e in enumerate(expert_idx)],
-                dim=0
-            )  # [B, H]
-            selected.append(batch_out)
+        special_out_chunks = []
 
-        # 拼接 k 个专家输出 → [batch_size, top_k * expert_dim]
-        special_out = torch.cat(selected, dim=-1)
+        for e_id, b_ids in zip(unique_experts.tolist(), batch_splits):
+            selected_x = x[b_ids]  # [num_b, D]
+            expert_out = self.special_experts[e_id](selected_x)  # [num_b, H]
+            special_out_chunks.append((b_ids, expert_out))
+
+        # ============================================================
+        # 5) 将所有专家输出组装回 full batch 的 [B, k*H]
+        # ============================================================
+
+        # 用 zeros 初始化，然后把每个专家输出写入
+        special_out = torch.zeros(batch_size, self.top_k, self._size[-1], device=x.device)
+
+        # 因为我们已经根据 topk_idx 对 expert 路由了，这里按 batch 维度填回
+        for b_ids, expert_out in special_out_chunks:
+            # b_ids: 对应 batch 行
+            # 对应每个 batch 在 top-k 的哪个位置？
+            # topk_idx[b] == expert_id → 得到 mask。
+            mask = (top_k_idx[b_ids].unsqueeze(-1) == unique_experts.unsqueeze(0))
+
+            # mask: [num_b, k] → 找出哪个 k 位置对应这个专家
+            pos = mask.nonzero(as_tuple=True)[1]  # 每个 batch 对应的专家位置
+
+            # 写入对应 (batch, k位置, :)
+            special_out[b_ids, pos] = expert_out
+
+        # reshape → [batch_size, k * output_dim]
+        special_out = special_out.reshape(batch_size, -1)
 
         # -------------------------------------------------
         # 5) 拼接通用专家 + 专业专家输出 → [B, (G+k)*H]
