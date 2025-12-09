@@ -94,32 +94,31 @@ class MoELayer(nn.Module):
         # 4) 对每个专业专家执行专业版 MLP（仅针对需要的 batch 子集）
         # -------------------------------------------------
         special_out_chunks = []
-
         for e_id, b_ids in zip(unique_experts.tolist(), batch_splits):
             selected_x = x[b_ids]  # [num_b, D]
-            expert_out = self.special_experts[e_id](selected_x)  # [num_b, H]
-            special_out_chunks.append((b_ids, expert_out))
+            expert_out = self.special_experts[e_id](selected_x)     # [num_b, H]
+            special_out_chunks.append((e_id, b_ids, expert_out))
 
         # ============================================================
         # 5) 将所有专家输出组装回 full batch 的 [B, k*H]
         # ============================================================
-
         # 用 zeros 初始化，然后把每个专家输出写入
+        # [batch_size, top_k, output_size]
         special_out = torch.zeros(batch_size, self.top_k, self._size[-1], device=x.device)
 
-        # 因为我们已经根据 topk_idx 对 expert 路由了，这里按 batch 维度填回
-        for b_ids, expert_out in special_out_chunks:
-            # b_ids: 对应 batch 行
-            # 对应每个 batch 在 top-k 的哪个位置？
-            # topk_idx[b] == expert_id → 得到 mask。
-            mask = (top_k_idx[b_ids].unsqueeze(-1) == unique_experts.unsqueeze(0))
-
-            # mask: [num_b, k] → 找出哪个 k 位置对应这个专家
-            pos = mask.nonzero(as_tuple=True)[1]  # 每个 batch 对应的专家位置
-
-            # 写入对应 (batch, k位置, :)
+        # 一个快速的专家 → topk位置映射表（避免重复计算）
+        # positions[i, x] = 专家 i 在 batch x 中对应的 top_k 位置
+        positions = torch.full((self.num_special_experts, batch_size), -1, device=x.device, dtype=torch.long)
+        b_ids_all = torch.arange(batch_size, device=x.device)
+        for j in range(self.top_k):
+            e_ids = top_k_idx[:, j]             # [batch_size]，top_k为j的expert_id
+            positions[e_ids, b_ids_all] = j     # 写入专家对应位置，[num_special_expert, batch_size, 1]
+        # 根据专家输出填回 special_out
+        for e_id, b_ids, expert_out in special_out_chunks:
+            # 该专家 e_id 对这些 batch 的 top-k 位置
+            pos = positions[e_id, b_ids]        # [num_b]，每个 batch 的 topk 位置
+            # 直接写入
             special_out[b_ids, pos] = expert_out
-
         # reshape → [batch_size, k * output_dim]
         special_out = special_out.reshape(batch_size, -1)
 
