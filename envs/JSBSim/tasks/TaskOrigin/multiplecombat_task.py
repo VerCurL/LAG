@@ -3,13 +3,13 @@ from gymnasium import spaces
 from typing import Tuple
 import torch
 
-from ..tasks import SingleCombatTask
-from ..core.catalog import Catalog as c
-from ..core.simulatior import MissileSimulator
-from ..reward_functions import AltitudeReward, PostureReward, EventDrivenReward, MissilePostureReward
-from ..termination_conditions import ExtremeState, LowAltitude, Overload, Timeout, SafeReturn
-from ..utils.utils import get_AO_TA_R, LLA2NEU, get_root_dir
-from ..model.baseline_actor import BaselineActor
+from .singlecombat_task import SingleCombatTask
+from envs.JSBSim.core.catalog import Catalog as c
+from envs.JSBSim.core.simulatior import MissileSimulator
+from envs.JSBSim.reward_functions import AltitudeReward, PostureReward, EventDrivenReward, MissilePostureReward
+from envs.JSBSim.termination_conditions import ExtremeState, LowAltitude, Overload, Timeout, SafeReturn
+from envs.JSBSim.utils.utils import get_AO_TA_R, LLA2NEU, get_root_dir
+from envs.JSBSim.model.baseline_actor import BaselineActor
 
 
 class MultipleCombatTask(SingleCombatTask):

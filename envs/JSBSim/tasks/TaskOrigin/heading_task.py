@@ -1,9 +1,9 @@
 import numpy as np
 from gymnasium import spaces
-from .task_base import BaseTask
-from ..core.catalog import Catalog as c
-from ..reward_functions import AltitudeReward, HeadingReward
-from ..termination_conditions import ExtremeState, LowAltitude, Overload, Timeout, UnreachHeading
+from envs.JSBSim.tasks.task_base import BaseTask
+from envs.JSBSim.core.catalog import Catalog as c
+from envs.JSBSim.reward_functions import AltitudeReward, HeadingReward
+from envs.JSBSim.termination_conditions import ExtremeState, LowAltitude, Overload, Timeout, UnreachHeading
 
 
 class HeadingTask(BaseTask):

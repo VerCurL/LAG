@@ -1,10 +1,7 @@
 import numpy as np
 import math
 from .env_base import BaseEnv
-from ..tasks import SingleCombatTask, SingleCombatDodgeMissileTask, HierarchicalSingleCombatDodgeMissileTask, \
-    HierarchicalSingleCombatShootTask, SingleCombatShootMissileTask, HierarchicalSingleCombatTask
-from ..human_task.HumanSingleCombatTask import  HumanSingleCombatTask
-
+from ..tasks import HierarchicalSingleCombatShootTask, LC_HierarchicalSingleCombatShootTask
 
 class SingleCombatEnv(BaseEnv):
     """
@@ -18,20 +15,14 @@ class SingleCombatEnv(BaseEnv):
 
     def load_task(self):
         taskname = getattr(self.config, 'task', None)
-        if taskname == 'singlecombat':
-            self.task = SingleCombatTask(self.config)
-        elif taskname == 'hierarchical_singlecombat':
-            self.task = HierarchicalSingleCombatTask(self.config)
-        elif taskname == 'singlecombat_dodge_missile':
-            self.task = SingleCombatDodgeMissileTask(self.config)
-        elif taskname == 'singlecombat_shoot':
-            self.task = SingleCombatShootMissileTask(self.config)
-        elif taskname == 'hierarchical_singlecombat_dodge_missile':
-            self.task = HierarchicalSingleCombatDodgeMissileTask(self.config)
-        elif taskname == 'hierarchical_singlecombat_shoot':
-            self.task = HierarchicalSingleCombatShootTask(self.config)
-        elif taskname == 'HumanSingleCombat':
-            self.task = HumanSingleCombatTask(self.config)
+
+        if taskname == 'hierarchical_singlecombat_shoot':
+            if self.config.policy_type == "default":
+                self.task = HierarchicalSingleCombatShootTask(self.config)
+            elif self.config.policy_type == "lc":
+                self.task = LC_HierarchicalSingleCombatShootTask(self.config)
+            else:
+                raise NotImplementedError(f"Policy type {self.config.policy_type} not implemented!")
         else:
             raise NotImplementedError(f"Unknown taskname: {taskname}")
 

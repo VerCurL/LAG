@@ -3,11 +3,9 @@ from gymnasium import spaces
 from collections import deque
 
 from .singlecombat_task import SingleCombatTask, HierarchicalSingleCombatTask
-from ..core.simulatior import MissileSimulator
-from ..reward_functions import (
-    AltitudeReward, PostureReward, MissilePostureReward, EventDrivenReward, ShootPenaltyReward,
-    BXY_AltitudeReward, BXY_PostureReward, BXY_EventDrivenReward, BXY_VelReward, BXY_ShootPenaltyReward, BXY_MissilePostureReward)
-from ..utils.utils import LLA2NEU, get_AO_TA_R
+from envs.JSBSim.core.simulatior import MissileSimulator
+from envs.JSBSim.reward_functions import LC_EventDrivenReward, LC_EnergyReward, LC_AttackWindowReward, LC_DogdeAttackReward
+from envs.JSBSim.utils.utils import LLA2NEU, get_AO_TA_R
 
 
 class SingleCombatDodgeMissileTask(SingleCombatTask):
@@ -19,25 +17,6 @@ class SingleCombatDodgeMissileTask(SingleCombatTask):
         self.max_attack_angle = getattr(self.config, 'max_attack_angle', 180)           # 最大攻击角度
         self.max_attack_distance = getattr(self.config, 'max_attack_distance', np.inf)  # 最大攻击距离
         self.min_attack_interval = getattr(self.config, 'min_attack_interval', 125)     # 最小攻击间隔（冷却时间）
-
-        if self.policy_type == "default":
-            self.reward_functions = [
-                PostureReward(self.config),
-                MissilePostureReward(self.config),
-                AltitudeReward(self.config),
-                EventDrivenReward(self.config)
-            ]
-        elif self.policy_type == "fkr":
-            self.reward_functions = []
-        elif self.policy_type == "bxy":
-            self.reward_functions = [
-                BXY_PostureReward(self.config),
-                BXY_MissilePostureReward(self.config),
-                BXY_AltitudeReward(self.config),
-                BXY_EventDrivenReward(self.config)
-            ]
-        else:
-            raise NotImplementedError(f"Unknown policy type: {self.policy_type}")
 
     def load_observation_space(self):
         self.observation_space = spaces.Box(low=-10, high=10., shape=(21,))
@@ -146,25 +125,6 @@ class HierarchicalSingleCombatDodgeMissileTask(HierarchicalSingleCombatTask, Sin
     def __init__(self, config: str):
         HierarchicalSingleCombatTask.__init__(self, config)
 
-        if self.policy_type == "default":
-            self.reward_functions = [
-                PostureReward(self.config),
-                MissilePostureReward(self.config),
-                AltitudeReward(self.config),
-                EventDrivenReward(self.config)
-            ]
-        elif self.policy_type == "fkr":
-            pass
-        elif self.policy_type == "bxy":
-            self.reward_functions = [
-                BXY_PostureReward(self.config),
-                BXY_MissilePostureReward(self.config),
-                BXY_AltitudeReward(self.config),
-                BXY_EventDrivenReward(self.config)
-            ]
-        else:
-            raise NotImplementedError(f"Unknown policy type: {self.policy_type}")
-
     def load_observation_space(self):
         return SingleCombatDodgeMissileTask.load_observation_space(self)
 
@@ -188,25 +148,10 @@ class HierarchicalSingleCombatDodgeMissileTask(HierarchicalSingleCombatTask, Sin
 class SingleCombatShootMissileTask(SingleCombatDodgeMissileTask):
     def __init__(self, config):
         super().__init__(config)
-
-        if self.policy_type == "default":
-            self.reward_functions = [
-                PostureReward(self.config),
-                AltitudeReward(self.config),
-                EventDrivenReward(self.config),
-                ShootPenaltyReward(self.config)
-            ]
-        elif self.policy_type == "fkr":
-            self.reward_functions = []
-        elif self.policy_type == "bxy":
-            self.reward_functions = [
-                BXY_PostureReward(self.config),
-                BXY_AltitudeReward(self.config),
-                BXY_EventDrivenReward(self.config),
-                BXY_ShootPenaltyReward(self.config)
-            ]
-        else:
-            raise NotImplementedError(f"Unknown policy type: {self.policy_type}")
+        self.shoot_flag = False
+        self.max_missile_attack_distance = getattr(self.config, "max_missile_attack_distance", 14000)
+        self.min_missile_attack_distance = getattr(self.config, "min_missile_attack_distance", 4000)
+        self.optimal_air_combat_height = getattr(self.config, "optimal_air_combat_height", 20000)
 
     def load_observation_space(self):
         self.observation_space = spaces.Box(low=-10, high=10., shape=(21,))
@@ -246,16 +191,11 @@ class SingleCombatShootMissileTask(SingleCombatDodgeMissileTask):
                 np.arccos(np.clip(np.sum(target_loc * heading) / (target_distance * np.linalg.norm(heading) + 1e-8), -1, 1)))
             shoot_interval = env.current_step - self._last_shoot_time[agent_id]  # 距离上次发射的时间间隔
 
-            # print("[debug noShoot]attack_angle: ", attack_angle, "self.max_attack_angle: ", self.max_attack_angle)
-            # print("               target_distance: ", target_distance, "self.max_target_distance: ", self.max_attack_distance)
-            # print("               shoot_interval: ", shoot_interval, "self.min_attack_interval: ", self.min_attack_interval)
-            # print("               velocity: ", velocity)
-
             # 判断是否满足发射条件
-            shoot_flag = (agent.is_alive and self._shoot_action[agent_id] and self.remaining_missiles[agent_id] > 0
+            self.shoot_flag = (agent.is_alive and self._shoot_action[agent_id] and self.remaining_missiles[agent_id] > 0
                           and attack_angle <= self.max_attack_angle and target_distance <= self.max_attack_distance
                           and shoot_interval >= self.min_attack_interval and velocity > 150)
-            if shoot_flag:
+            if self.shoot_flag:
                 new_missile_uid = agent_id + str(self.remaining_missiles[agent_id])
                 env.add_temp_simulator(
                     MissileSimulator.create(parent=agent, target=agent.enemies[0], uid=new_missile_uid))
@@ -266,25 +206,12 @@ class HierarchicalSingleCombatShootTask(HierarchicalSingleCombatTask, SingleComb
     def __init__(self, config: str):
         HierarchicalSingleCombatTask.__init__(self, config)
 
-        if self.policy_type == "default":
-            self.reward_functions = [
-                PostureReward(self.config),
-                AltitudeReward(self.config),
-                EventDrivenReward(self.config),
-                ShootPenaltyReward(self.config)
-            ]
-        elif self.policy_type == "fkr":
-            self.reward_functions = []
-        elif self.policy_type == "bxy":
-            self.reward_functions = [
-                BXY_PostureReward(self.config),
-                BXY_AltitudeReward(self.config),
-                BXY_EventDrivenReward(self.config),
-                BXY_ShootPenaltyReward(self.config),
-                BXY_VelReward(self.config)
-            ]
-        else:
-            raise NotImplementedError(f"Unknown policy type: {self.policy_type}")
+        self.reward_functions = [
+            LC_EventDrivenReward(self.config),
+            LC_EnergyReward(self.config),
+            LC_AttackWindowReward(self.config),
+            LC_DogdeAttackReward(self.config)
+        ]
 
     def load_observation_space(self):
         return SingleCombatShootMissileTask.load_observation_space(self)

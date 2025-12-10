@@ -319,6 +319,7 @@ def _get_policy_type(parser: argparse.ArgumentParser):
     """
     group = parser.add_argument_group("Policy parameters")
     group.add_argument("--policy-type", type=str, default='default',
+                       choices=["default", "fkr", "bxy", "lc"],
                        help='the type of train policy. ')
     return parser
 

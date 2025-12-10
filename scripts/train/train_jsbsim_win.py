@@ -15,7 +15,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath
 from config import get_config
 from utils.logger import AlgorithmsLogger
 from runner.share_jsbsim_runner import ShareJSBSimRunner
-from envs.JSBSim.envs import SingleCombatEnv, SingleControlEnv, MultipleCombatEnv
+from envs.JSBSim.envs import SingleCombatEnv
 from envs.env_wrappers import SubprocVecEnv, DummyVecEnv, ShareSubprocVecEnv, ShareDummyVecEnv
 from runner.tacview import Tacview
 
@@ -24,26 +24,16 @@ def make_train_env(all_args):
         def init_env():
             if all_args.env_name == "SingleCombat":
                 env = SingleCombatEnv(all_args.scenario_name, all_args.policy_type)
-            elif all_args.env_name == "SingleControl":
-                env = SingleControlEnv(all_args.scenario_name, all_args.policy_type)
-            elif all_args.env_name == "MultipleCombat":
-                env = MultipleCombatEnv(all_args.scenario_name, all_args.policy_type)
             else:
                 logging.error("Can not support the " + all_args.env_name + "environment.")
                 raise NotImplementedError
             env.seed(all_args.seed + rank * 1000)
             return env
         return init_env
-    if all_args.env_name == "MultipleCombat":
-        if all_args.n_rollout_threads == 1:
-            return ShareDummyVecEnv([get_env_fn(0)])
-        else:
-            return ShareSubprocVecEnv([get_env_fn(i) for i in range(all_args.n_rollout_threads)])
+    if all_args.n_rollout_threads == 1:
+        return DummyVecEnv([get_env_fn(0)])
     else:
-        if all_args.n_rollout_threads == 1:
-            return DummyVecEnv([get_env_fn(0)])
-        else:
-            return SubprocVecEnv([get_env_fn(i) for i in range(all_args.n_rollout_threads)])
+        return SubprocVecEnv([get_env_fn(i) for i in range(all_args.n_rollout_threads)])
 
 
 def make_eval_env(all_args):
@@ -51,26 +41,16 @@ def make_eval_env(all_args):
         def init_env():
             if all_args.env_name == "SingleCombat":
                 env = SingleCombatEnv(all_args.scenario_name, all_args.policy_type)
-            elif all_args.env_name == "SingleControl":
-                env = SingleControlEnv(all_args.scenario_name, all_args.policy_type)
-            elif all_args.env_name == "MultipleCombat":
-                env = MultipleCombatEnv(all_args.scenario_name, all_args.policy_type)
             else:
                 logging.error("Can not support the " + all_args.env_name + "environment.")
                 raise NotImplementedError
             env.seed(all_args.seed * 50000 + rank * 1000)
             return env
         return init_env
-    if all_args.env_name == "MultipleCombat":
-        if all_args.n_eval_rollout_threads == 1:
-            return ShareDummyVecEnv([get_env_fn(0)])
-        else:
-            return ShareSubprocVecEnv([get_env_fn(i) for i in range(all_args.n_eval_rollout_threads)])
+    if all_args.n_eval_rollout_threads == 1:
+        return DummyVecEnv([get_env_fn(0)])
     else:
-        if all_args.n_eval_rollout_threads == 1:
-            return DummyVecEnv([get_env_fn(0)])
-        else:
-            return SubprocVecEnv([get_env_fn(i) for i in range(all_args.n_eval_rollout_threads)])
+        return SubprocVecEnv([get_env_fn(i) for i in range(all_args.n_eval_rollout_threads)])
 
 
 def parse_args(args, parser):
@@ -151,14 +131,12 @@ def main(args):
     }
 
     # run experiments
-    if all_args.env_name == "MultipleCombat":
-        runner = ShareJSBSimRunner(config)
+    if all_args.use_selfplay:
+        from runner.selfplay_jsbsim_runner import SelfplayJSBSimRunner as Runner
     else:
-        if all_args.use_selfplay:
-            from runner.selfplay_jsbsim_runner import SelfplayJSBSimRunner as Runner
-        else:
-            from runner.jsbsim_runner import JSBSimRunner as Runner
-        runner = Runner(config)
+        from runner.jsbsim_runner import JSBSimRunner as Runner
+    runner = Runner(config)
+
     try:
         runner.run()
     except BaseException:
@@ -176,11 +154,11 @@ if __name__ == "__main__":
     # 2v2参数配置
     main([
         '--env-name', 'SingleCombat',
-        '--algorithm-name', 'ppoMoEBalance',
+        '--algorithm-name', 'ppo',
         '--scenario-name', '1v1/ShootMissile/HierarchySelfplay',
         '--experiment-name', 'v1',
         '--seed', '1',
-        '--policy-type', 'default',
+        '--policy-type', 'lc',
         '--n-training-threads', '1',
         '--n-rollout-threads', '32',
         '--cuda',
@@ -202,8 +180,9 @@ if __name__ == "__main__":
         '--clip-params', '0.2',
         '--max-grad-norm', '2',
         '--entropy-coef', '1e-3',
+        '--hidden-size', '128 128',
         # MoE网络参数
-        '--expert_hidden_size', '32 32',
+        '--expert-hidden-size', '32 32',
         '--num-general-experts', '2',
         '--num-special-experts', '6',
         '--top-k', '2',
