@@ -169,7 +169,12 @@ if __name__ == "__main__":
         '--clip-params', '0.2',
         '--max-grad-norm', '2',
         '--entropy-coef', '1e-3',
-        '--hidden-size', '128 128',
+        '--hidden-size', '256 256',
+        # MoE网络参数
+        '--expert-hidden-size', '32 32',
+        '--num-general-experts', '4',
+        '--num-special-experts', '12',
+        '--top-k', '4',
         '--act-hidden-size', '128 128',
         '--recurrent-hidden-size', '128',
         '--recurrent-hidden-layers', '1',
