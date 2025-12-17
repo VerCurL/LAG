@@ -70,4 +70,4 @@ class PPOMoEActor(nn.Module):
 
         action_log_probs, dist_entropy = self.act.evaluate_actions(actor_features, action, active_masks)
 
-        return action_log_probs, dist_entropy, self.base.record_info
+        return action_log_probs, dist_entropy, self.moe.record_info
