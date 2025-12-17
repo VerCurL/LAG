@@ -1,5 +1,5 @@
 import numpy as np
-from .reward_function_base import BaseRewardFunction
+from envs.JSBSim.reward_functions.reward_function_base import BaseRewardFunction
 
 
 class AltitudeReward(BaseRewardFunction):

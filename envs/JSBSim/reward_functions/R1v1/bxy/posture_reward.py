@@ -1,6 +1,6 @@
 import numpy as np
 from wandb import agent
-from .reward_function_base import BaseRewardFunction
+from envs.JSBSim.reward_functions.reward_function_base import BaseRewardFunction
 from envs.JSBSim.utils.utils import get_AO_TA_R
 
 

@@ -1,5 +1,5 @@
 import numpy as np
-from .reward_function_base import BaseRewardFunction
+from envs.JSBSim.reward_functions.reward_function_base import BaseRewardFunction
 from envs.JSBSim.core.catalog import Catalog as c
 
 change = 0.3048

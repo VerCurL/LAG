@@ -1,7 +1,7 @@
 import random
 
 import numpy as np
-from .reward_function_base import BaseRewardFunction
+from envs.JSBSim.reward_functions.reward_function_base import BaseRewardFunction
 import math
 from envs.JSBSim.core.catalog import Catalog as c
 from envs.JSBSim.utils.utils import LLA2NEU, get_AO_TA_R

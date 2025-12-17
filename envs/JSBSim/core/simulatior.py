@@ -320,6 +320,20 @@ class AircraftSimulator(BaseSimulator):
         else:
             raise ValueError(f"prop type unhandled: {type(prop)} ({prop})")
 
+    def check_all_missile_warning(self):
+        missiles = []
+        for missile in self.under_missiles:
+            if missile.is_alive:
+                missiles.append(missile)
+        return missiles
+
+    def update_missile_avoid_record(self):
+        missiles = []
+        for missile in self.under_missiles:
+            if not missile.is_alive and self.is_alive:
+                missiles.append(missile)
+        return missiles
+
     def check_missile_warning(self):
         for missile in self.under_missiles:
             if missile.is_alive:
