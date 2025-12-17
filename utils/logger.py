@@ -40,7 +40,7 @@ class AlgorithmsLogger:
                     # "win_rate"                      # 胜率
                 ]
                 self.writer.writerow(header)
-            elif self.algorithm_name in ["ppoMoE", "ppoMoEBalance"]:
+            elif self.algorithm_name == "ppoMoE":
                 self.expert_usage_len = info["expert_usage_len"]
                 header = [
                     "episode",
@@ -74,7 +74,7 @@ class AlgorithmsLogger:
         # 在第一次 log 时写入表头（因为这时才能拿到 expert_usage 的长度）
         if self.first_write:
             info = {}
-            if self.algorithm_name in ["ppoMoE", "ppoMoEBalance"]:
+            if self.algorithm_name == "ppoMoE":
                 info["expert_usage_len"] = len(expert_usage)
 
             # expert_usage 必须可迭代
@@ -93,7 +93,7 @@ class AlgorithmsLogger:
             data.get("gate_max_prob", None),
         ]
 
-        if self.algorithm_name in ["ppoMoE", "ppoMoEBalance"]:
+        if self.algorithm_name == "ppoMoE":
             # 写入 expert_usage 展开
             if expert_usage is None:
                 row += [None] * self.expert_usage_len
