@@ -26,3 +26,14 @@ from .R1v1.lc import EventDrivenReward as LC_EventDrivenReward
 from .R1v1.lc import EnergyReward as LC_EnergyReward
 from .R1v1.lc import AttackWindowReward as LC_AttackWindowReward
 from .R1v1.lc import DogdeAttackReward as LC_DogdeAttackReward
+
+"""
+fkr-4v4奖励系统
+"""
+from .R4v4.fkr import EventDrivenReward as FKR_4v4_EventDrivenReward
+from .R4v4.fkr import OverallSituationReward as FKR_4v4_OverallSituationReward
+from .R4v4.fkr import AltitudeReward as FKR_4v4_AltitudeReward
+from .R4v4.fkr import FlightQualityReward as FKR_4v4_FlightQualityReward
+from .R4v4.fkr import MissileAvoidReward as FKR_4v4_MissileAvoidReward
+from .R4v4.fkr import AttackWindowReward as FKR_4v4_AttackWindowReward
+from .R4v4.fkr import EnergyReward as FKR_4v4_EnergyReward

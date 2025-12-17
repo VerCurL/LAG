@@ -10,3 +10,8 @@ from .TaskOrigin.multiplecombat_task import HierarchicalMultipleCombatShootTask,
 lc-任务task
 """
 from .Task1v1.lc import HierarchicalSingleCombatShootTask as LC_HierarchicalSingleCombatShootTask
+
+"""
+fkr-任务task
+"""
+from .Task4v4.fkr import HierarchicalMultipleCombatShootTask as FKR_4v4_HierarchicalMultipleCombatShootTask
