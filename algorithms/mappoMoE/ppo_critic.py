@@ -1,17 +1,15 @@
 import torch
 import torch.nn as nn
 
-from ..utils.mlp import MLPLayer
-from ..utils.moe import MoEBase
+from ..utils.mlp import MLPBase, MLPLayer
 from ..utils.gru import GRULayer
 from ..utils.utils import check
 
 
-class PPOMoECritic(nn.Module):
+class PPOCritic(nn.Module):
     def __init__(self, args, obs_space, device=torch.device("cpu")):
-        super(PPOMoECritic, self).__init__()
+        super(PPOCritic, self).__init__()
         # network config
-        self.expert_hidden_size = args.expert_hidden_size
         self.hidden_size = args.hidden_size
         self.act_hidden_size = args.act_hidden_size
         self.activation_id = args.activation_id
@@ -21,11 +19,7 @@ class PPOMoECritic(nn.Module):
         self.recurrent_hidden_layers = args.recurrent_hidden_layers
         self.tpdv = dict(dtype=torch.float32, device=device)
         # (1) feature extraction module
-        self.num_general_experts = args.num_general_experts
-        self.num_special_experts = args.num_special_experts
-        self.top_k = args.top_k
-        self.base = MoEBase(obs_space, self.expert_hidden_size, self.activation_id, self.use_feature_normalization,
-                            self.num_general_experts, self.num_special_experts, self.top_k)
+        self.base = MLPBase(obs_space, self.hidden_size, self.activation_id, self.use_feature_normalization)
         # (2) rnn module 
         input_size = self.base.output_size
         if self.use_recurrent_policy:

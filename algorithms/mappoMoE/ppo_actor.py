@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
 
-from ..utils.moe import MoEBase
+from ..utils.mlp import MLPBase
 from ..utils.gru import GRULayer
+from ..utils.moe import MoELayer
 from ..utils.act import ACTLayer
 from ..utils.utils import check
 
@@ -12,8 +13,8 @@ class PPOMoEActor(nn.Module):
         super(PPOMoEActor, self).__init__()
         # network config
         self.gain = args.gain
-        self.expert_hidden_size = args.expert_hidden_size
         self.hidden_size = args.hidden_size
+        self.expert_hidden_size = args.expert_hidden_size
         self.act_hidden_size = args.act_hidden_size
         self.activation_id = args.activation_id
         self.use_feature_normalization = args.use_feature_normalization
@@ -22,19 +23,21 @@ class PPOMoEActor(nn.Module):
         self.recurrent_hidden_layers = args.recurrent_hidden_layers
         self.tpdv = dict(dtype=torch.float32, device=device)
         # (1) feature extraction module
-        self.num_general_experts = args.num_general_experts
-        self.num_special_experts = args.num_special_experts
-        self.top_k = args.top_k
-        self.base = MoEBase(obs_space, self.expert_hidden_size, self.activation_id, self.use_feature_normalization,
-                            self.num_general_experts, self.num_special_experts, self.top_k)
+        self.base = MLPBase(obs_space, self.hidden_size, self.activation_id, self.use_feature_normalization)
         # (2) rnn module
         input_size = self.base.output_size
         if self.use_recurrent_policy:
             self.rnn = GRULayer(input_size, self.recurrent_hidden_size, self.recurrent_hidden_layers)
             input_size = self.rnn.output_size
-        # (3) act module
+        # (3) moe module
+        self.num_general_experts = args.num_general_experts
+        self.num_special_experts = args.num_special_experts
+        self.top_k = args.top_k
+        self.moe = MoELayer(input_size, self.expert_hidden_size, self.activation_id, self.num_general_experts,
+                            self.num_special_experts, self.top_k)
+        input_size = self.moe.output_size
+        # (4) act module
         self.act = ACTLayer(act_space, input_size, self.act_hidden_size, self.activation_id, self.gain)
-
         self.to(device)
 
     def forward(self, obs, rnn_states, masks, deterministic=False):

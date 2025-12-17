@@ -128,8 +128,8 @@ def _get_network_config(parser: argparse.ArgumentParser):
     group = parser.add_argument_group("Network parameters")
     group.add_argument("--hidden-size", type=str, default='128 128',
                        help="Dimension of hidden layers for mlp pre-process networks (default '128 128')")
-    group.add_argument("--act-hidden-size", type=str, default='128 128',
-                       help="Dimension of hidden layers for actlayer (default '128 128')")
+    group.add_argument("--act-hidden-size", type=str, default='',
+                       help="Dimension of hidden layers for actlayer (default '')")
     group.add_argument("--activation-id", type=int, default=1,
                        help="Choose 0 to use Tanh, 1 to use ReLU, 2 to use LeakyReLU, 3 to use ELU (default 1)")
     group.add_argument("--use-feature-normalization", action='store_true', default=False,
