@@ -32,6 +32,8 @@ class AlgorithmsLogger:
                     "policy_entropy_loss",          # 策略熵损失
                     "value_loss",                   # 价值损失
                     "average_episode_rewards",      # 每局奖励
+                    "env_time",                     # 虚拟仿真时间
+                    "train_time",                   # 训练时间
                     "fps",                          # 每秒帧数
 
                     # "value_mean",                   # 价值均值
@@ -48,6 +50,8 @@ class AlgorithmsLogger:
                     "policy_entropy_loss",
                     "value_loss",
                     "average_episode_rewards",
+                    "env_time",                         # 虚拟仿真时间
+                    "train_time",                       # 训练时间
                     "fps",
                     "gate_entropy",
                     "gate_max_prob",
@@ -88,6 +92,8 @@ class AlgorithmsLogger:
             data.get("policy_entropy_loss", None),
             data.get("value_loss", None),
             data.get("average_episode_rewards", None),
+            data.get("env_time", None),
+            data.get("train_time", None),
             data.get("fps", None),
             data.get("gate_entropy", None),
             data.get("gate_max_prob", None),

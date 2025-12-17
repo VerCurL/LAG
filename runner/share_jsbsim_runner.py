@@ -76,6 +76,7 @@ class ShareJSBSimRunner(Runner):
 
         for episode in range(episodes):
 
+            start_env = time.time()
             for step in range(self.buffer_size):
                 # Sample actions
                 values, actions, action_log_probs, rnn_states_actor, rnn_states_critic = self.collect(step)
@@ -87,8 +88,10 @@ class ShareJSBSimRunner(Runner):
 
                 # insert data into buffer
                 self.insert(data)
+            end_env = time.time()
 
             # compute return and update network
+            start_train = time.time()
             self.compute()
             train_infos = self.train()
 
@@ -98,6 +101,7 @@ class ShareJSBSimRunner(Runner):
             # save model
             if (episode % self.save_interval == 0) or (episode == episodes - 1):
                 self.save(episode)
+            end_train = time.time()
 
             # log information
             if episode % self.log_interval == 0:
@@ -114,6 +118,8 @@ class ShareJSBSimRunner(Runner):
                                      fps))
 
                 train_infos["fps"] = fps
+                train_infos["env_time"] = end_env - start_env
+                train_infos["train_time"] = end_train - start_train
                 train_infos["average_episode_rewards"] = self.buffer.rewards.sum() / (self.buffer.masks == False).sum()
                 logging.info("average episode rewards is {}".format(train_infos["average_episode_rewards"]))
                 self.log_info(train_infos, self.total_num_steps)
