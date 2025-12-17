@@ -179,6 +179,5 @@ if __name__ == "__main__":
         '--recurrent-hidden-size', '128',
         '--recurrent-hidden-layers', '1',
         '--data-chunk-length', '8',
-        '--user-name', 'fkr',
-        '--use-prior'
+        '--user-name', 'fkr'
     ])
