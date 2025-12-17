@@ -172,9 +172,9 @@ if __name__ == "__main__":
         '--hidden-size', '256 256',
         # MoE网络参数
         '--expert-hidden-size', '32 32',
-        '--num-general-experts', '4',
-        '--num-special-experts', '12',
-        '--top-k', '4',
+        '--num-general-experts', '2',
+        '--num-special-experts', '6',
+        '--top-k', '2',
         '--act-hidden-size', '128 128',
         '--recurrent-hidden-size', '128',
         '--recurrent-hidden-layers', '1',
