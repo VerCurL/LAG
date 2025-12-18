@@ -22,9 +22,9 @@ class BaseEnv(gymnasium.Env):
     """
     metadata = {"render.modes": ["human", "txt"]}
 
-    def __init__(self, config_name: str, policy_type: str = 'fkr'):
+    def __init__(self, config_name: str, policy_type: str = 'fkr', fix_position: bool = False):
         # basic args
-        self.config = parse_config(config_name, policy_type)
+        self.config = parse_config(config_name, policy_type, fix_position)
         self.max_steps = getattr(self.config, 'max_steps', 100)  # type: int
         self.sim_freq = getattr(self.config, 'sim_freq', 60)  # type: int
         self.agent_interaction_steps = getattr(self.config, 'agent_interaction_steps', 12)  # type: int

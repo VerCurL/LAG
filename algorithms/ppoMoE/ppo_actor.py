@@ -53,7 +53,7 @@ class PPOMoEActor(nn.Module):
             beta0[attack_angle<=45] = 6
             beta0[attack_angle<=22.5] = 3
 
-        actor_features = self.base(obs)
+        actor_features, _ = self.base(obs)
 
         if self.use_recurrent_policy:
             actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
@@ -84,7 +84,7 @@ class PPOMoEActor(nn.Module):
         if active_masks is not None:
             active_masks = check(active_masks).to(**self.tpdv)
 
-        actor_features = self.base(obs)
+        actor_features, experts_out = self.base(obs)
 
         if self.use_recurrent_policy:
             actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
@@ -94,4 +94,4 @@ class PPOMoEActor(nn.Module):
         else:
             action_log_probs, dist_entropy = self.act.evaluate_actions(actor_features, action, active_masks)
 
-        return action_log_probs, dist_entropy, self.base.record_info
+        return action_log_probs, dist_entropy, experts_out, self.base.record_info

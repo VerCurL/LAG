@@ -50,7 +50,7 @@ class PPOMoEActor(nn.Module):
         if self.use_recurrent_policy:
             actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
 
-        actor_features = self.moe(actor_features)
+        actor_features, _ = self.moe(actor_features)
         actions, action_log_probs = self.act(actor_features, deterministic)
 
         return actions, action_log_probs, rnn_states
@@ -69,7 +69,7 @@ class PPOMoEActor(nn.Module):
         if self.use_recurrent_policy:
             actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
 
-        actor_features = self.moe(actor_features)
+        actor_features, experts_out = self.moe(actor_features)
         action_log_probs, dist_entropy = self.act.evaluate_actions(actor_features, action, active_masks)
 
-        return action_log_probs, dist_entropy, self.moe.record_info
+        return action_log_probs, dist_entropy, experts_out, self.moe.record_info

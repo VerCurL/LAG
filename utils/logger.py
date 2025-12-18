@@ -49,6 +49,7 @@ class AlgorithmsLogger:
                     "policy_loss",
                     "policy_entropy_loss",
                     "value_loss",
+                    "expert_out_loss",
                     "average_episode_rewards",
                     "env_time",                         # 虚拟仿真时间
                     "train_time",                       # 训练时间
@@ -91,6 +92,7 @@ class AlgorithmsLogger:
             data.get("policy_loss", None),
             data.get("policy_entropy_loss", None),
             data.get("value_loss", None),
+            data.get("expert_out_loss", None),
             data.get("average_episode_rewards", None),
             data.get("env_time", None),
             data.get("train_time", None),

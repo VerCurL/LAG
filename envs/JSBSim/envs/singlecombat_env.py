@@ -7,8 +7,8 @@ class SingleCombatEnv(BaseEnv):
     """
     SingleCombatEnv is an one-to-one competitive environment.
     """
-    def __init__(self, config_name: str, policy_type: str):
-        super().__init__(config_name, policy_type)
+    def __init__(self, config_name: str, policy_type: str, fix_position: bool):
+        super().__init__(config_name, policy_type, fix_position)
         # Env-Specific initialization here!
         assert len(self.agents.keys()) == 2, f"{self.__class__.__name__} only supports 1v1 scenarios!"
         self.init_states = None

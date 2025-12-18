@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from typing import Union, List
 from .ppo_policy import PPOMoEPolicy
 from ..utils.buffer import ReplayBuffer
@@ -18,6 +19,7 @@ class PPOMoETrainer():
         self.num_mini_batch = args.num_mini_batch
         self.value_loss_coef = args.value_loss_coef
         self.entropy_coef = args.entropy_coef
+        self.expert_out_loss_coef = args.expert_out_loss_coef
         self.use_max_grad_norm = args.use_max_grad_norm
         self.max_grad_norm = args.max_grad_norm
         # rnn configs
@@ -35,7 +37,7 @@ class PPOMoETrainer():
         value_preds_batch = check(value_preds_batch).to(**self.tpdv)
 
         # Reshape to do in a single forward pass for all steps
-        values, action_log_probs, dist_entropy, record_info\
+        values, action_log_probs, dist_entropy, experts_out, record_info\
             = policy.evaluate_actions(obs_batch, rnn_states_actor_batch, rnn_states_critic_batch,
                                       actions_batch, masks_batch)
 
@@ -67,7 +69,21 @@ class PPOMoETrainer():
 
         policy_entropy_loss = -dist_entropy.mean()
 
-        loss = policy_loss + value_loss * self.value_loss_coef + policy_entropy_loss * self.entropy_coef
+        # 专家差异化损失
+        # experts_out: [mini_batch_size, total_experts, expert_out_dim]
+        # gate_probs: [mini_batch_size, special_expert_num]
+        # top_k_idx: [mini_batch_size, top_k]
+        # sel_out: [mini_batch_size, top_k, expert_out_dim]
+        selected_experts = record_info["top_k_idx"] + policy.actor.num_general_experts
+        sel_out = experts_out.gather(1, selected_experts.unsqueeze(1).expand(-1, -1, experts_out.size(-1)))
+        # 对专家输出计算正交损失
+        normed = F.normalize(sel_out, p=2, dim=-1)                      # [mini_batch_size, top_k, expert_out_dim]
+        inner = torch.matmul(normed, normed.transpose(-1, -2))          # [mini_batch_size, top_k, top_k]
+        mask = 1 - torch.eye(inner.size(-1), device=inner.device)       # 构建一个对角线为0，非对角线为1的矩阵, [top_k, top_k]
+        expert_out_loss = (inner * mask).pow(2).sum() / (experts_out.size(0) * policy.actor.top_k * (policy.actor.top_k - 1))
+
+        loss = (policy_loss + value_loss * self.value_loss_coef + policy_entropy_loss * self.entropy_coef
+                + expert_out_loss * self.expert_out_loss_coef)
 
         # Optimize the loss function
         policy.optimizer.zero_grad()
@@ -80,14 +96,15 @@ class PPOMoETrainer():
             critic_grad_norm = get_gard_norm(policy.critic.parameters())
         policy.optimizer.step()
 
-        return (policy_loss, value_loss, policy_entropy_loss, gate_entropy, gate_max_prob, expert_usage,
-                ratio, actor_grad_norm, critic_grad_norm)
+        return (policy_loss, value_loss, policy_entropy_loss, expert_out_loss, gate_entropy, gate_max_prob,
+                expert_usage, ratio, actor_grad_norm, critic_grad_norm)
 
     def train(self, policy: PPOMoEPolicy, buffer: Union[ReplayBuffer, List[ReplayBuffer]]):
         train_info = {}
         train_info['value_loss'] = 0
         train_info['policy_loss'] = 0
         train_info['policy_entropy_loss'] = 0
+        train_info['expert_out_loss'] = 0
         train_info['gate_entropy'] = 0
         train_info['gate_max_prob'] = 0
         train_info['expert_usage'] = []
@@ -104,12 +121,13 @@ class PPOMoETrainer():
 
             for sample in data_generator:
 
-                (policy_loss, value_loss, policy_entropy_loss, gate_entropy, gate_max_prob, expert_usage,
-                 ratio, actor_grad_norm, critic_grad_norm) = self.ppo_update(policy, sample)
+                (policy_loss, value_loss, policy_entropy_loss, expert_out_loss, gate_entropy, gate_max_prob,
+                 expert_usage, ratio, actor_grad_norm, critic_grad_norm) = self.ppo_update(policy, sample)
 
                 train_info['value_loss'] += value_loss.item()
                 train_info['policy_loss'] += policy_loss.item()
                 train_info['policy_entropy_loss'] += policy_entropy_loss.item()
+                train_info['expert_out_loss'] += expert_out_loss.item()
                 train_info['gate_entropy'] += gate_entropy.item()
                 train_info['gate_max_prob'] += gate_max_prob.item()
                 if len(train_info['expert_usage']) == 0:

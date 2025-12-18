@@ -45,10 +45,10 @@ class PPOMoEPolicy:
         Returns:
             values, action_log_probs, dist_entropy
         """
-        action_log_probs, dist_entropy, record_info \
+        action_log_probs, dist_entropy, experts_out, record_info \
             = self.actor.evaluate_actions(obs, rnn_states_actor, action, masks, active_masks)
         values, _ = self.critic(cent_obs, rnn_states_critic, masks)
-        return values, action_log_probs, dist_entropy, record_info
+        return values, action_log_probs, dist_entropy, experts_out, record_info
 
     def act(self, obs, rnn_states_actor, masks, deterministic=False):
         """

@@ -81,10 +81,16 @@ class MoELayer(nn.Module):
         # -------- 记录输入数据的组数 --------
         batch_size = x.size(0)
 
+        # -------- 初始化 experts_out --------
+        experts_out = torch.zeros(batch_size, self.total_experts, self._size[-1], device=x.device)
+
         # -------- 通用专家（全部执行） --------
-        general_outputs = torch.cat(
-            [expert(x).unsqueeze(1) for expert in self.general_experts], dim=1
-        ).reshape(batch_size, -1)           # [batch_size, general_num * expert_output_dim]
+        general_outputs = []
+        for i, expert in enumerate(self.general_experts):
+            out = expert(x)                                     # [batch_size, output_dim]
+            general_outputs.append(out)
+            experts_out[:, i, :] = out                          # 填充到 experts_out
+        general_outputs = torch.cat(general_outputs, dim=-1)    # [batch_size, general_num * output_dim]
 
         # -------- gating logits + bias --------
         gate_logits = self.gate(x) + self.bias                                  # [batch_size, special_num]
@@ -95,7 +101,7 @@ class MoELayer(nn.Module):
         top_k_vals, top_k_idx = torch.topk(gate_probs, self.top_k, dim=-1)      # [batch_size, top_k]
         self.record_info["top_k_idx"] = top_k_idx.detach()
 
-        # 统计本 batch 中专家选中次数
+        # -------- 统计本 batch 中专家选中次数 --------
         with torch.no_grad():
             # 对每个 token 选的 top-k 做计数
             flat_idx = top_k_idx.reshape(-1)
@@ -104,56 +110,28 @@ class MoELayer(nn.Module):
                 counts = torch.bincount(flat_idx, minlength=self.num_special_experts)
                 self.load_counter += counts.to(self.load_counter.dtype)
 
-        # -------- Sparse MoE：仅计算 top-k 专家（避免计算全部专家） --------
-        # 对应的 batch id → [0,0,1,1,2,2,...]
-        batch_ids = torch.arange(batch_size, device=x.device).repeat_interleave(self.top_k)
+        # -------- 所有专业专家全部计算一次 --------
+        all_special_out = []
+        for e_id, expert in enumerate(self.special_experts):
+            out = expert(x)  # [batch_size, output_dim]
+            experts_out[:, self.num_general_experts + e_id, :] = out  # 填充 experts_out
+            all_special_out.append(out)
+        all_special_out = torch.stack(all_special_out, dim=1)  # [batch_size, num_special_experts, output_dim]
 
-        # 对 flat_idx 排序，使得相同 expert_id 聚到一起
-        sort_val, sort_idx = torch.sort(flat_idx)
-        sorted_expert_ids = sort_val  # [batch_size * top_k]
-        sorted_batch_ids = batch_ids[sort_idx]  # 与 expert 对应的样本 id
-
-        # 找出 unique expert 及其分组位置（完全 GPU）
-        unique_experts, counts = torch.unique_consecutive(sorted_expert_ids, return_counts=True)
-
-        # 拆分 sorted_batch_ids 为列表，每个列表对应同一个 expert 的 batch
-        batch_splits = torch.split(sorted_batch_ids, counts.tolist())
-
-        # -------- 对每个专业专家执行专业版 MLP（仅针对需要的 batch 子集） --------
-        special_out_chunks = []
-        for e_id, b_ids in zip(unique_experts.tolist(), batch_splits):
-            selected_x = x[b_ids]  # [num_b, D]
-            expert_out = self.special_experts[e_id](selected_x)  # [num_b, H]
-            special_out_chunks.append((e_id, b_ids, expert_out))
-
-        # -------- 将所有专家输出组装回 full batch 的 [B, k*H] --------
-        # 用 zeros 初始化，然后把每个专家输出写入
-        # [batch_size, top_k, output_size]
+        # -------- 根据 top-k 构建 sparse special_out --------
         special_out = torch.zeros(batch_size, self.top_k, self._size[-1], device=x.device)
-
-        # 一个快速的专家 → topk位置映射表（避免重复计算）
-        # positions[i, x] = 专家 i 在 batch x 中对应的 top_k 位置
-        positions = torch.full((self.num_special_experts, batch_size), -1, device=x.device, dtype=torch.long)
-        b_ids_all = torch.arange(batch_size, device=x.device)
         for j in range(self.top_k):
-            e_ids = top_k_idx[:, j]  # [batch_size]，top_k为j的expert_id
-            positions[e_ids, b_ids_all] = j  # 写入专家对应位置，[num_special_expert, batch_size, 1]
-        # 根据专家输出填回 special_out
-        for e_id, b_ids, expert_out in special_out_chunks:
-            # 该专家 e_id 对这些 batch 的 top-k 位置
-            pos = positions[e_id, b_ids]  # [num_b]，每个 batch 的 topk 位置
-            # 直接写入
-            special_out[b_ids, pos] = expert_out
-        # reshape → [batch_size, k * output_dim]
+            e_ids = top_k_idx[:, j]  # [batch_size]
+            special_out[torch.arange(batch_size), j, :] = all_special_out[torch.arange(batch_size), e_ids, :]
         special_out = special_out.reshape(batch_size, -1)
 
         # -------- 拼接最终输出 --------
-        x = torch.cat([general_outputs, special_out], dim=-1)
+        output = torch.cat([general_outputs, special_out], dim=-1)
 
         # -------- 更新 bias（每个 forward 之后执行一次）--------
         self.update_bias()
 
-        return x
+        return output, experts_out
 
     @property
     def output_size(self) -> int:
@@ -186,8 +164,8 @@ class MoEBase(nn.Module):
     def forward(self, x):
         if self._use_feature_normalization:
             x = self.feature_norm(x)
-        x = self.MoE(x)
-        return x
+        output, experts_out = self.MoE(x)
+        return output, experts_out
 
     @property
     def output_size(self):

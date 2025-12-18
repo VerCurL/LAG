@@ -20,6 +20,7 @@ def get_config():
     parser = _get_log_config(parser)
     parser = _get_eval_config(parser)
     parser = _get_render_config(parser)
+    parser = _get_moe_type(parser)
     parser = _get_policy_type(parser)
     return parser
 
@@ -128,8 +129,8 @@ def _get_network_config(parser: argparse.ArgumentParser):
     group = parser.add_argument_group("Network parameters")
     group.add_argument("--hidden-size", type=str, default='128 128',
                        help="Dimension of hidden layers for mlp pre-process networks (default '128 128')")
-    group.add_argument("--act-hidden-size", type=str, default='',
-                       help="Dimension of hidden layers for actlayer (default '')")
+    group.add_argument("--act-hidden-size", type=str, default='128 128',
+                       help="Dimension of hidden layers for actlayer (default '128 128')")
     group.add_argument("--activation-id", type=int, default=1,
                        help="Choose 0 to use Tanh, 1 to use ReLU, 2 to use LeakyReLU, 3 to use ELU (default 1)")
     group.add_argument("--use-feature-normalization", action='store_true', default=False,
@@ -138,16 +139,6 @@ def _get_network_config(parser: argparse.ArgumentParser):
                        help="The gain # of last action layer")
     group.add_argument("--use-prior", action='store_true', default=False,
                        help="Whether to use prior hunman info to update network, use only on missile shoot task")
-
-    # MoE层相关参数
-    group.add_argument("--expert-hidden-size", type=str, default='32 32',
-                       help="Dimension of hidden layers for moe pre-process networks (default '128 128')")
-    group.add_argument("--num-general-experts", type=int, default=2,
-                       help="Number of general experts (default 2)")
-    group.add_argument("--num-special-experts", type=int, default=6,
-                       help="Number of special experts (default 6)")
-    group.add_argument("--top-k", type=int, default=2,
-                       help="Number of top-k experts (default 2)")
     return parser
 
 
@@ -311,16 +302,35 @@ def _get_render_config(parser: argparse.ArgumentParser):
     group.add_argument("--render-index", type=str, default='latest', help="the index of ego policy. by default latest")
     return parser
 
+def _get_moe_type(parser: argparse.ArgumentParser):
+    """
+    Optimizer parameters:
+        --policy-type <str>
+    """
+    group = parser.add_argument_group("MoE parameters")
+    group.add_argument("--expert-hidden-size", type=str, default='32 32',
+                       help="Dimension of hidden layers for moe pre-process networks (default '128 128')")
+    group.add_argument("--num-general-experts", type=int, default=2,
+                       help="Number of general experts (default 2)")
+    group.add_argument("--num-special-experts", type=int, default=6,
+                       help="Number of special experts (default 6)")
+    group.add_argument("--top-k", type=int, default=2,
+                       help="Number of top-k experts (default 2)")
+    group.add_argument("--expert-out-loss-coef", type=float, default=0.1,
+                       help="Expert output loss (default 0.1)")
+    return parser
+
 def _get_policy_type(parser: argparse.ArgumentParser):
     """
     Optimizer parameters:
-        --lr <float>
-            learning rate parameter (default: 5e-4, fixed).
+        --policy-type <str>
+            对于飞机要采用的策略类型
     """
     group = parser.add_argument_group("Policy parameters")
     group.add_argument("--policy-type", type=str, default='default',
                        choices=["default", "fkr", "bxy", "lc"],
                        help='the type of train policy. ')
+    group.add_argument("--fix-position", action='store_true', default=False, help="fix position parameter.")
     return parser
 
 if __name__ == "__main__":
