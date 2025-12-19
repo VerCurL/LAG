@@ -75,11 +75,11 @@ class PPOMoETrainer():
         # top_k_idx: [mini_batch_size, top_k]
         # sel_out: [mini_batch_size, top_k, expert_out_dim]
         selected_experts = record_info["top_k_idx"] + policy.actor.num_general_experts
-        sel_out = experts_out.gather(1, selected_experts.unsqueeze(1).expand(-1, -1, experts_out.size(-1)))
+        sel_out = experts_out.gather(1, selected_experts.unsqueeze(-1).expand(-1, -1, experts_out.size(-1)))
         # 对专家输出计算正交损失
-        normed = F.normalize(sel_out, p=2, dim=-1)  # [mini_batch_size, top_k, expert_out_dim]
+        normed = F.normalize(sel_out, p=2, dim=-1)              # 归一化处理[mini_batch_size, top_k, expert_out_dim]
         inner = torch.matmul(normed, normed.transpose(-1, -2))  # [mini_batch_size, top_k, top_k]
-        mask = 1 - torch.eye(inner.size(-1), device=inner.device)  # 构建一个对角线为0，非对角线为1的矩阵, [top_k, top_k]
+        mask = 1 - torch.eye(inner.size(-1), device=inner.device)       # 构建一个对角线为0，非对角线为1的矩阵, [top_k, top_k]
         expert_out_loss = (inner * mask).pow(2).sum() / (
                     experts_out.size(0) * policy.actor.top_k * (policy.actor.top_k - 1))
 
