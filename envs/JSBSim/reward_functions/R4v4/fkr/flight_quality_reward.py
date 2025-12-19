@@ -16,10 +16,8 @@ class FlightQualityReward(BaseRewardFunction):
         super().__init__(config)
         self.pre_rpy = {}            # 记录上一时刻各飞机的姿态角
         self.pre_rpy_v = {}          # 记录上一时刻各飞机的角速度
-        self.step_count = 0
 
     def reset(self, task, env):
-        self.step_count = 0
         self.pre_rpy.clear()
         self.pre_rpy_v.clear()
         return super().reset(task, env)
@@ -48,18 +46,20 @@ class FlightQualityReward(BaseRewardFunction):
 
         # 计算奖励，控制角速度变化防止抖动
         reward = 0.0
-        if self.step_count > 2 and len(env.agents[agent_id].check_all_missile_warning()) == 0:
-            reward = np.clip(-2.0 * (np.linalg.norm(cur_rpy_v) ** 2 + np.linalg.norm(cur_rpy_v - self.pre_rpy_v[agent_id]) ** 2),
-                             -2.0, 0.0)
-        elif agent_id == "A0100":
-            self.step_count += 1
+        if len(env.agents[agent_id].check_all_missile_warning()) == 0:
+            reward = -20.0 * (np.linalg.norm(cur_rpy_v) ** 2 + np.linalg.norm(cur_rpy_v - self.pre_rpy_v[agent_id]) ** 2)
+
+        # 防止奖励突变
+        if reward <= -20.0:
+            reward = 0.0
 
         # if agent_id == "A0100":
+        # if abs(reward) > 10.0:
         # print("[flight_quality_reward] reward: ", reward)
         #     # print("                        pre_rpy: ", {agent_id: self.pre_rpy[agent_id]})
-        #     # print("                        cur_rpy: ", {agent_id: cur_rpy})
+        # print("                        cur_rpy: ", {agent_id: cur_rpy})
         #     # print("                        pre_rpy_v: ", {agent_id: self.pre_rpy_v[agent_id]})
-        #     print("                        cur_rpy_v: ", {agent_id: cur_rpy_v})
+        # print("                        cur_rpy_v: ", {agent_id: cur_rpy_v})
 
         # 更新当前时刻为上一时刻
         self.pre_rpy[agent_id] = cur_rpy.copy()

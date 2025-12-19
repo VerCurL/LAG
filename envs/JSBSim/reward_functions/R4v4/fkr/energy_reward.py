@@ -14,6 +14,7 @@ class EnergyReward(BaseRewardFunction):
     def __init__(self, config):
         super().__init__(config)
         self.safe_distance = getattr(self.config, "max_missile_attack_distance", 14000) / 1000  # unit: km
+        self.min_energy = 5000
         self.pre_energies = {}
 
     def reset(self, task, env):
@@ -39,21 +40,24 @@ class EnergyReward(BaseRewardFunction):
             Delta_SE = 0
 
         # 计算风险等级获得最终奖励
-        reward = (1 - self.calculate_risk(agent)) * Delta_SE
+        reward_base_energy = Delta_SE
+        reward_low_energy = -max(0, self.min_energy - SE)
+        reward = (1 - self.calculate_risk(agent)) * (0.4 * reward_base_energy + 0.1 * reward_low_energy)
 
         # 更新上一时刻的能量值
         self.pre_energies[agent_id] = SE
         # if agent_id == "A0100":
         # print("[energy_reward] reward: ", reward)
+        # print("                SE: ", SE)
         return self._process(reward, agent_id)
 
     def calculate_SE(self, v, h):
         return (v ** 2) / 19.62 + h
 
     def calculate_risk(self, agent):
-        # 1. 如果被导弹锁定，则风险最高
+        # 1. 如果被导弹锁定或者没有导弹，则风险最高
         risk_missile = 0.0
-        if len(agent.check_all_missile_warning()) > 0:
+        if len(agent.check_all_missile_warning()) > 0 or agent.num_left_missiles <= 0:
             risk_missile = 1.0
 
         # 2. 计算空战危险等级
@@ -67,7 +71,7 @@ class EnergyReward(BaseRewardFunction):
             # 2) 敌机机头约指向我机威胁越大
             risk = (1 + np.cos(AO)) / 2 * np.exp(-(R / 1000) / (0.8 * self.safe_distance))
             risk_geometries.append(risk)
-            if R / 1000.0 < self.safe_distance:
+            if R / 1000.0 < 1.2 * self.safe_distance:
                 enm_num += 1
 
         risk_geometry = 1.0
