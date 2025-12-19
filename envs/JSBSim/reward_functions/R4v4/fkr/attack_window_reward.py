@@ -52,8 +52,11 @@ class AttackWindowReward(BaseRewardFunction):
             kappa = 5
             scores = np.asarray(scores, dtype=np.float64)
             x = -kappa * scores
-            x_max = np.max(x)
-            result_score = -(x_max + np.log(np.sum(np.exp(x - x_max))))
+            if len(x) > 0:
+                x_max = np.max(x)
+                result_score = -(x_max + np.log(np.sum(np.exp(x - x_max))))
+            else:
+                result_score = 0.0
 
             # 计算奖励函数，要求飞机倾向于获得高得分
             R_min = min(Rs)
