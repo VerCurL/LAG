@@ -49,28 +49,27 @@ class AttackWindowReward(BaseRewardFunction):
                     Rs.append(R / 1000)
 
             # 使用soft-min来获得综合优势站位得分
-            kappa = 5
-            scores = np.asarray(scores, dtype=np.float64)
-            x = -kappa * scores
-            if len(x) > 0:
+            if len(scores) > 0:
+                kappa = 5
+                scores = np.asarray(scores, dtype=np.float64)
+                x = -kappa * scores
                 x_max = np.max(x)
                 result_score = -(x_max + np.log(np.sum(np.exp(x - x_max))))
-            else:
-                result_score = 0.0
 
             # 计算奖励函数，要求飞机倾向于获得高得分
-            R_min = min(Rs)
-            distance_max = 1.2 * self.max_missile_attack_distance
-            if agent_id not in self.pre_scores:
-                self.pre_scores[agent_id] = result_score
-            else:
-                reward = (R_min <= distance_max) * 20 * (result_score - self.pre_scores[agent_id])
-                self.pre_scores[agent_id] = result_score
+            if len(Rs) > 0:
+                R_min = min(Rs)
+                distance_max = 1.2 * self.max_missile_attack_distance
+                if agent_id not in self.pre_scores:
+                    self.pre_scores[agent_id] = result_score
+                else:
+                    reward = (R_min <= distance_max) * 20 * (result_score - self.pre_scores[agent_id])
+                    self.pre_scores[agent_id] = result_score
 
-            if agent_id not in self.pre_R_min:
+                if agent_id not in self.pre_R_min:
+                    self.pre_R_min[agent_id] = R_min
+                reward += (R_min > distance_max) * 20 * (-np.exp(-R_min / distance_max) + (R_min - self.pre_R_min[agent_id]))
                 self.pre_R_min[agent_id] = R_min
-            reward += (R_min > distance_max) * 20 * (-np.exp(-R_min / distance_max) + (R_min - self.pre_R_min[agent_id]))
-            self.pre_R_min[agent_id] = R_min
 
             # 如果被攻击，则不管优势站位，先躲避导弹活下来
             if len(agent.check_all_missile_warning()) > 0:
