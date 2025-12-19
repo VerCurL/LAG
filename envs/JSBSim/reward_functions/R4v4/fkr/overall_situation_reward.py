@@ -27,7 +27,7 @@ class OverallSituationReward(BaseRewardFunction):
         """
         egos_alive = [env.agents[agent_id].uid] + [ego.uid for ego in env.agents[agent_id].partners if ego.is_alive]
         enms_alive = [enm.uid for enm in env.agents[agent_id].enemies if enm.is_alive]
-        reward = 10 * (len(egos_alive) - len(enms_alive))
+        reward = len(egos_alive) - len(enms_alive)
 
         # 注意：原代码中的 _process 方法依然保留，用于后续处理
         return self._process(reward, agent_id)
