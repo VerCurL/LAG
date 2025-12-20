@@ -183,7 +183,7 @@ class HierarchicalMultipleCombatShootTask(HierarchicalMultipleCombatTask):
             FKR_4v4_EventDrivenReward(self.config),
             FKR_4v4_OverallSituationReward(self.config),
             FKR_4v4_AltitudeReward(self.config),
-            FKR_4v4_FlightQualityReward(self.config),
+            # FKR_4v4_FlightQualityReward(self.config),
             FKR_4v4_MissileAvoidReward(self.config),
             FKR_4v4_AttackWindowReward(self.config),
             FKR_4v4_EnergyReward(self.config)

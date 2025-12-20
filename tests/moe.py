@@ -4,17 +4,18 @@ import numpy as np
 import matplotlib.pyplot as plt
 import gymnasium as gym
 from config import get_config
-from algorithms.ppoMoE.ppo_actor import PPOMoEActor
-from envs.JSBSim.envs import SingleCombatEnv
+from algorithms.mappoMoE.ppo_actor import PPOMoEActor
+from envs.JSBSim.envs import MultipleCombatEnv
 
 
 def _t2n(x):
     return x.detach().cpu().numpy()
 # ---------- 1. 构造 actor 并加载模型 ----------
 device = torch.device("cuda")
-class Args_PPOMoE:
+class Args_MAPPOMoE:
     def __init__(self) -> None:
         self.gain = 0.01
+        self.hidden_size = '128 128'
         self.expert_hidden_size = '32 32'
         self.num_general_experts = 2
         self.num_special_experts = 6
@@ -28,14 +29,14 @@ class Args_PPOMoE:
         self.tpdv = dict(dtype=torch.float32, device=torch.device('cpu'))
         self.use_prior = True
 
-num_agents = 2
-ego_policy_index = 773
-enm_policy_index = 773
-ego_run_dir = "D:/FastProjects/ModelFlight/LAGMoE/scripts/results/SingleCombat/1v1/ShootMissile/HierarchySelfplay/ppoMoEBalance/v1/default/run-2G2S-[32x32]"
-enm_run_dir = "D:/FastProjects/ModelFlight/LAGMoE/scripts/results/SingleCombat/1v1/ShootMissile/HierarchySelfplay/ppoMoEBalance/v1/default/run-2G2S-[32x32]"
-env = SingleCombatEnv(config_name="1v1/ShootMissile/HierarchySelfplay", policy_type="default", fix_position=True)
+num_agents = 8
+ego_policy_index = 222
+enm_policy_index = 222
+ego_run_dir = "D:/FastProjects/ModelFlight/LAGMoE/scripts/results/MultipleCombat/4v4/ShootMissile/HierarchySelfplay/mappoMoE/128-128-32{2-6-2}/run-test"
+enm_run_dir = "D:/FastProjects/ModelFlight/LAGMoE/scripts/results/MultipleCombat/4v4/ShootMissile/HierarchySelfplay/mappoMoE/128-128-32{2-6-2}/run-test"
+env = MultipleCombatEnv(config_name="4v4/ShootMissile/HierarchySelfplay", policy_type="fkr", fix_position=True)
 
-args = Args_PPOMoE()
+args = Args_MAPPOMoE()
 ego_actor = PPOMoEActor(args, env.observation_space, env.action_space, device=device)
 enm_actor = PPOMoEActor(args, env.observation_space, env.action_space, device=device)
 ego_actor.eval()
@@ -44,7 +45,7 @@ ego_actor.load_state_dict(torch.load(ego_run_dir + f"/actor_{ego_policy_index}.p
 enm_actor.load_state_dict(torch.load(enm_run_dir + f"/actor_{enm_policy_index}.pt"))
 
 # ---------- 2. 初始化敌我机的状态空间 ----------
-obs = env.reset()
+obs, _ = env.reset()
 ego_rnn_states = np.zeros((1, 1, 128), dtype=np.float32)
 masks = np.ones((num_agents // 2, 1))
 enm_obs = obs[num_agents // 2:, :]
@@ -64,7 +65,7 @@ while True:
     actions = np.concatenate((ego_actions, enm_actions), axis=0)
 
     # 单步更新并计算奖励等单步指标
-    obs, _, dones, infos = env.step(actions)
+    obs, _, _, dones, infos = env.step(actions)
 
     # 如果该回合达到了终止条件则终止
     if dones.all():

@@ -11,8 +11,8 @@ class MultipleCombatEnv(BaseEnv):
     """
     MultipleCombatEnv is an multi-player competitive environment.
     """
-    def __init__(self, config_name: str, policy_type: str):
-        super().__init__(config_name, policy_type)
+    def __init__(self, config_name: str, policy_type: str, fix_position: bool=False):
+        super().__init__(config_name, policy_type, fix_position)
         # Env-Specific initialization here!
         self._create_records = False
 
@@ -53,15 +53,14 @@ class MultipleCombatEnv(BaseEnv):
         重置所有模拟器的状态
         包括飞机模拟器和临时模拟器（如导弹）
         """
-        self.random_reset_simulators()
-        # if self.fix_position:
-        #     # 重新加载所有飞机模拟器
-        #     for sim in self._jsbsims.values():
-        #         sim.reload()
-        #     # 清空临时模拟器（如导弹）
-        #     self._tempsims.clear()
-        # else:
-        #     self.random_reset_simulators()
+        if self.config.fix_position:
+            # 重新加载所有飞机模拟器
+            for sim in self._jsbsims.values():
+                sim.reload()
+            # 清空临时模拟器（如导弹）
+            self._tempsims.clear()
+        else:
+            self.random_reset_simulators()
 
     def random_reset_simulators(self):
         # --- 常量定义 ---
