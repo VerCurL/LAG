@@ -17,10 +17,11 @@ class DistanceReward(BaseRewardFunction):
         return super().reset(task, env)
 
     def get_reward(self, task, env, agent_id):
-        agent = env.agents[agent_id]
-
-        # 如果飞机还有导弹，则基于攻击窗口寻找优势站位
+        # ======================================================
+        # 一、 如果飞机还有导弹，进行奖励计算
+        # ======================================================
         reward = 0.0
+        agent = env.agents[agent_id]
         if agent.num_left_missiles > 0:
             # 遍历敌机，获得针对每个敌机的优势站位得分
             states = {}
@@ -37,7 +38,7 @@ class DistanceReward(BaseRewardFunction):
 
                 # 获得我机和偏移位置的参数关系
                 ego_feature = np.hstack([agent.get_position(), agent.get_velocity()])
-                center_feature = np.hstack([near_offset_position, [0, 0, 0]])
+                center_feature = np.hstack([near_offset_position, np.array([0, 0, 0])])
                 AO, _, R = get_AO_TA_R(ego_feature, center_feature)
 
                 near_off_state = [AO, 0, R / 1000]

@@ -1,7 +1,7 @@
 import numpy as np
 
 from envs.JSBSim.reward_functions.reward_function_base import BaseRewardFunction
-from envs.JSBSim.utils.utils import get_AO_TA_R
+from envs.JSBSim.utils.utils import get_AO_TA_R, get_near_offset_of_multi_air
 
 class AttackWindowReward(BaseRewardFunction):
     """
@@ -25,11 +25,11 @@ class AttackWindowReward(BaseRewardFunction):
         return super().reset(task, env)
 
     def get_reward(self, task, env, agent_id):
-        reward = 0.0
         agent = env.agents[agent_id]
         ego_feature = np.hstack([agent.get_position(), agent.get_velocity()])
 
         # 如果飞机还有导弹，则基于攻击窗口寻找优势站位
+        reward = 0.0
         if agent.num_left_missiles > 0:
             # 遍历敌机，获得针对每个敌机的优势站位得分
             scores = []
@@ -39,10 +39,19 @@ class AttackWindowReward(BaseRewardFunction):
                 AO, TA, R = get_AO_TA_R(enm_feature, ego_feature)
                 if enm.is_alive:
                     scores.append(self.get_score(task, AO, TA, R / 1000))
-                    states[enm.uid] = [AO, TA, R]
-
+                    states[enm.uid] = enm.get_position()
 
             if len(states) > 0:
+                # 获得最近敌人相对加权质心的偏移位置
+                ego_position = agent.get_position()
+                enm_positions = np.array([position for position in states.values()])
+                near_offset_position, near_offset_vector = get_near_offset_of_multi_air(ego_position, enm_positions)
+
+                # 获得我机和偏移位置的参数关系
+                ego_feature = np.hstack([agent.get_position(), agent.get_velocity()])
+                center_feature = np.hstack([near_offset_position, np.array([0, 0, 0])])
+                _, _, R_offset = get_AO_TA_R(ego_feature, center_feature)
+
                 # 使用soft-min来获得综合优势站位得分
                 kappa = 5
                 scores = -kappa * np.asarray(scores, dtype=np.float64)
@@ -50,14 +59,11 @@ class AttackWindowReward(BaseRewardFunction):
                 result_score = -(scores_max + np.log(np.sum(np.exp(scores - scores_max))))
 
                 # 计算奖励函数，要求飞机倾向于获得高得分
-                # enm_state: [AO, TA, R]
-                enm_id, enm_state = min(states.items(), key=lambda x: x[1][2])
-                R_min = enm_state[2]
                 distance_max = 1.3 * task.max_missile_attack_distance
                 if agent_id not in self.pre_scores:
                     self.pre_scores[agent_id] = result_score
                 else:
-                    reward = (R_min <= distance_max) * 20 * (result_score - self.pre_scores[agent_id])
+                    reward = (R_offset <= distance_max) * 20 * (result_score - self.pre_scores[agent_id])
                     self.pre_scores[agent_id] = result_score
 
             # 如果被攻击，则不管优势站位，先躲避导弹活下来

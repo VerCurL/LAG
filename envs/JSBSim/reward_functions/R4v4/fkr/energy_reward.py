@@ -43,7 +43,7 @@ class EnergyReward(BaseRewardFunction):
 
             # 获得我机和偏移位置的参数关系
             ego_feature = np.hstack([agent.get_position(), agent.get_velocity()])
-            center_feature = np.hstack([near_offset_position, [0, 0, 0]])
+            center_feature = np.hstack([near_offset_position, np.array([0, 0, 0])])
             AO, _, R = get_AO_TA_R(ego_feature, center_feature)
 
             near_offset_state = [AO, 0, R / 1000]
