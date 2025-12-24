@@ -117,3 +117,50 @@ def in_range_rad(angle):
     if angle > np.pi:
         angle -= 2 * np.pi
     return angle
+
+def get_center_of_multi_air(ego_position: np.array, enm_positions: np.array):
+    """ 在多机环境下，获取敌机相对我机的加权质心和我机到质心的向量 """
+    # 计算向量
+    vectors = enm_positions - ego_position
+
+    # 计算每个向量的欧氏距离
+    distances = np.linalg.norm(vectors, axis=1)
+
+    # 避免除零（如果有点和p0重合）
+    epsilon = 1e-8
+    distances = np.maximum(distances, epsilon)
+
+    # 距离越远权重越小，例如使用 1/distance
+    weights = 1 / distances ** 2
+
+    # 归一化权重
+    weights /= weights.sum()
+
+    # 计算加权质心向量
+    centroid_vector = np.sum(vectors * weights[:, np.newaxis], axis=0)
+
+    # 如果需要质心的绝对坐标
+    centroid_position = ego_position + centroid_vector
+
+    return centroid_position, centroid_vector
+
+def get_near_offset_of_multi_air(ego_position: np.array, enm_positions: np.array, lamda: float = 0.3):
+    """ 在多机环境下，获取以最近敌机为锚点，远离多机质心一侧的函数 """
+    # 获取指向最近敌机的向量
+    distances = np.linalg.norm(enm_positions - ego_position, axis=1)
+    min_idx = np.argmin(distances)
+    nearest_vector = enm_positions[min_idx] - ego_position
+
+    # 获取指向敌方质心的向量
+    _, center_vector = get_center_of_multi_air(ego_position, enm_positions)
+
+    # 计算以最近敌机为锚点的偏移量
+    nearest2center = center_vector - nearest_vector
+    nearest_direction = -nearest_vector / np.linalg.norm(nearest_vector)
+    offset = nearest2center - (np.dot(nearest2center, nearest_direction) * nearest_direction)
+
+    # 获得指向偏移后的坐标点的向量
+    target_vector = nearest_vector - lamda * offset
+    target_position = ego_position + target_vector
+
+    return target_position, target_vector

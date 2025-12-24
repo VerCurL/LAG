@@ -6,9 +6,9 @@ import torch
 from .singlecombat_task import SingleCombatTask
 from envs.JSBSim.core.catalog import Catalog as c
 from envs.JSBSim.core.simulatior import MissileSimulator
-from envs.JSBSim.reward_functions import (FKR_4v4_EventDrivenReward, FKR_4v4_OverallSituationReward,
-                                          FKR_4v4_AltitudeReward, FKR_4v4_FlightQualityReward, FKR_4v4_MissileAvoidReward,
-                                          FKR_4v4_AttackWindowReward, FKR_4v4_EnergyReward)
+from envs.JSBSim.reward_functions import (FKR_4v4_EventDrivenReward, FKR_4v4_AltitudeReward, FKR_4v4_MissileAvoidReward,
+                                          FKR_4v4_DistanceReward, FKR_4v4_AttackWindowReward, FKR_4v4_EnergyReward,
+                                          FKR_4v4_FlightQualityReward, FKR_4v4_OverallSituationReward)
 from envs.JSBSim.termination_conditions import ExtremeState, LowAltitude, Overload, Timeout, SafeReturn
 from envs.JSBSim.utils.utils import get_AO_TA_R, LLA2NEU, get_root_dir
 from envs.JSBSim.model.baseline_actor import BaselineActor
@@ -179,14 +179,24 @@ class HierarchicalMultipleCombatShootTask(HierarchicalMultipleCombatTask):
         self.max_attack_angle = getattr(self.config, 'max_attack_angle', 180)
         self.max_attack_distance = getattr(self.config, 'max_attack_distance', np.inf)
         self.min_attack_interval = getattr(self.config, 'min_attack_interval', 125)
+
+        # 定义攻击窗口
+        self.min_missile_attack_distance = getattr(self.config, "min_missile_attack_distance", 4000) / 1000  # unit: km
+        self.max_missile_attack_distance = getattr(self.config, "max_missile_attack_distance", 14000) / 1000  # unit: km
+        self.max_missile_attack_AO = np.radians(getattr(self.config, "missile_attack_AO", 60))  # unit: rad
+
+        # 定义安全距离
+        self.safe_distance = getattr(self.config, "max_missile_attack_distance", 14000) / 1000  # unit: km
+
         self.reward_functions = [
             FKR_4v4_EventDrivenReward(self.config),
-            FKR_4v4_OverallSituationReward(self.config),
             FKR_4v4_AltitudeReward(self.config),
-            # FKR_4v4_FlightQualityReward(self.config),
             FKR_4v4_MissileAvoidReward(self.config),
+            FKR_4v4_DistanceReward(self.config),
             FKR_4v4_AttackWindowReward(self.config),
-            FKR_4v4_EnergyReward(self.config)
+            FKR_4v4_EnergyReward(self.config),
+            # FKR_4v4_FlightQualityReward(self.config),
+            FKR_4v4_OverallSituationReward(self.config),
         ]
     
     def load_observation_space(self):
