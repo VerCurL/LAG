@@ -2,7 +2,6 @@ import numpy as np
 
 from envs.JSBSim.reward_functions.reward_function_base import BaseRewardFunction
 from envs.JSBSim.utils.utils import get_AO_TA_R, get_near_offset_of_multi_air
-from envs.JSBSim.utils.plot import near_offset_positions_plot
 
 class EnergyReward(BaseRewardFunction):
     """
