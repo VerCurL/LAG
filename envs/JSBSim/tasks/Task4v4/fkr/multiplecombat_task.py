@@ -188,6 +188,10 @@ class HierarchicalMultipleCombatShootTask(HierarchicalMultipleCombatTask):
         # 定义安全距离
         self.safe_distance = getattr(self.config, "max_missile_attack_distance", 14000) / 1000  # unit: km
 
+        # 定义每个敌机最大攻击的导弹数
+        self.max_attack_missiles_num = 2
+
+        # 奖励函数
         self.reward_functions = [
             FKR_4v4_EventDrivenReward(self.config),
             FKR_4v4_AltitudeReward(self.config),
@@ -257,6 +261,7 @@ class HierarchicalMultipleCombatShootTask(HierarchicalMultipleCombatTask):
         self._last_shoot_time = {agent_id: -self.min_attack_interval for agent_id in env.agents.keys()}
         self._remaining_missiles = {agent_id: agent.num_missiles for agent_id, agent in env.agents.items()}
         self._shoot_action = {agent_id: False for agent_id in env.agents.keys()}
+        self._missiles_temp = {agent_id: [] for agent_id in env.agents.keys()}
         return super().reset(env)
 
     def normalize_action(self, env, agent_id, action):
@@ -266,30 +271,80 @@ class HierarchicalMultipleCombatShootTask(HierarchicalMultipleCombatTask):
     def step(self, env):
         SingleCombatTask.step(self, env)
         for agent_id, agent in env.agents.items():
-            # [RL-based missile launch with limited condition]
-            # Determine whether can launch missile at the nearest enemy aircraft
-            target_list = list(map(lambda x: x.get_position() - agent.get_position(), agent.enemies))
-            target_distance = list(map(np.linalg.norm, target_list))
-            target_index = np.argmin(target_distance)
-            target = target_list[target_index]
-            heading = agent.get_velocity()
-            distance = target_distance[target_index]
-            attack_angle = np.rad2deg(np.arccos(np.clip(np.sum(target * heading) / (distance * np.linalg.norm(heading) + 1e-8), -1, 1)))
-            shoot_interval = env.current_step - self._last_shoot_time[agent_id]
-            velocity = np.linalg.norm(heading)                                  # 本机的速度值
+            # ======================================================
+            # 1. 锁定要攻击的敌机目标
+            # ======================================================
+            # 计算所有敌机的相对位置和距离
+            enemies_vector = {enm.uid: enm.get_position() - agent.get_position() for enm in agent.enemies}
+            enemies_distance = {enm_id: np.linalg.norm(enemies_vector[enm_id]) for enm_id in enemies_vector.keys()}
 
-            shoot_flag = (agent.is_alive and self._shoot_action[agent_id] and self._remaining_missiles[agent_id] > 0
-                          and attack_angle <= self.max_attack_angle and distance <= self.max_attack_distance
-                          and shoot_interval >= self.min_attack_interval and velocity > 150)
+            # 将敌机索引按距离从近到远排序
+            sorted_indices = dict(sorted(enemies_distance.items(), key=lambda x: x[1]))
+
+            # 统计当前每个敌机被锁定的导弹数量
+            enemy_missile_count = {enm.uid: 0 for enm in agent.enemies}
+            for missile in self._missiles_temp[agent_id]:
+                enemy = missile.target_aircraft
+                enemy_missile_count[enemy.uid] += 1
+
+            # 依次选择“距离近且未被超过2枚导弹锁定”的敌机
+            target_id = None
+            for enm_id in sorted_indices.keys():
+                if enemy_missile_count[enm_id] < self.max_attack_missiles_num:
+                    target_id = enm_id
+                    break
+
+            # ======================================================
+            # 2. 如果有锁定的敌机，则计算发射条件
+            # ======================================================
+            shoot_flag = False
+            if target_id is not None:
+                # 获取我机的速度矢量
+                heading = agent.get_velocity()
+
+                # 获得锁定敌机的距离
+                distance = enemies_distance[target_id]
+
+                # 计算与锁定敌机的攻击角
+                attack_angle = np.rad2deg(np.arccos(np.clip(np.sum(enemies_vector[target_id] * heading) /
+                                                            (distance * np.linalg.norm(heading) + 1e-8), -1, 1)))
+
+                # 计算距离上次设计时间间隔
+                shoot_interval = env.current_step - self._last_shoot_time[agent_id]
+
+                # 本机的速度值
+                velocity = np.linalg.norm(heading)
+
+                # 是否向target发射导弹
+                shoot_flag = (
+                        agent.is_alive and
+                        self._shoot_action[agent_id] and
+                        self._remaining_missiles[agent_id] > 0 and
+                        attack_angle <= self.max_attack_angle and
+                        distance <= self.max_attack_distance and
+                        shoot_interval >= self.min_attack_interval and
+                        velocity > 150
+                )
+
+            # ======================================================
+            # 3. 如果符合发射条件，则发射导弹
+            # ======================================================
             if shoot_flag:
                 # 创建唯一导弹ID
                 new_missile_uid = agent_id + str(self._remaining_missiles[agent_id])
+
                 # 添加导弹仿真器
-                env.add_temp_simulator(
-                    MissileSimulator.create(parent=agent, target=agent.enemies[target_index], uid=new_missile_uid))
+                enemy = [enm for enm in agent.enemies if enm.uid == target_id][0]
+                missile = MissileSimulator.create(parent=agent, target=enemy, uid=new_missile_uid)
+                env.add_temp_simulator(missile)
+                self._missiles_temp[agent_id].append(missile)
+
                 # 减少剩余导弹数量
                 self._remaining_missiles[agent_id] -= 1
-                # 减少飞机类的剩余导弹数量
+
+                # 减少飞机对象的剩余导弹数量
                 env.agents[agent_id].num_left_missiles -= 1
+
                 # 更新上次发射时间
                 self._last_shoot_time[agent_id] = env.current_step
+

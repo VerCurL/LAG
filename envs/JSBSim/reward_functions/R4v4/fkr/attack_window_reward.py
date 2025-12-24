@@ -65,7 +65,7 @@ class AttackWindowReward(BaseRewardFunction):
                reward = 0.0
 
         # if agent_id == "A0100":
-        print("[attack_window] reward: ", reward)
+        # print("[attack_window] reward: ", reward)
             # print("                pre_scores: ", self.pre_scores[agent_id])
             # print("                scores: ", result_score)
 
