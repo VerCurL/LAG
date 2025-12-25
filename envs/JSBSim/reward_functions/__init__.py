@@ -30,6 +30,7 @@ from .R1v1.lc import DogdeAttackReward as LC_DogdeAttackReward
 """
 fkr-4v4奖励系统
 """
+from .R4v4.fkr import HeadingReward as FKR_4v4_HeadingReward
 from .R4v4.fkr import EventDrivenReward as FKR_4v4_EventDrivenReward
 from .R4v4.fkr import AltitudeReward as FKR_4v4_AltitudeReward
 from .R4v4.fkr import MissileAvoidReward as FKR_4v4_MissileAvoidReward

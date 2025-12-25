@@ -6,9 +6,9 @@ import torch
 from .singlecombat_task import SingleCombatTask
 from envs.JSBSim.core.catalog import Catalog as c
 from envs.JSBSim.core.simulatior import MissileSimulator
-from envs.JSBSim.reward_functions import (FKR_4v4_EventDrivenReward, FKR_4v4_AltitudeReward, FKR_4v4_MissileAvoidReward,
-                                          FKR_4v4_DistanceReward, FKR_4v4_AttackWindowReward, FKR_4v4_EnergyReward,
-                                          FKR_4v4_FlightQualityReward, FKR_4v4_OverallSituationReward)
+from envs.JSBSim.reward_functions import (FKR_4v4_HeadingReward, FKR_4v4_EventDrivenReward, FKR_4v4_AltitudeReward,
+                                          FKR_4v4_MissileAvoidReward, FKR_4v4_DistanceReward, FKR_4v4_AttackWindowReward,
+                                          FKR_4v4_EnergyReward, FKR_4v4_FlightQualityReward, FKR_4v4_OverallSituationReward)
 from envs.JSBSim.termination_conditions import ExtremeState, LowAltitude, Overload, Timeout, SafeReturn
 from envs.JSBSim.utils.utils import get_AO_TA_R, LLA2NEU, get_root_dir
 from envs.JSBSim.model.baseline_actor import BaselineActor
@@ -192,16 +192,24 @@ class HierarchicalMultipleCombatShootTask(HierarchicalMultipleCombatTask):
         self.max_attack_missiles_num = 2
 
         # 奖励函数
+        # Stage1: 先学会靠近敌机并平稳飞行
         self.reward_functions = [
+            FKR_4v4_HeadingReward(self.config),
             FKR_4v4_EventDrivenReward(self.config),
             FKR_4v4_AltitudeReward(self.config),
-            FKR_4v4_MissileAvoidReward(self.config),
             FKR_4v4_DistanceReward(self.config),
-            FKR_4v4_AttackWindowReward(self.config),
-            FKR_4v4_EnergyReward(self.config),
-            # FKR_4v4_FlightQualityReward(self.config),
-            FKR_4v4_OverallSituationReward(self.config),
         ]
+
+        # self.reward_functions = [
+        #     FKR_4v4_EventDrivenReward(self.config),
+        #     FKR_4v4_AltitudeReward(self.config),
+        #     FKR_4v4_MissileAvoidReward(self.config),
+        #     FKR_4v4_DistanceReward(self.config),
+        #     FKR_4v4_AttackWindowReward(self.config),
+        #     FKR_4v4_EnergyReward(self.config),
+        #     # FKR_4v4_FlightQualityReward(self.config),
+        #     FKR_4v4_OverallSituationReward(self.config),
+        # ]
     
     def load_observation_space(self):
         self.obs_length = 9 + self.num_agents  * 6
@@ -275,17 +283,18 @@ class HierarchicalMultipleCombatShootTask(HierarchicalMultipleCombatTask):
             # 1. 锁定要攻击的敌机目标
             # ======================================================
             # 计算所有敌机的相对位置和距离
-            enemies_vector = {enm.uid: enm.get_position() - agent.get_position() for enm in agent.enemies}
+            enemies_vector = {enm.uid: enm.get_position() - agent.get_position() for enm in agent.enemies if enm.is_alive}
             enemies_distance = {enm_id: np.linalg.norm(enemies_vector[enm_id]) for enm_id in enemies_vector.keys()}
 
             # 将敌机索引按距离从近到远排序
             sorted_indices = dict(sorted(enemies_distance.items(), key=lambda x: x[1]))
 
             # 统计当前每个敌机被锁定的导弹数量
-            enemy_missile_count = {enm.uid: 0 for enm in agent.enemies}
+            enemy_missile_count = {enm.uid: 0 for enm in agent.enemies if enm.is_alive}
             for missile in self._missiles_temp[agent_id]:
-                enemy = missile.target_aircraft
-                enemy_missile_count[enemy.uid] += 1
+                if missile.is_alive:
+                    enemy = missile.target_aircraft
+                    enemy_missile_count[enemy.uid] += 1
 
             # 依次选择“距离近且未被超过2枚导弹锁定”的敌机
             target_id = None
