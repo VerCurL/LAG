@@ -290,7 +290,7 @@ class HierarchicalMultipleCombatShootTask(HierarchicalMultipleCombatTask):
             sorted_indices = dict(sorted(enemies_distance.items(), key=lambda x: x[1]))
 
             # 统计当前每个敌机被锁定的导弹数量
-            enemy_missile_count = {enm.uid: 0 for enm in agent.enemies if enm.is_alive}
+            enemy_missile_count = {enm.uid: 0 for enm in agent.enemies}
             for missile in self._missiles_temp[agent_id]:
                 if missile.is_alive:
                     enemy = missile.target_aircraft
