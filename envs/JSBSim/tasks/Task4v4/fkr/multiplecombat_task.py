@@ -192,12 +192,22 @@ class HierarchicalMultipleCombatShootTask(HierarchicalMultipleCombatTask):
         self.max_attack_missiles_num = 2
 
         # 奖励函数
-        # Stage1: 先学会靠近敌机并平稳飞行
+        # # Stage1: 先学会靠近敌机并平稳飞行
+        # self.reward_functions = [
+        #     FKR_4v4_HeadingReward(self.config),
+        #     FKR_4v4_EventDrivenReward(self.config),
+        #     FKR_4v4_AltitudeReward(self.config),
+        #     FKR_4v4_DistanceReward(self.config),
+        # ]
+
+        # Stage2: 寻找攻击窗口，维持能量和导弹躲避
         self.reward_functions = [
-            FKR_4v4_HeadingReward(self.config),
             FKR_4v4_EventDrivenReward(self.config),
             FKR_4v4_AltitudeReward(self.config),
             FKR_4v4_DistanceReward(self.config),
+            FKR_4v4_AttackWindowReward(self.config),
+            FKR_4v4_EnergyReward(self.config),
+            FKR_4v4_MissileAvoidReward(self.config)
         ]
 
         # self.reward_functions = [
