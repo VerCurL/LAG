@@ -118,6 +118,12 @@ def in_range_rad(angle):
         angle -= 2 * np.pi
     return angle
 
+
+def angle_diff(angle1, angle2):
+    """ 得到angle1到angle2的最小角度，范围在(-pi, pi] """
+    return np.arctan2(np.sin(angle1-angle2), np.cos(angle1-angle2))
+
+
 def get_center_of_multi_air(ego_position: np.array, enm_positions: np.array):
     """ 在多机环境下，获取敌机相对我机的加权质心和我机到质心的向量 """
     # 计算向量

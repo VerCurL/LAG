@@ -63,10 +63,6 @@ class EnergyReward(BaseRewardFunction):
                 self.pre_energies[agent_id] = SE
             Delta_SE = SE - self.pre_energies[agent_id]
 
-            # 防止能量突变
-            if abs(Delta_SE) > 3000:
-                Delta_SE = 0
-
             # 计算风险等级获得最终奖励
             reward_base_energy = (Delta_SE < 0) * np.tanh(Delta_SE / 800) + (Delta_SE >= 0) * Delta_SE / 10
             reward_turn_enm = (R > 1.3 * task.max_missile_attack_distance) * max(0, Delta_AO)
@@ -78,14 +74,6 @@ class EnergyReward(BaseRewardFunction):
             self.pre_energies[agent_id] = SE
             self.pre_near_offset_states[agent_id] = near_offset_state
 
-            # if agent_id == "A0100":
-            #     print("[energy_reward] reward: ", reward)
-            #     print("                Delta_SE >= 0: ", Delta_SE >= 0)
-            #     print("                reward_base_energy: ", 0.4 * reward_base_energy)
-            #     print("                reward_turn_enm: ", 8 * reward_turn_enm)
-                # print("                pre_AO: ", pre_AO)
-                # print("                cur_AO: ", AO)
-                # near_offset_positions_plot(ego_position, enm_positions, near_offset_position)
         return self._process(reward, agent_id)
 
     def calculate_SE(self, v, h):
@@ -118,10 +106,6 @@ class EnergyReward(BaseRewardFunction):
 
         # 3. 计算数量风险等级，最高为0.3
         risk_num = 1 - np.exp(-0.1 * enm_num)
-
-        # print("[energy_reward] risk_missile: ", risk_missile)
-        # print("                risk_geometry: ", risk_geometry)
-        # print("                risk_num: ", risk_num)
 
         return min(1, risk_missile + risk_geometry + risk_num)
 

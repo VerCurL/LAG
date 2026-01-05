@@ -200,14 +200,13 @@ class HierarchicalMultipleCombatShootTask(HierarchicalMultipleCombatTask):
         #     FKR_4v4_DistanceReward(self.config),
         # ]
 
-        # Stage2: 寻找攻击窗口，维持能量和导弹躲避
+        # Stage2: 寻找攻击窗口
         self.reward_functions = [
+            FKR_4v4_HeadingReward(self.config),
             FKR_4v4_EventDrivenReward(self.config),
             FKR_4v4_AltitudeReward(self.config),
             FKR_4v4_DistanceReward(self.config),
-            FKR_4v4_AttackWindowReward(self.config),
-            FKR_4v4_EnergyReward(self.config),
-            FKR_4v4_MissileAvoidReward(self.config)
+            FKR_4v4_AttackWindowReward(self.config)
         ]
     
     def load_observation_space(self):

@@ -62,18 +62,13 @@ class AttackWindowReward(BaseRewardFunction):
                 distance_max = 1.3 * task.max_missile_attack_distance
                 if agent_id not in self.pre_scores:
                     self.pre_scores[agent_id] = result_score
-                else:
-                    reward = (R_offset <= distance_max) * 20 * (result_score - self.pre_scores[agent_id])
-                    self.pre_scores[agent_id] = result_score
+
+                reward = (R_offset / 1000.0 <= distance_max) * 20 * (result_score - self.pre_scores[agent_id])
+                self.pre_scores[agent_id] = result_score
 
             # 如果被攻击，则不管优势站位，先躲避导弹活下来
             if len(agent.check_all_missile_warning()) > 0:
                reward = 0.0
-
-        # if agent_id == "A0100":
-        # print("[attack_window] reward: ", reward)
-            # print("                pre_scores: ", self.pre_scores[agent_id])
-            # print("                scores: ", result_score)
 
         return self._process(reward, agent_id)
 

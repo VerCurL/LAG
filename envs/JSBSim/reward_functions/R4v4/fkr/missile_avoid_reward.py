@@ -61,12 +61,6 @@ class MissileAvoidReward(BaseRewardFunction):
             else:
                 new_reward -= 10    # 如果没有远离的趋势也没有减速接近，惩罚
 
-        # print("[missile_avoid_reward] reward: ", new_reward)
-        # print("                       agent_id", agent_id)
-        # print("                       pre_missiles_info: ", self.pre_missiles_info[agent_id])
-        # if len(self.pre_missiles_info[agent_id]) > 0:
-        #     input()
-
         return self._process(new_reward, agent_id)
 
 
