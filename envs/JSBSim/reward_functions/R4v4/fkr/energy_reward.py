@@ -13,9 +13,10 @@ class EnergyReward(BaseRewardFunction):
     """
     def __init__(self, config):
         super().__init__(config)
-        self.min_energy = 5000
-        self.pre_energies = {}                  # 上一时刻的能量
-        self.pre_near_offset_states = {}             # 上一时刻我机的相对敌机加权质心参数：{ego: [AO, 0, R]}
+        self.safe_energy = 4000
+        self.crit_energy = 2000
+        self.pre_energies = {}                      # 上一时刻的能量
+        self.pre_near_offset_states = {}            # 上一时刻我机的相对敌机加权质心参数：{ego: [AO, 0, R]}
 
     def reset(self, task, env):
         self.pre_energies.clear()
@@ -63,12 +64,15 @@ class EnergyReward(BaseRewardFunction):
                 self.pre_energies[agent_id] = SE
             Delta_SE = SE - self.pre_energies[agent_id]
 
-            # 计算风险等级获得最终奖励
+            # ======================================================
+            # 计算能量奖励
+            # ======================================================
+            # 基础能量奖励，保持能量是一个增长的状态
             reward_base_energy = (Delta_SE < 0) * np.tanh(Delta_SE / 800) + (Delta_SE >= 0) * Delta_SE / 10
-            reward_turn_enm = (R > 1.3 * task.max_missile_attack_distance) * max(0, Delta_AO)
-            reward_low_energy = -max(0, self.min_energy - SE)
-            reward = ((1 - self.calculate_risk(agent, task.safe_distance)) *
-                      (0.4 * (reward_base_energy + 20 * reward_turn_enm) + 0.1 * reward_low_energy))
+            reward_turn_enm = (R > 1.3 * task.max_missile_attack_distance and AO >= np.pi / 2) * max(0, Delta_AO)
+            reward_low_energy = ((self.crit_energy < SE < self.safe_energy) * (-0.2 * ((self.safe_energy - SE) / (self.safe_energy - self.crit_energy)) ** 2) +
+                                 (SE <= self.crit_energy) * (-1))
+            reward = (1 - self.calculate_risk(agent, task.safe_distance)) * 0.4 * (reward_base_energy + 20 * reward_turn_enm)
 
             # 更新上一时刻的值
             self.pre_energies[agent_id] = SE

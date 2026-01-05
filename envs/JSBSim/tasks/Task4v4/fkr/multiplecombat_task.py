@@ -206,7 +206,9 @@ class HierarchicalMultipleCombatShootTask(HierarchicalMultipleCombatTask):
             FKR_4v4_EventDrivenReward(self.config),
             FKR_4v4_AltitudeReward(self.config),
             FKR_4v4_DistanceReward(self.config),
-            FKR_4v4_AttackWindowReward(self.config)
+            FKR_4v4_AttackWindowReward(self.config),
+            FKR_4v4_EnergyReward(self.config),
+            # FKR_4v4_MissileAvoidReward(self.config),
         ]
     
     def load_observation_space(self):
