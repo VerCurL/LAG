@@ -16,6 +16,8 @@ class AttackWindowReward(BaseRewardFunction):
         self.weight_attack_angle = 10
         self.weight_distance = 4
         self.weight_threat_angle = 5
+        self.weight_reward_grad = 20
+        self.weight_reward_score = 0.1
 
         # 记录上局得分
         self.pre_scores = {}
@@ -40,6 +42,8 @@ class AttackWindowReward(BaseRewardFunction):
                 if enm.is_alive:
                     scores.append(self.get_score(task, AO, TA, R / 1000))
                     states[enm.uid] = enm.get_position()
+                else:
+                    scores.append(0.0)
 
             if len(states) > 0:
                 # 获得最近敌人相对加权质心的偏移位置
@@ -51,25 +55,26 @@ class AttackWindowReward(BaseRewardFunction):
                 ego_feature = np.hstack([agent.get_position(), agent.get_velocity()])
                 center_feature = np.hstack([near_offset_position, np.array([0, 0, 0])])
                 _, _, R_offset = get_AO_TA_R(ego_feature, center_feature)
+                R_offset /= 1000.0
 
-                # 使用soft-min来获得综合优势站位得分
-                kappa = 5
-                scores = -kappa * np.asarray(scores, dtype=np.float64)
-                scores_max = np.max(scores)
-                result_score = -(scores_max + np.log(np.sum(np.exp(scores - scores_max))))
+                # 使用 p=3 的 Power Mean 来获得综合优势站位得分
+                risks = -np.asarray(scores, dtype=np.float64)
+                result_score = -np.cbrt(np.mean(risks ** 3))
 
                 # 计算奖励函数，要求飞机倾向于获得高得分
                 distance_max = 1.3 * task.max_missile_attack_distance
                 if agent_id not in self.pre_scores:
                     self.pre_scores[agent_id] = result_score
 
-                reward = (R_offset / 1000.0 <= distance_max) * 20 * (result_score - self.pre_scores[agent_id])
+                reward = (R_offset <= distance_max) * (self.weight_reward_grad * (result_score - self.pre_scores[agent_id]) +
+                                                       self.weight_reward_score * np.maximum(0, result_score))
                 self.pre_scores[agent_id] = result_score
 
             # 如果被攻击，则不管优势站位，先躲避导弹活下来
             if len(agent.check_all_missile_warning()) > 0:
                reward = 0.0
 
+        reward = float(reward)
         return self._process(reward, agent_id)
 
     def get_score(self, task, AO, TA, R):
@@ -83,7 +88,7 @@ class AttackWindowReward(BaseRewardFunction):
             return ((distance < min_R) * (-1 + np.exp(-(min_R - distance))) + (distance > max_R) * (-1 + np.exp(-(distance - max_R))) +
                     (min_R <= distance <= max_R) * (1 - (2 * (distance - meal_R) / (max_R - min_R)) ** 2))
 
-        reward = (self.weight_attack_angle * get_angle_score(AO) +
+        score = (self.weight_attack_angle * get_angle_score(AO) +
                 self.weight_distance * get_distance_score(R) -
                 self.weight_threat_angle * get_angle_score(np.pi - TA))
-        return reward
+        return score
