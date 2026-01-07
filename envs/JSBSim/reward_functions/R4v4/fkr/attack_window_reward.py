@@ -66,7 +66,7 @@ class AttackWindowReward(BaseRewardFunction):
                 if agent_id not in self.pre_scores:
                     self.pre_scores[agent_id] = result_score
 
-                reward = (R_offset <= distance_max) * (self.weight_reward_grad * (result_score - self.pre_scores[agent_id]) +
+                reward = (R_offset <= distance_max) * (self.weight_reward_grad * np.maximum(0, result_score - self.pre_scores[agent_id]) +
                                                        self.weight_reward_score * np.maximum(0, result_score))
                 self.pre_scores[agent_id] = result_score
 
