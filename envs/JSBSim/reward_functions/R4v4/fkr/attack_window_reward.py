@@ -17,13 +17,13 @@ class AttackWindowReward(BaseRewardFunction):
         self.weight_distance = 4
         self.weight_threat_angle = 5
         self.weight_reward_grad = 20
-        self.weight_reward_score = 0.1
+        self.weight_reward_score = 0.2
 
         # 记录上局得分
         self.pre_scores = {}
 
     def reset(self, task, env):
-        self.pre_scores.clear()
+        self.pre_scores.clear() 
         return super().reset(task, env)
 
     def get_reward(self, task, env, agent_id):
@@ -66,7 +66,7 @@ class AttackWindowReward(BaseRewardFunction):
                 if agent_id not in self.pre_scores:
                     self.pre_scores[agent_id] = result_score
 
-                reward = (R_offset <= distance_max) * (self.weight_reward_grad * np.maximum(0, result_score - self.pre_scores[agent_id]) +
+                reward = (R_offset <= distance_max) * (self.weight_reward_grad * (result_score - self.pre_scores[agent_id]) +
                                                        self.weight_reward_score * np.maximum(0, result_score))
                 self.pre_scores[agent_id] = result_score
 
@@ -82,8 +82,8 @@ class AttackWindowReward(BaseRewardFunction):
             max_AO = task.max_missile_attack_AO
             return (angle <= max_AO) * (1 - angle / max_AO) + (angle > max_AO) * (-(angle - max_AO) / (np.pi - max_AO))
         def get_distance_score(distance):
-            min_R = task.min_missile_attack_distance
-            max_R = task.max_missile_attack_distance
+            min_R = 0.8 * task.min_missile_attack_distance
+            max_R = 1.2 * task.max_missile_attack_distance
             meal_R = (min_R + max_R) / 2
             return ((distance < min_R) * (-1 + np.exp(-(min_R - distance))) + (distance > max_R) * (-1 + np.exp(-(distance - max_R))) +
                     (min_R <= distance <= max_R) * (1 - (2 * (distance - meal_R) / (max_R - min_R)) ** 2))

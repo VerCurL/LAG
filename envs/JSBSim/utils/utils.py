@@ -157,16 +157,17 @@ def get_near_offset_of_multi_air(ego_position: np.array, enm_positions: np.array
     min_idx = np.argmin(distances)
     nearest_vector = enm_positions[min_idx] - ego_position
 
-    # 获取指向敌方质心的向量
-    _, center_vector = get_center_of_multi_air(ego_position, enm_positions)
-
-    # 计算以最近敌机为锚点的偏移量
-    nearest2center = center_vector - nearest_vector
-    nearest_direction = -nearest_vector / np.linalg.norm(nearest_vector)
-    offset = nearest2center - (np.dot(nearest2center, nearest_direction) * nearest_direction)
-
-    # 获得指向偏移后的坐标点的向量
-    target_vector = nearest_vector - lamda * offset
-    target_position = ego_position + target_vector
-
-    return target_position, target_vector
+    # # 获取指向敌方质心的向量
+    # _, center_vector = get_center_of_multi_air(ego_position, enm_positions)
+    #
+    # # 计算以最近敌机为锚点的偏移量
+    # nearest2center = center_vector - nearest_vector
+    # nearest_direction = -nearest_vector / np.linalg.norm(nearest_vector)
+    # offset = nearest2center - (np.dot(nearest2center, nearest_direction) * nearest_direction)
+    #
+    # # 获得指向偏移后的坐标点的向量
+    # target_vector = nearest_vector - lamda * offset
+    # target_position = ego_position + target_vector
+    #
+    # return target_position, target_vector
+    return enm_positions[min_idx], nearest_vector
