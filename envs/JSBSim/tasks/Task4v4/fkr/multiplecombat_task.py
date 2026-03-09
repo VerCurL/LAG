@@ -202,7 +202,7 @@ class HierarchicalMultipleCombatShootTask(HierarchicalMultipleCombatTask):
 
         # Stage2: 寻找攻击窗口
         self.reward_functions = [
-            FKR_4v4_HeadingReward(self.config),
+            # FKR_4v4_HeadingReward(self.config),
             FKR_4v4_EventDrivenReward(self.config),
             FKR_4v4_AltitudeReward(self.config),
             FKR_4v4_DistanceReward(self.config),
