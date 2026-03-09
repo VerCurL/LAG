@@ -1,6 +1,7 @@
+import math
 import numpy as np
 from gymnasium import spaces
-from typing import Tuple
+from typing import Dict, Tuple
 import torch
 
 from .singlecombat_task import SingleCombatTask
@@ -119,6 +120,67 @@ class MultipleCombatTask(SingleCombatTask):
         norm_act[3] = action[3] * 0.5 / (self.action_space.nvec[3] - 1.) + 0.4
         return norm_act
 
+    def get_reward(self, env, agent_id, info: dict = ...) -> Tuple[float, dict]:
+        """
+        Aggregate reward functions and expose per-step breakdown for logging.
+        """
+        reward_total = 0.0
+        reward_breakdown = {}
+        for reward_function in self.reward_functions:
+            item_reward = reward_function.get_reward(self, env, agent_id)
+            reward_breakdown[reward_function.__class__.__name__] = float(item_reward)
+            reward_total += item_reward
+
+        if isinstance(info, dict):
+            info.setdefault("reward_breakdown", {})
+            info.setdefault("flight_metrics", {})
+            info["reward_breakdown"][agent_id] = {
+                "total": float(reward_total),
+                **reward_breakdown,
+            }
+            info["flight_metrics"][agent_id] = self._collect_flight_metrics(env, agent_id)
+
+        return reward_total, info
+
+    def _collect_flight_metrics(self, env, agent_id) -> Dict[str, float]:
+        """
+        Collect flight state values used for telemetry logging.
+        """
+        agent = env.agents[agent_id]
+        position = agent.get_position()
+        velocity = agent.get_velocity()
+
+        heading_rad = agent.get_property_value(c.attitude_heading_true_rad)
+        roll_rad = agent.get_property_value(c.attitude_roll_rad)
+        pitch_rad = agent.get_property_value(c.attitude_pitch_rad)
+
+        alive_enemies = [enm for enm in agent.enemies if enm.is_alive]
+        if alive_enemies:
+            nearest_enemy = min(
+                alive_enemies,
+                key=lambda enm: np.linalg.norm(enm.get_position() - position),
+            )
+            nearest_enemy_distance = np.linalg.norm(nearest_enemy.get_position() - position)
+
+            ego_feature = np.hstack([position, velocity])
+            nearest_enemy_feature = np.hstack([nearest_enemy.get_position(), nearest_enemy.get_velocity()])
+            nearest_enemy_ao_rad, nearest_enemy_ta_rad, _ = get_AO_TA_R(ego_feature, nearest_enemy_feature)
+        else:
+            nearest_enemy_distance = np.nan
+            nearest_enemy_ao_rad = np.nan
+            nearest_enemy_ta_rad = np.nan
+
+        return {
+            "altitude_m": float(position[-1]),
+            "heading_deg": float((math.degrees(heading_rad) + 360.0) % 360.0),
+            "roll_deg": float(math.degrees(roll_rad)),
+            "pitch_deg": float(math.degrees(pitch_rad)),
+            "speed_mps": float(np.linalg.norm(velocity)),
+            "nearest_enemy_distance_m": float(nearest_enemy_distance),
+            "nearest_enemy_ao_deg": float(math.degrees(nearest_enemy_ao_rad)),
+            "nearest_enemy_ta_deg": float(math.degrees(nearest_enemy_ta_rad)),
+        }
+
     # def get_reward(self, env, agent_id, info: dict = ...) -> Tuple[float, dict]:
     #     if env.agents[agent_id].is_alive:
     #         return super().get_reward(env, agent_id, info=info)
@@ -200,7 +262,7 @@ class HierarchicalMultipleCombatShootTask(HierarchicalMultipleCombatTask):
         #     FKR_4v4_DistanceReward(self.config),
         # ]
 
-        # Stage2: 寻找攻击窗口
+        # Stage2: 寻找攻击窗口和躲避导弹
         self.reward_functions = [
             # FKR_4v4_HeadingReward(self.config),
             FKR_4v4_EventDrivenReward(self.config),
@@ -208,7 +270,7 @@ class HierarchicalMultipleCombatShootTask(HierarchicalMultipleCombatTask):
             FKR_4v4_DistanceReward(self.config),
             FKR_4v4_AttackWindowReward(self.config),
             # FKR_4v4_EnergyReward(self.config),
-            # FKR_4v4_MissileAvoidReward(self.config),
+            FKR_4v4_MissileAvoidReward(self.config),
         ]
     
     def load_observation_space(self):

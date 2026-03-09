@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 from typing import List
 
@@ -7,6 +8,7 @@ import torch
 
 from algorithms.utils.buffer import SharedReplayBuffer
 from .base_runner import Runner
+from utils.flight_recorder import FlightDataRecorder
 
 
 def _t2n(x):
@@ -14,6 +16,13 @@ def _t2n(x):
 
 
 class ShareJSBSimRunner(Runner):
+
+    @staticmethod
+    def _parse_agent_ids(agent_ids_str: str):
+        if not agent_ids_str:
+            return None
+        ids = [item.strip() for item in agent_ids_str.split(",") if item.strip()]
+        return ids if ids else None
 
     def load(self):
         self.obs_space = self.envs.observation_space
@@ -67,6 +76,17 @@ class ShareJSBSimRunner(Runner):
         if self.model_dir is not None:
             self.restore()
 
+        # 创建飞机数据的记录器
+        self.flight_recorder = None
+        if self.all_args.enable_flight_recorder:
+            recorder_dir = os.path.join(str(self.run_dir), "flight_recorder")
+            self.flight_recorder = FlightDataRecorder(
+                save_dir=recorder_dir,
+                tracked_agent_id=self.all_args.flight_recorder_agent_id,
+                plot_agent_ids=self._parse_agent_ids(self.all_args.flight_recorder_plot_agent_ids),
+            )
+            logging.info(f"Flight recorder enabled. Output dir: {recorder_dir}")
+
     def run(self):
         self.warmup()
 
@@ -74,62 +94,80 @@ class ShareJSBSimRunner(Runner):
         self.total_num_steps = 0
         episodes = self.num_env_steps // self.buffer_size // self.n_rollout_threads
 
-        for episode in range(episodes):
+        try:
+            for episode in range(episodes):
 
-            start_env = time.time()
-            for step in range(self.buffer_size):
-                # Sample actions
-                values, actions, action_log_probs, rnn_states_actor, rnn_states_critic = self.collect(step)
+                start_env = time.time()
+                for step in range(self.buffer_size):
+                    # Sample actions
+                    values, actions, action_log_probs, rnn_states_actor, rnn_states_critic = self.collect(step)
 
-                # Obser reward and next obs
-                obs, share_obs, rewards, dones, infos = self.envs.step(actions)
+                    # Obser reward and next obs
+                    obs, share_obs, rewards, dones, infos = self.envs.step(actions)
 
-                data = obs, share_obs, actions, rewards, dones, action_log_probs, values, rnn_states_actor, rnn_states_critic
+                    if self.flight_recorder is not None:
+                        self.flight_recorder.record_infos(
+                            infos=infos,
+                            episode=episode,
+                            rollout_step=step,
+                            total_num_steps=self.total_num_steps,
+                        )
 
-                # insert data into buffer
-                self.insert(data)
-            end_env = time.time()
+                    data = obs, share_obs, actions, rewards, dones, action_log_probs, values, rnn_states_actor, rnn_states_critic
 
-            # compute return and update network
-            start_train = time.time()
-            self.compute()
-            train_infos = self.train()
+                    # insert data into buffer
+                    self.insert(data)
+                end_env = time.time()
 
-            # post process
-            self.total_num_steps = (episode + 1) * self.buffer_size * self.n_rollout_threads
+                # compute return and update network
+                start_train = time.time()
+                self.compute()
+                train_infos = self.train()
 
-            # save model
-            if (episode % self.save_interval == 0) or (episode == episodes - 1):
-                self.save(episode)
-            end_train = time.time()
+                # post process
+                self.total_num_steps = (episode + 1) * self.buffer_size * self.n_rollout_threads
 
-            # log information
-            if episode % self.log_interval == 0:
-                end = time.time()
-                fps = int(self.total_num_steps / (end - start))
-                logging.info("\n Scenario {} Algo {} Exp {} updates {}/{} episodes, total num timesteps {}/{}, FPS {}.\n"
-                             .format(self.all_args.scenario_name,
-                                     self.algorithm_name,
-                                     self.experiment_name,
-                                     episode,
-                                     episodes,
-                                     self.total_num_steps,
-                                     self.num_env_steps,
-                                     fps))
+                # save model
+                if (episode % self.save_interval == 0) or (episode == episodes - 1):
+                    self.save(episode)
+                end_train = time.time()
 
-                train_infos["fps"] = fps
-                train_infos["env_time"] = end_env - start_env
-                train_infos["train_time"] = end_train - start_train
-                train_infos["average_episode_rewards"] = self.buffer.rewards.sum() / (self.buffer.masks == False).sum()
-                logging.info("average episode rewards is {}".format(train_infos["average_episode_rewards"]))
-                self.log_info(train_infos, self.total_num_steps)
+                # log information
+                if episode % self.log_interval == 0:
+                    end = time.time()
+                    fps = int(self.total_num_steps / (end - start))
+                    logging.info("\n Scenario {} Algo {} Exp {} updates {}/{} episodes, total num timesteps {}/{}, FPS {}.\n"
+                                 .format(self.all_args.scenario_name,
+                                         self.algorithm_name,
+                                         self.experiment_name,
+                                         episode,
+                                         episodes,
+                                         self.total_num_steps,
+                                         self.num_env_steps,
+                                         fps))
 
-            # eval
-            if episode % self.eval_interval == 0 and self.use_eval:
-                self.eval(self.total_num_steps)
+                    train_infos["fps"] = fps
+                    train_infos["env_time"] = end_env - start_env
+                    train_infos["train_time"] = end_train - start_train
+                    train_infos["average_episode_rewards"] = self.buffer.rewards.sum() / (self.buffer.masks == False).sum()
+                    logging.info("average episode rewards is {}".format(train_infos["average_episode_rewards"]))
+                    self.log_info(train_infos, self.total_num_steps)
 
-            # logger record
-            self.logger.log(episode, train_infos)
+                # eval
+                if episode % self.eval_interval == 0 and self.use_eval:
+                    self.eval(self.total_num_steps)
+
+                # logger record
+                self.logger.log(episode, train_infos)
+
+                if self.flight_recorder is not None:
+                    self.flight_recorder.dump_episode(
+                        episode=episode,
+                        draw_plot=self.all_args.flight_recorder_plot,
+                    )
+        finally:
+            if self.flight_recorder is not None:
+                self.flight_recorder.close()
 
     def warmup(self):
         # reset env

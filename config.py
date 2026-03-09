@@ -20,6 +20,7 @@ def get_config():
     parser = _get_log_config(parser)
     parser = _get_eval_config(parser)
     parser = _get_render_config(parser)
+    parser = _get_flight_recorder_config(parser)
     parser = _get_moe_type(parser)
     parser = _get_policy_type(parser)
     return parser
@@ -300,6 +301,34 @@ def _get_render_config(parser: argparse.ArgumentParser):
     group = parser.add_argument_group("Render parameters")
     group.add_argument("--render-opponent-index", type=str, default='latest', help="the index of opponent policy in the opponent pool. by default latest")
     group.add_argument("--render-index", type=str, default='latest', help="the index of ego policy. by default latest")
+    return parser
+
+
+def _get_flight_recorder_config(parser: argparse.ArgumentParser):
+    """
+    Flight recorder parameters:
+        --enable-flight-recorder
+            whether to record per-step reward and flight telemetry into csv.
+        --flight-recorder-env-index <int>
+            deprecated, kept for compatibility. recorder now dumps all env workers.
+        --flight-recorder-agent-id <str>
+            optionally record only one agent id.
+        --flight-recorder-plot
+            whether to generate matplotlib plots automatically.
+        --flight-recorder-plot-agent-ids <str>
+            comma-separated agent ids for plotting, e.g. "A0100,A0200".
+    """
+    group = parser.add_argument_group("Flight Recorder parameters")
+    group.add_argument("--enable-flight-recorder", action="store_true", default=False,
+                       help="Enable per-step reward/flight telemetry recorder.")
+    group.add_argument("--flight-recorder-env-index", type=int, default=0,
+                       help="Deprecated, recorder now dumps all env workers.")
+    group.add_argument("--flight-recorder-agent-id", type=str, default="",
+                       help="If set, only this agent id will be recorded.")
+    group.add_argument("--flight-recorder-plot", action="store_true", default=False,
+                       help="Generate matplotlib plots after csv export.")
+    group.add_argument("--flight-recorder-plot-agent-ids", type=str, default="",
+                       help="Comma-separated agent ids to plot. Empty means plot all agents.")
     return parser
 
 def _get_moe_type(parser: argparse.ArgumentParser):
