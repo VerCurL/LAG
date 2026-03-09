@@ -50,31 +50,31 @@ class EventDrivenReward(BaseRewardFunction):
 
         # 1. 检查飞机是否被击落，并且这个事件是第一次发生
         if agent.is_shotdown and agent_id not in self.shotdown_agents:
-            reward -= 300
+            reward -= 100
             self.shotdown_agents.add(agent_id)
 
         # 2. 检查飞机是否坠毁，并且这个事件是第一次发生
         elif agent.is_crash and agent_id not in self.crashed_agents:
-            reward -= 500
+            reward -= 200
             self.crashed_agents.add(agent_id)
 
         # 3. 检查导弹是否成功命中
         for missile in agent.launch_missiles:
             # 我们用导弹的唯一ID (missile.id) 来做标识
             if missile.is_success and missile.uid not in self.rewarded_missiles:
-                reward += 300
+                reward += 200
                 self.rewarded_missiles.add(missile.uid)
 
         # 4. 如果导弹没有中，则给惩罚
         for missile in agent.launch_missiles:
             if missile.is_done and missile.target_aircraft.is_alive and missile.uid not in self.critic_missiles:
-                reward -= 100
+                reward -= 10
                 self.critic_missiles.add(missile.uid)
 
         # 5. 是否躲避导弹成功
         for missile in agent.check_all_missile_warning():
             if not missile.is_alive and agent.is_alive and missile.uid not in self.missile_avoided:
-                reward += 300
+                reward += 100
                 self.missile_avoided.add(missile.uid)
 
         # 注意：原代码中的 _process 方法依然保留，用于后续处理
