@@ -16,7 +16,7 @@ class Args_MAPPOMoE:
     def __init__(self) -> None:
         self.gain = 0.01
         self.hidden_size = '128 128'
-        self.expert_hidden_size = '32 32'
+        self.expert_hidden_size = '128 128'
         self.num_general_experts = 2
         self.num_special_experts = 6
         self.top_k = 2
@@ -30,10 +30,10 @@ class Args_MAPPOMoE:
         self.use_prior = True
 
 num_agents = 8
-ego_policy_index = 222
-enm_policy_index = 222
-ego_run_dir = "D:/FastProjects/ModelFlight/LAGMoE/scripts/results/MultipleCombat/4v4/ShootMissile/HierarchySelfplay/mappoMoE/128-128-32{2-6-2}/run-test"
-enm_run_dir = "D:/FastProjects/ModelFlight/LAGMoE/scripts/results/MultipleCombat/4v4/ShootMissile/HierarchySelfplay/mappoMoE/128-128-32{2-6-2}/run-test"
+ego_policy_index = "latest_Stage1"
+enm_policy_index = "latest_Stage1"
+ego_run_dir = "D:/FastProjects/ModelFlight/LAGMoE/scripts/results/MultipleCombat/4v4/ShootMissile/HierarchySelfplay/mappoMoE/128-128-128{2-6-2}/run-test"
+enm_run_dir = "D:/FastProjects/ModelFlight/LAGMoE/scripts/results/MultipleCombat/4v4/ShootMissile/HierarchySelfplay/mappoMoE/128-128-128{2-6-2}/run-test"
 env = MultipleCombatEnv(config_name="4v4/ShootMissile/HierarchySelfplay", policy_type="fkr", fix_position=True)
 
 args = Args_MAPPOMoE()
