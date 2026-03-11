@@ -55,7 +55,7 @@ class EventDrivenReward(BaseRewardFunction):
 
         # 2. 检查飞机是否坠毁，并且这个事件是第一次发生
         elif agent.is_crash and agent_id not in self.crashed_agents:
-            reward -= 60
+            reward -= 100
             self.crashed_agents.add(agent_id)
 
         # 3. 检查导弹是否成功命中

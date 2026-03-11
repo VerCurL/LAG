@@ -20,6 +20,9 @@ class AltitudeReward(BaseRewardFunction):
         # 速度惩罚系数
         self.Kv = getattr(self.config, f'{self.__class__.__name__}_Kv', 0.2)
 
+        # 奖励权重
+        self.w_reward = 5
+
         # 奖励项名称（用于记录）
         self.reward_item_names = [self.__class__.__name__ + item for item in ['', '_Pv', '_PH']]
 
@@ -53,6 +56,6 @@ class AltitudeReward(BaseRewardFunction):
             PH = np.clip(ego_z / self.danger_altitude, 0., 1.) - 1. - 1.
         
         # 总奖励 = 速度惩罚 + 高度惩罚
-        new_reward = Pv + PH
+        new_reward = self.w_reward * (Pv + PH)
 
         return self._process(new_reward, agent_id, (Pv, PH))
