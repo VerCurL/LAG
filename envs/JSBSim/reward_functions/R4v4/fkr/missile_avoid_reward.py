@@ -22,6 +22,7 @@ class MissileAvoidReward(BaseRewardFunction):
         self.w_angle = getattr(self.config, f'{self.__class__.__name__}_w_angle', 0.8)
         self.w_closing = getattr(self.config, f'{self.__class__.__name__}_w_closing', 1.2)
         self.w_range = getattr(self.config, f'{self.__class__.__name__}_w_range', 0.8)
+        self.w_reward = 3
 
         # 归一化尺度
         self.closing_speed_scale = getattr(
@@ -150,7 +151,7 @@ class MissileAvoidReward(BaseRewardFunction):
         raw_reward = float(np.mean(per_missile_rewards))
 
         # 总裁剪，保证 reward scale 稳定
-        new_reward = float(np.clip(raw_reward, -self.max_reward_clip, self.max_reward_clip))
+        new_reward = self.w_reward * float(np.clip(raw_reward, -self.max_reward_clip, self.max_reward_clip))
 
         mean_angle = float(np.mean(angle_terms)) if angle_terms else 0.0
         mean_closing = float(np.mean(closing_terms)) if closing_terms else 0.0

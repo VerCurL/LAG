@@ -12,6 +12,8 @@ class DistanceReward(BaseRewardFunction):
         # 记录上局和最近敌机的距离
         self.pre_near_offset_states = {}        # {enm_id: [AO, TA, R]}
 
+        self.weight_reward = 1.5
+
     def reset(self, task, env):
         self.pre_near_offset_states.clear()
         return super().reset(task, env)
@@ -59,7 +61,7 @@ class DistanceReward(BaseRewardFunction):
                 reward_turn = (near_off_state[0] >= np.pi / 2) * (self.pre_near_offset_states[agent_id][0] - near_off_state[0])
 
                 # 综合奖励值
-                reward += gate * (reward_forward + reward_turn)
+                reward += self.weight_reward * gate * (reward_forward + reward_turn)
 
                 self.pre_near_offset_states[agent_id] = near_off_state
 
