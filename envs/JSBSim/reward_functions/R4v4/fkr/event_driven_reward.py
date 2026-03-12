@@ -72,10 +72,14 @@ class EventDrivenReward(BaseRewardFunction):
                 self.critic_missiles.add(missile.uid)
 
         # 5. 是否躲避导弹成功
-        for missile in agent.check_all_missile_warning():
-            if not missile.is_alive and agent.is_alive and missile.uid not in self.missile_avoided:
+        for missile in agent.under_missiles:
+            if (not missile.is_alive) and agent.is_alive and missile.uid not in self.missile_avoided:
                 reward += 20
                 self.missile_avoided.add(missile.uid)
+
+        # if agent.launch_missiles:
+        #     print(agent.uid + ": " + str([(missile.uid, missile.m_status) for missile in agent.launch_missiles]))
+        #     input()
 
         # 注意：原代码中的 _process 方法依然保留，用于后续处理
         return self._process(reward, agent_id)

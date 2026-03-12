@@ -384,6 +384,10 @@ class MissileSimulator(BaseSimulator):
         self._v_min = 150   # minimun velocity, unit: m/s
 
     @property
+    def m_status(self):
+        return self.__status
+
+    @property
     def is_alive(self):
         """Missile is still flying"""
         return self.__status == MissileSimulator.LAUNCHED
@@ -461,6 +465,8 @@ class MissileSimulator(BaseSimulator):
         self.target_aircraft.under_missiles.append(self)
 
     def run(self):
+        if not self.is_alive:
+            return
         self._t += self.dt
         action, distance = self._guidance()
         self._distance_increment.append(distance > self._distance_pre)
