@@ -60,7 +60,7 @@ def _get_prepare_config(parser: argparse.ArgumentParser):
     group.add_argument("--env-name", type=str, default='JSBSim',
                        help="specify the name of environment")
     group.add_argument("--algorithm-name", type=str, default='ppo',
-                       choices=["ppo", "ppoMoE", "mappo", "mappoMoE", "mappo-v1"],
+                       choices=["ppo", "ppoMoE", "mappo", "mappoMoE", "mappo-v1", "mappoMoE-v1"],
                        help="Specifiy the algorithm (default ppo)")
     group.add_argument("--experiment-name", type=str, default="check",
                        help="An identifier to distinguish different experiment.")
@@ -358,7 +358,7 @@ def _get_moe_type(parser: argparse.ArgumentParser):
         --policy-type <str>
     """
     group = parser.add_argument_group("MoE parameters")
-    group.add_argument("--expert-hidden-size", type=str, default='32 32',
+    group.add_argument("--expert-hidden-size", type=str, default='128 128',
                        help="Dimension of hidden layers for moe pre-process networks (default '128 128')")
     group.add_argument("--num-general-experts", type=int, default=2,
                        help="Number of general experts (default 2)")
