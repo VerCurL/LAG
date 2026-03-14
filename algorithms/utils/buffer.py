@@ -43,7 +43,10 @@ class ReplayBuffer(Buffer):
         self.use_gae = args.use_gae
         self.gae_lambda = args.gae_lambda
         # rnn config
+        self.hidden_split = args.hidden_split
         self.recurrent_hidden_size = args.recurrent_hidden_size
+        self.recurrent_hidden_size_actor = args.recurrent_hidden_size_actor
+        self.recurrent_hidden_size_critic = args.recurrent_hidden_size_critic
         self.recurrent_hidden_layers = args.recurrent_hidden_layers
 
         obs_shape = get_shape_from_space(obs_space)
@@ -64,9 +67,15 @@ class ReplayBuffer(Buffer):
         self.value_preds = np.zeros((self.buffer_size + 1, self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
         self.returns = np.zeros((self.buffer_size + 1, self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
         # rnn
-        self.rnn_states_actor = np.zeros((self.buffer_size + 1, self.n_rollout_threads, self.num_agents,
-                                          self.recurrent_hidden_layers, self.recurrent_hidden_size), dtype=np.float32)
-        self.rnn_states_critic = np.zeros_like(self.rnn_states_actor)
+        if self.hidden_split:
+            self.rnn_states_actor = np.zeros((self.buffer_size + 1, self.n_rollout_threads, self.num_agents,
+                                              self.recurrent_hidden_layers, self.recurrent_hidden_size_actor), dtype=np.float32)
+            self.rnn_states_critic = np.zeros((self.buffer_size + 1, self.n_rollout_threads, self.num_agents,
+                                               self.recurrent_hidden_layers, self.recurrent_hidden_size_critic), dtype=np.float32)
+        else:
+            self.rnn_states_actor = np.zeros((self.buffer_size + 1, self.n_rollout_threads, self.num_agents,
+                                              self.recurrent_hidden_layers, self.recurrent_hidden_size_actor), dtype=np.float32)
+            self.rnn_states_critic = np.zeros_like(self.rnn_states_actor)
 
         self.step = 0
 
@@ -128,8 +137,8 @@ class ReplayBuffer(Buffer):
         self.action_log_probs = np.zeros_like(self.action_log_probs, dtype=np.float32)
         self.value_preds = np.zeros_like(self.value_preds, dtype=np.float32)
         self.returns = np.zeros_like(self.returns, dtype=np.float32)
-        self.rnn_states_actor = np.zeros_like(self.rnn_states_critic)
-        self.rnn_states_critic = np.zeros_like(self.rnn_states_actor)
+        self.rnn_states_actor = np.zeros_like(self.rnn_states_actor)
+        self.rnn_states_critic = np.zeros_like(self.rnn_states_critic)
 
     def compute_returns(self, next_value: np.ndarray):
         """
@@ -280,7 +289,10 @@ class SharedReplayBuffer(ReplayBuffer):
         self.use_gae = args.use_gae
         self.gae_lambda = args.gae_lambda
         # rnn config
+        self.hidden_split = args.hidden_split
         self.recurrent_hidden_size = args.recurrent_hidden_size
+        self.recurrent_hidden_size_actor = args.recurrent_hidden_size_actor
+        self.recurrent_hidden_size_critic = args.recurrent_hidden_size_critic
         self.recurrent_hidden_layers = args.recurrent_hidden_layers
 
         obs_shape = get_shape_from_space(obs_space)
@@ -303,10 +315,15 @@ class SharedReplayBuffer(ReplayBuffer):
         self.value_preds = np.zeros((self.buffer_size + 1, self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
         self.returns = np.zeros((self.buffer_size + 1, self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
         # rnn
-        self.rnn_states_actor = np.zeros((self.buffer_size + 1, self.n_rollout_threads, self.num_agents,
-                                          self.recurrent_hidden_layers, self.recurrent_hidden_size), dtype=np.float32)
-        self.rnn_states_critic = np.zeros_like(self.rnn_states_actor)
-
+        if self.hidden_split:
+            self.rnn_states_actor = np.zeros((self.buffer_size + 1, self.n_rollout_threads, self.num_agents,
+                                              self.recurrent_hidden_layers, self.recurrent_hidden_size_actor), dtype=np.float32)
+            self.rnn_states_critic = np.zeros((self.buffer_size + 1, self.n_rollout_threads, self.num_agents,
+                                              self.recurrent_hidden_layers, self.recurrent_hidden_size_critic), dtype=np.float32)
+        else:
+            self.rnn_states_actor = np.zeros((self.buffer_size + 1, self.n_rollout_threads, self.num_agents,
+                                              self.recurrent_hidden_layers, self.recurrent_hidden_size_actor), dtype=np.float32)
+            self.rnn_states_critic = np.zeros_like(self.rnn_states_actor)
         self.step = 0
 
     def insert(self,

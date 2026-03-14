@@ -60,7 +60,7 @@ def _get_prepare_config(parser: argparse.ArgumentParser):
     group.add_argument("--env-name", type=str, default='JSBSim',
                        help="specify the name of environment")
     group.add_argument("--algorithm-name", type=str, default='ppo',
-                       choices=["ppo", "ppoMoE", "mappo", "mappoMoE"],
+                       choices=["ppo", "ppoMoE", "mappo", "mappoMoE", "mappo-v1"],
                        help="Specifiy the algorithm (default ppo)")
     group.add_argument("--experiment-name", type=str, default="check",
                        help="An identifier to distinguish different experiment.")
@@ -128,10 +128,24 @@ def _get_network_config(parser: argparse.ArgumentParser):
             by default 0.01, use the gain # of last action layer
     """
     group = parser.add_argument_group("Network parameters")
+    group.add_argument("--hidden-split",action='store_true', default=False,
+                       help="Whether to split hidden setting")
+    # hidden-size：统一结构、分开结构
     group.add_argument("--hidden-size", type=str, default='128 128',
                        help="Dimension of hidden layers for mlp pre-process networks (default '128 128')")
+    group.add_argument("--hidden-size-actor", type=str, default='128 128',
+                       help="Dimension of hidden layers for actor mlp pre-process networks (default '128 128')")
+    group.add_argument("--hidden-size-critic", type=str, default='128 128',
+                       help="Dimension of hidden layers for critic mlp pre-process networks (default '128 128')")
+
+    # act-hidden-size：统一结构、分开结构
     group.add_argument("--act-hidden-size", type=str, default='128 128',
                        help="Dimension of hidden layers for actlayer (default '128 128')")
+    group.add_argument("--act-hidden-size-actor", type=str, default='128 128',
+                       help="Dimension of hidden layers for actlayer (default '128 128')")
+    group.add_argument("--act-hidden-size-critic", type=str, default='128 128',
+                       help="Dimension of hidden layers for actlayer (default '128 128')")
+
     group.add_argument("--activation-id", type=int, default=1,
                        help="Choose 0 to use Tanh, 1 to use ReLU, 2 to use LeakyReLU, 3 to use ELU (default 1)")
     group.add_argument("--use-feature-normalization", action='store_true', default=False,
@@ -158,8 +172,15 @@ def _get_recurrent_config(parser: argparse.ArgumentParser):
     group = parser.add_argument_group("Recurrent parameters")
     group.add_argument("--use-recurrent-policy", action='store_false', default=True,
                        help='Whether to use a recurrent policy')
+    # recurrent-hidden-size：统一结构、分开结构
     group.add_argument("--recurrent-hidden-size", type=int, default=128,
                        help="Dimension of hidden layers for recurrent layers (default 128)")
+    group.add_argument("--recurrent-hidden-size-actor", type=int, default=128,
+                       help="Dimension of hidden layers for recurrent layers (default 128)")
+    group.add_argument("--recurrent-hidden-size-critic", type=int, default=128,
+                       help="Dimension of hidden layers for recurrent layers (default 128)")
+
+
     group.add_argument("--recurrent-hidden-layers", type=int, default=1,
                        help="The number of recurrent layers (default 1)")
     group.add_argument("--data-chunk-length", type=int, default=10,
