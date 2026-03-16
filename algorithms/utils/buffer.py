@@ -398,7 +398,7 @@ class SharedReplayBuffer(ReplayBuffer):
         rnn_states_critic = self._cast(self.rnn_states_critic[:-1])
 
         # Get mini-batch size and shuffle chunk data
-        data_chunks = self.n_rollout_threads * self.buffer_size // data_chunk_length
+        data_chunks = self.n_rollout_threads * self.buffer_size * self.num_agents // data_chunk_length
         mini_batch_size = data_chunks // num_mini_batch
         rand = torch.randperm(data_chunks).numpy()
         sampler = [rand[i * mini_batch_size:(i + 1) * mini_batch_size] for i in range(num_mini_batch)]
