@@ -3,13 +3,13 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # 指定存放 CSV 文件的目录
-data_folder = "./results/ppo.vs.ppoMoEB [lc]"
+data_path = "./results/128-128-128-v1.vs.128-128-128{4-16-2}-v1"
 
 # 自动创建 data_folder（如果不存在）
-os.makedirs(data_folder, exist_ok=True)
+os.makedirs(data_path, exist_ok=True)
 
 # 自动创建 figure 子目录
-figure_folder = os.path.join(data_folder, "figure")
+figure_folder = os.path.join(data_path, "figure")
 os.makedirs(figure_folder, exist_ok=True)
 
 # 你关心的列
@@ -24,7 +24,7 @@ columns_to_plot = [
 episode_col = "episode"
 
 # 找到所有 CSV 文件
-csv_files = [f for f in os.listdir(data_folder) if f.endswith(".csv")]
+csv_files = [f for f in os.listdir(data_path) if f.endswith(".csv")]
 if not csv_files:
     print("未发现 CSV 文件，请检查目录。")
     exit()
@@ -41,7 +41,7 @@ for col in columns_to_plot:
     has_data = False
 
     for csv_file in csv_files:
-        file_path = os.path.join(data_folder, csv_file)
+        file_path = os.path.join(data_path, csv_file)
 
         try:
             df = pd.read_csv(file_path)

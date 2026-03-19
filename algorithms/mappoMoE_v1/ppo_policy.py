@@ -29,7 +29,7 @@ class PPOMoEPolicy:
             values, actions, action_log_probs, rnn_states_actor, rnn_states_critic
         """
         actions, action_log_probs, rnn_states_actor = self.actor(obs, rnn_states_actor, masks)
-        values, rnn_states_critic = self.critic(cent_obs, rnn_states_critic, masks)
+        values, rnn_states_critic, _, _ = self.critic(cent_obs, rnn_states_critic, masks)
         return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic
 
     def get_values(self, cent_obs, rnn_states_critic, masks):
@@ -37,7 +37,7 @@ class PPOMoEPolicy:
         Returns:
             values
         """
-        values, _ = self.critic(cent_obs, rnn_states_critic, masks)
+        values, _, _, _ = self.critic(cent_obs, rnn_states_critic, masks)
         return values
 
     def evaluate_actions(self, cent_obs, obs, rnn_states_actor, rnn_states_critic, action, masks, active_masks=None):
@@ -45,10 +45,18 @@ class PPOMoEPolicy:
         Returns:
             values, action_log_probs, dist_entropy
         """
-        action_log_probs, dist_entropy, experts_out, record_info \
+        action_log_probs, dist_entropy, actor_experts_out, actor_record_info \
             = self.actor.evaluate_actions(obs, rnn_states_actor, action, masks, active_masks)
-        values, _ = self.critic(cent_obs, rnn_states_critic, masks)
-        return values, action_log_probs, dist_entropy, experts_out, record_info
+        values, _, critic_experts_out, critic_record_info = self.critic(cent_obs, rnn_states_critic, masks)
+        return (
+            values,
+            action_log_probs,
+            dist_entropy,
+            actor_experts_out,
+            actor_record_info,
+            critic_experts_out,
+            critic_record_info,
+        )
 
     def act(self, obs, rnn_states_actor, masks, deterministic=False):
         """

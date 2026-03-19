@@ -259,6 +259,9 @@ class BaseEnv(gymnasium.Env):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
 
+    def refresh_records(self):
+        self._create_records = False
+
     def _pack(self, data: Dict[str, Any]) -> np.ndarray:
         """Pack seperated key-value dict into grouped np.ndarray"""
         ego_data = np.array([data[uid] for uid in self.ego_ids])

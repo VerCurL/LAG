@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Union, List
+
 from .ppo_policy import PPOMoEPolicy
 from ..utils.buffer import SharedReplayBuffer
 from ..utils.utils import check, get_gard_norm
@@ -36,22 +36,19 @@ class PPOMoETrainer():
         returns_batch = check(returns_batch).to(**self.tpdv)
         value_preds_batch = check(value_preds_batch).to(**self.tpdv)
 
-        # Reshape to do in a single forward pass for all steps
-        values, action_log_probs, dist_entropy, experts_out, record_info\
-            = policy.evaluate_actions(share_obs_batch, obs_batch, rnn_states_actor_batch,
-                                    rnn_states_critic_batch, actions_batch, masks_batch)
+        values, action_log_probs, dist_entropy, actor_experts_out, actor_record_info, critic_experts_out, critic_record_info \
+            = policy.evaluate_actions(
+                share_obs_batch,
+                obs_batch,
+                rnn_states_actor_batch,
+                rnn_states_critic_batch,
+                actions_batch,
+                masks_batch,
+            )
 
-        # record info
-        gate_probs = record_info["gate_probs"]
-        gate_entropy = -(gate_probs * torch.log(gate_probs + 1e-8)).sum(dim=1).mean().detach()
-        gate_max_prob = gate_probs.max(dim=1)[0].mean().detach()
+        actor_gate_entropy, actor_gate_max_prob, actor_expert_usage = self._summarize_gate(actor_record_info)
+        critic_gate_entropy, critic_gate_max_prob, critic_expert_usage = self._summarize_gate(critic_record_info)
 
-        expert_usage = torch.zeros(gate_probs.size(1), device=self.device, dtype=torch.float32)
-        unique, counts = record_info["top_k_idx"].flatten().unique(return_counts=True)
-        expert_usage[unique] = counts.float()
-        expert_usage = expert_usage.detach()
-
-        # Obtain the loss function
         ratio = torch.exp(action_log_probs - old_action_log_probs_batch)
         surr1 = ratio * advantages_batch
         surr2 = torch.clamp(ratio, 1.0 - self.clip_param, 1.0 + self.clip_param) * advantages_batch
@@ -69,24 +66,27 @@ class PPOMoETrainer():
 
         policy_entropy_loss = -dist_entropy.mean()
 
-        # 专家差异化损失
-        # experts_out: [mini_batch_size, total_experts, expert_out_dim]
-        # gate_probs: [mini_batch_size, special_expert_num]
-        # top_k_idx: [mini_batch_size, top_k]
-        # sel_out: [mini_batch_size, top_k, expert_out_dim]
-        selected_experts = record_info["top_k_idx"] + policy.actor.num_general_experts
-        sel_out = experts_out.gather(1, selected_experts.unsqueeze(-1).expand(-1, -1, experts_out.size(-1)))
-        # 对专家输出计算正交损失
-        normed = F.normalize(sel_out, p=2, dim=-1)              # 归一化处理[mini_batch_size, top_k, expert_out_dim]
-        inner = torch.matmul(normed, normed.transpose(-1, -2))  # [mini_batch_size, top_k, top_k]
-        mask = 1 - torch.eye(inner.size(-1), device=inner.device)       # 构建一个对角线为0，非对角线为1的矩阵, [top_k, top_k]
-        expert_out_loss = (inner * mask).pow(2).sum() / (
-                    experts_out.size(0) * policy.actor.top_k * (policy.actor.top_k - 1))
+        actor_expert_out_loss = self._compute_expert_out_loss(
+            actor_experts_out,
+            actor_record_info,
+            policy.actor.num_general_experts,
+            policy.actor.top_k,
+        )
+        critic_expert_out_loss = self._compute_expert_out_loss(
+            critic_experts_out,
+            critic_record_info,
+            policy.critic.num_general_experts,
+            policy.critic.top_k,
+        )
+        expert_out_loss = actor_expert_out_loss + critic_expert_out_loss
 
-        loss = (policy_loss + value_loss * self.value_loss_coef + policy_entropy_loss * self.entropy_coef
-                + expert_out_loss * self.expert_out_loss_coef)
+        loss = (
+            policy_loss
+            + value_loss * self.value_loss_coef
+            + policy_entropy_loss * self.entropy_coef
+            + expert_out_loss * self.expert_out_loss_coef
+        )
 
-        # Optimize the loss function
         policy.optimizer.zero_grad()
         loss.backward()
         if self.use_max_grad_norm:
@@ -97,8 +97,44 @@ class PPOMoETrainer():
             critic_grad_norm = get_gard_norm(policy.critic.parameters())
         policy.optimizer.step()
 
-        return (policy_loss, value_loss, policy_entropy_loss, expert_out_loss, gate_entropy, gate_max_prob,
-                expert_usage, ratio, actor_grad_norm, critic_grad_norm)
+        return (
+            policy_loss,
+            value_loss,
+            policy_entropy_loss,
+            expert_out_loss,
+            actor_expert_out_loss,
+            critic_expert_out_loss,
+            actor_gate_entropy,
+            actor_gate_max_prob,
+            actor_expert_usage,
+            critic_gate_entropy,
+            critic_gate_max_prob,
+            critic_expert_usage,
+            ratio,
+            actor_grad_norm,
+            critic_grad_norm,
+        )
+
+    def _summarize_gate(self, record_info):
+        gate_probs = record_info["gate_probs"]
+        gate_entropy = -(gate_probs * torch.log(gate_probs + 1e-8)).sum(dim=1).mean().detach()
+        gate_max_prob = gate_probs.max(dim=1)[0].mean().detach()
+
+        expert_usage = torch.zeros(gate_probs.size(1), device=self.device, dtype=torch.float32)
+        unique, counts = record_info["top_k_idx"].flatten().unique(return_counts=True)
+        expert_usage[unique] = counts.float()
+        return gate_entropy, gate_max_prob, expert_usage.detach()
+
+    def _compute_expert_out_loss(self, experts_out, record_info, num_general_experts, top_k):
+        if top_k <= 1:
+            return torch.zeros((), device=self.device, dtype=experts_out.dtype)
+
+        selected_experts = record_info["top_k_idx"] + num_general_experts
+        sel_out = experts_out.gather(1, selected_experts.unsqueeze(-1).expand(-1, -1, experts_out.size(-1)))
+        normed = F.normalize(sel_out, p=2, dim=-1)
+        inner = torch.matmul(normed, normed.transpose(-1, -2))
+        mask = 1 - torch.eye(inner.size(-1), device=inner.device)
+        return (inner * mask).pow(2).sum() / (experts_out.size(0) * top_k * (top_k - 1))
 
     def train(self, policy: PPOMoEPolicy, buffer: SharedReplayBuffer):
         train_info = {}
@@ -106,10 +142,14 @@ class PPOMoETrainer():
         train_info['policy_loss'] = 0
         train_info['policy_entropy_loss'] = 0
         train_info['expert_out_loss'] = 0
-        train_info['gate_entropy'] = 0
-        train_info['gate_max_prob'] = 0
-        train_info['expert_usage'] = []
-
+        train_info['actor_expert_out_loss'] = 0
+        train_info['critic_expert_out_loss'] = 0
+        train_info['actor_gate_entropy'] = 0
+        train_info['actor_gate_max_prob'] = 0
+        train_info['actor_expert_usage'] = []
+        train_info['critic_gate_entropy'] = 0
+        train_info['critic_gate_max_prob'] = 0
+        train_info['critic_expert_usage'] = []
         train_info['actor_grad_norm'] = 0
         train_info['critic_grad_norm'] = 0
         train_info['ratio'] = 0
@@ -121,22 +161,46 @@ class PPOMoETrainer():
                 raise NotImplementedError
 
             for sample in data_generator:
-
-                (policy_loss, value_loss, policy_entropy_loss, expert_out_loss, gate_entropy, gate_max_prob,
-                 expert_usage, ratio, actor_grad_norm, critic_grad_norm) = self.ppo_update(policy, sample)
+                (
+                    policy_loss,
+                    value_loss,
+                    policy_entropy_loss,
+                    expert_out_loss,
+                    actor_expert_out_loss,
+                    critic_expert_out_loss,
+                    actor_gate_entropy,
+                    actor_gate_max_prob,
+                    actor_expert_usage,
+                    critic_gate_entropy,
+                    critic_gate_max_prob,
+                    critic_expert_usage,
+                    ratio,
+                    actor_grad_norm,
+                    critic_grad_norm,
+                ) = self.ppo_update(policy, sample)
 
                 train_info['value_loss'] += value_loss.item()
                 train_info['policy_loss'] += policy_loss.item()
                 train_info['policy_entropy_loss'] += policy_entropy_loss.item()
                 train_info['expert_out_loss'] += expert_out_loss.item()
-                train_info['gate_entropy'] += gate_entropy.item()
-                train_info['gate_max_prob'] += gate_max_prob.item()
-                if len(train_info['expert_usage']) == 0:
-                    train_info['expert_usage'] = expert_usage.tolist()
+                train_info['actor_expert_out_loss'] += actor_expert_out_loss.item()
+                train_info['critic_expert_out_loss'] += critic_expert_out_loss.item()
+                train_info['actor_gate_entropy'] += actor_gate_entropy.item()
+                train_info['actor_gate_max_prob'] += actor_gate_max_prob.item()
+                if len(train_info['actor_expert_usage']) == 0:
+                    train_info['actor_expert_usage'] = actor_expert_usage.tolist()
                 else:
-                    train_info['expert_usage'] = [x + y for x, y in
-                                                  zip(train_info['expert_usage'], expert_usage.tolist())]
-
+                    train_info['actor_expert_usage'] = [
+                        x + y for x, y in zip(train_info['actor_expert_usage'], actor_expert_usage.tolist())
+                    ]
+                train_info['critic_gate_entropy'] += critic_gate_entropy.item()
+                train_info['critic_gate_max_prob'] += critic_gate_max_prob.item()
+                if len(train_info['critic_expert_usage']) == 0:
+                    train_info['critic_expert_usage'] = critic_expert_usage.tolist()
+                else:
+                    train_info['critic_expert_usage'] = [
+                        x + y for x, y in zip(train_info['critic_expert_usage'], critic_expert_usage.tolist())
+                    ]
                 train_info['actor_grad_norm'] += actor_grad_norm
                 train_info['critic_grad_norm'] += critic_grad_norm
                 train_info['ratio'] += ratio.mean().item()
@@ -145,10 +209,8 @@ class PPOMoETrainer():
 
         for k, v in train_info.items():
             if isinstance(v, list):
-                # 列表情况：每个元素都除 num_updates
                 train_info[k] = [x / num_updates for x in v]
             else:
-                # 标量情况
                 train_info[k] = v / num_updates
 
         return train_info

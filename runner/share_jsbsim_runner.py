@@ -32,13 +32,7 @@ class ShareJSBSimRunner(Runner):
         self.use_selfplay = self.all_args.use_selfplay  # type: bool
 
         # policy & algorithm
-        if self.algorithm_name == "mappo":
-            from algorithms.mappo.ppo_trainer import PPOTrainer as Trainer
-            from algorithms.mappo.ppo_policy import PPOPolicy as Policy
-        elif self.algorithm_name == "mappoMoE":
-            from algorithms.mappoMoE.ppo_trainer import PPOMoETrainer as Trainer
-            from algorithms.mappoMoE.ppo_policy import PPOMoEPolicy as Policy
-        elif self.algorithm_name == "mappo-v1":
+        if self.algorithm_name == "mappo-v1":
             from algorithms.mappo_v1.ppo_trainer import PPOTrainer as Trainer
             from algorithms.mappo_v1.ppo_policy import PPOPolicy as Policy
         elif self.algorithm_name == "mappoMoE-v1":

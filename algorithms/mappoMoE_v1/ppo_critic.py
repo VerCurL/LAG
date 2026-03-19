@@ -3,6 +3,7 @@ import torch.nn as nn
 
 from ..utils.mlp import MLPBase, MLPLayer
 from ..utils.gru import GRULayer
+from ..utils.moe import MoELayer
 from ..utils.utils import check
 
 
@@ -17,6 +18,7 @@ class PPOMoECritic(nn.Module):
         self.use_recurrent_policy = args.use_recurrent_policy
         self.recurrent_hidden_size = args.recurrent_hidden_size_critic
         self.recurrent_hidden_layers = args.recurrent_hidden_layers
+        self.expert_hidden_size = args.expert_hidden_size
         self.tpdv = dict(dtype=torch.float32, device=device)
         # (1) feature extraction module
         self.base = MLPBase(obs_space, self.hidden_size, self.activation_id, self.use_feature_normalization)
@@ -25,9 +27,17 @@ class PPOMoECritic(nn.Module):
         if self.use_recurrent_policy:
             self.rnn = GRULayer(input_size, self.recurrent_hidden_size, self.recurrent_hidden_layers)
             input_size = self.rnn.output_size
-        # (3) value module
+        # (3) moe module
+        self.num_general_experts = args.num_general_experts
+        self.num_special_experts = args.num_special_experts
+        self.top_k = args.top_k
+        self.moe = MoELayer(input_size, self.expert_hidden_size, self.activation_id,
+                            self.num_general_experts, self.num_special_experts, self.top_k)
+        input_size = self.moe.output_size
+        # (4) value module
         if len(self.act_hidden_size) > 0:
             self.mlp = MLPLayer(input_size, self.act_hidden_size, self.activation_id)
+            input_size = self.mlp.output_size
         self.value_out = nn.Linear(input_size, 1)
 
         self.to(device)
@@ -42,9 +52,11 @@ class PPOMoECritic(nn.Module):
         if self.use_recurrent_policy:
             critic_features, rnn_states = self.rnn(critic_features, rnn_states, masks)
 
+        critic_features, experts_out = self.moe(critic_features)
+
         if len(self.act_hidden_size) > 0:
             critic_features = self.mlp(critic_features)
 
         values = self.value_out(critic_features)
 
-        return values, rnn_states
+        return values, rnn_states, experts_out, self.moe.record_info

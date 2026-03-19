@@ -37,7 +37,7 @@ class PPOMoEActor(nn.Module):
                             self.num_special_experts, self.top_k)
         input_size = self.moe.output_size
         # (4) act module
-        self.act = ACTLayer(act_space, input_size, "", self.activation_id, self.gain)
+        self.act = ACTLayer(act_space, input_size, self.act_hidden_size, self.activation_id, self.gain)
         self.to(device)
 
     def forward(self, obs, rnn_states, masks, deterministic=False):
