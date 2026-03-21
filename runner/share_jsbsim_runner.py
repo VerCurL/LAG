@@ -29,6 +29,7 @@ class ShareJSBSimRunner(Runner):
         self.share_obs_space = self.envs.share_observation_space
         self.act_space = self.envs.action_space
         self.num_agents = self.envs.num_agents
+        self.all_args.num_agents = self.num_agents // 2
         self.use_selfplay = self.all_args.use_selfplay  # type: bool
 
         # policy & algorithm
@@ -38,6 +39,9 @@ class ShareJSBSimRunner(Runner):
         elif self.algorithm_name == "mappoMoE-v1":
             from algorithms.mappoMoE_v1.ppo_trainer import PPOMoETrainer as Trainer
             from algorithms.mappoMoE_v1.ppo_policy import PPOMoEPolicy as Policy
+        elif self.algorithm_name == "mappoPCAN-v1":
+            from algorithms.mappoPCAN_v1.ppo_trainer import PPOPCANTrainer as Trainer
+            from algorithms.mappoPCAN_v1.ppo_policy import PPOPCANPolicy as Policy
         else:
             raise NotImplementedError
         self.policy = Policy(self.all_args, self.obs_space, self.share_obs_space, self.act_space, device=self.device)
@@ -100,10 +104,10 @@ class ShareJSBSimRunner(Runner):
                 start_env = time.time()
                 for step in range(self.buffer_size):
                     # Sample actions
-                    values, actions, action_log_probs, rnn_states_actor, rnn_states_critic = self.collect(step)
+                    values, actions, action_log_probs, rnn_states_actor, rnn_states_critic, credit = self.collect(step)
 
                     # Obser reward and next obs
-                    obs, share_obs, rewards, dones, infos = self.envs.step(actions)
+                    obs, share_obs, rewards, dones, infos = self.envs.step((actions, credit))
 
                     if self.flight_recorder is not None:
                         self.flight_recorder.record_infos(
@@ -184,7 +188,7 @@ class ShareJSBSimRunner(Runner):
     @torch.no_grad()
     def collect(self, step):
         self.policy.prep_rollout()
-        values, actions, action_log_probs, rnn_states_actor, rnn_states_critic \
+        values, actions, action_log_probs, rnn_states_actor, rnn_states_critic, credit \
             = self.policy.get_actions(np.concatenate(self.buffer.share_obs[step]),
                                       np.concatenate(self.buffer.obs[step]),
                                       np.concatenate(self.buffer.rnn_states_actor[step]),
@@ -196,21 +200,25 @@ class ShareJSBSimRunner(Runner):
         action_log_probs = np.array(np.split(_t2n(action_log_probs), self.n_rollout_threads))
         rnn_states_actor = np.array(np.split(_t2n(rnn_states_actor), self.n_rollout_threads))
         rnn_states_critic = np.array(np.split(_t2n(rnn_states_critic), self.n_rollout_threads))
+        credit = np.array(np.split(_t2n(credit), self.n_rollout_threads))
 
         # [Selfplay] get actions of opponent policy
         if self.use_selfplay:
             opponent_actions = np.zeros_like(actions)
+            opponent_credits = np.zeros_like(credit)
             for policy_idx, policy in enumerate(self.opponent_policy):
                 env_idx = self.opponent_env_split[policy_idx]
-                opponent_action, opponent_rnn_states \
+                opponent_action, opponent_rnn_states, opponent_credit \
                     = policy.act(np.concatenate(self.opponent_obs[env_idx]),
                                  np.concatenate(self.opponent_rnn_states[env_idx]),
                                  np.concatenate(self.opponent_masks[env_idx]))
                 opponent_actions[env_idx] = np.array(np.split(_t2n(opponent_action), len(env_idx)))
+                opponent_credits[env_idx] = np.array(np.split(_t2n(opponent_credit), len(env_idx)))
                 self.opponent_rnn_states[env_idx] = np.array(np.split(_t2n(opponent_rnn_states), len(env_idx)))
             actions = np.concatenate((actions, opponent_actions), axis=1)
+            credit = np.concatenate((credit, opponent_credits), axis=1)
 
-        return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic
+        return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic, credit
 
     @torch.no_grad()
     def compute(self):
@@ -290,24 +298,27 @@ class ShareJSBSimRunner(Runner):
                 eval_opponent_rnn_states = np.zeros_like(eval_rnn_states, dtype=np.float32)
 
             self.policy.prep_rollout()
-            eval_actions, eval_rnn_states = self.policy.act(np.concatenate(eval_obs),
+            eval_actions, eval_rnn_states, eval_credits = self.policy.act(np.concatenate(eval_obs),
                                                             np.concatenate(eval_rnn_states),
                                                             np.concatenate(eval_masks), deterministic=True)
             eval_actions = np.array(np.split(_t2n(eval_actions), self.n_eval_rollout_threads))
             eval_rnn_states = np.array(np.split(_t2n(eval_rnn_states), self.n_eval_rollout_threads))
+            eval_credits = np.array(np.split(_t2n(eval_credits), self.n_eval_rollout_threads))
 
             # [Selfplay] get actions of opponent policy
             if self.use_selfplay:
-                eval_opponent_actions, eval_opponent_rnn_states \
+                eval_opponent_actions, eval_opponent_rnn_states, eval_opponent_credits \
                     = self.eval_opponent_policy.act(np.concatenate(eval_opponent_obs),
                                                     np.concatenate(eval_opponent_rnn_states),
                                                     np.concatenate(eval_opponent_masks))
                 eval_opponent_rnn_states = np.array(np.split(_t2n(eval_opponent_rnn_states), self.n_eval_rollout_threads))
                 eval_opponent_actions = np.array(np.split(_t2n(eval_opponent_actions), self.n_eval_rollout_threads))
+                eval_opponent_credits = np.array(np.split(_t2n(eval_opponent_credits), self.n_eval_rollout_threads))
                 eval_actions = np.concatenate((eval_actions, eval_opponent_actions), axis=1)
+                eval_credits = np.concatenate((eval_credits, eval_opponent_credits), axis=1)
 
             # Obser reward and next obs
-            eval_obs, eval_share_obs, eval_rewards, eval_dones, eval_infos = self.eval_envs.step(eval_actions)
+            eval_obs, eval_share_obs, eval_rewards, eval_dones, eval_infos = self.eval_envs.step((eval_actions, eval_credits))
 
             # [Selfplay] get ego reward
             if self.use_selfplay:

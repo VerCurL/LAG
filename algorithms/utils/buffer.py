@@ -387,7 +387,9 @@ class SharedReplayBuffer(ReplayBuffer):
         rnn_states_critic = self._cast(self.rnn_states_critic[:-1])
 
         # Get mini-batch size and shuffle chunk data
+        # 按照data_chunk_length切分时间步能切多少块
         data_chunks = self.n_rollout_threads * self.buffer_size * self.num_agents // data_chunk_length
+        # 每num_mini_batch块一组可以分多少组
         mini_batch_size = data_chunks // num_mini_batch
         rand = torch.randperm(data_chunks).numpy()
         sampler = [rand[i * mini_batch_size:(i + 1) * mini_batch_size] for i in range(num_mini_batch)]
@@ -404,6 +406,7 @@ class SharedReplayBuffer(ReplayBuffer):
             value_preds_batch = []
             rnn_states_actor_batch = []
             rnn_states_critic_batch = []
+            # last_obs_batch = []
 
             for index in indices:
 
@@ -421,6 +424,8 @@ class SharedReplayBuffer(ReplayBuffer):
                 # size [T+1, N, M, Dim] => [T, N, M, Dim] => [N, M, T, Dim] => [N * M * T, Dim] => [1, Dim]
                 rnn_states_actor_batch.append(rnn_states_actor[ind])
                 rnn_states_critic_batch.append(rnn_states_critic[ind])
+                # # last_obs
+                # last_obs_batch.append([obs[ind + data_chunk_length + 1]])
 
             L, N = data_chunk_length, mini_batch_size
 
@@ -439,6 +444,10 @@ class SharedReplayBuffer(ReplayBuffer):
             rnn_states_actor_batch = np.stack(rnn_states_actor_batch).reshape(N, *self.rnn_states_actor.shape[3:])
             rnn_states_critic_batch = np.stack(rnn_states_critic_batch).reshape(N, *self.rnn_states_critic.shape[3:])
 
+            # # last_obs
+            # last_obs_batch = np.stack(last_obs_batch, axis=1)
+            # print("last_obs_batch noflat: ", last_obs_batch.shape)
+
             # Flatten the (L, N, ...) from_numpys to (L * N, ...)
             obs_batch = self._flatten(L, N, obs_batch)
             share_obs_batch = self._flatten(L, N, share_obs_batch)
@@ -449,6 +458,8 @@ class SharedReplayBuffer(ReplayBuffer):
             advantages_batch = self._flatten(L, N, advantages_batch)
             returns_batch = self._flatten(L, N, returns_batch)
             value_preds_batch = self._flatten(L, N, value_preds_batch)
+            # last_obs_batch = self._flatten(1, N, last_obs_batch)
+            # print("last_obs_batch flat: ", last_obs_batch.shape)
 
             yield obs_batch, share_obs_batch, actions_batch, masks_batch, active_masks_batch, \
                 old_action_log_probs_batch, advantages_batch, returns_batch, value_preds_batch, \

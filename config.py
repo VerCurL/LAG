@@ -22,6 +22,7 @@ def get_config():
     parser = _get_render_config(parser)
     parser = _get_flight_recorder_config(parser)
     parser = _get_moe_type(parser)
+    parser = _get_pcan_type(parser)
     parser = _get_policy_type(parser)
     return parser
 
@@ -60,7 +61,7 @@ def _get_prepare_config(parser: argparse.ArgumentParser):
     group.add_argument("--env-name", type=str, default='JSBSim',
                        help="specify the name of environment")
     group.add_argument("--algorithm-name", type=str, default='ppo',
-                       choices=["mappo-v1", "mappoMoE-v1"],
+                       choices=["mappo-v1", "mappoMoE-v1", "mappoPCAN-v1"],
                        help="Specifiy the algorithm (default ppo)")
     group.add_argument("--experiment-name", type=str, default="check",
                        help="An identifier to distinguish different experiment.")
@@ -360,6 +361,24 @@ def _get_moe_type(parser: argparse.ArgumentParser):
                        help="Number of top-k experts (default 2)")
     group.add_argument("--expert-out-loss-coef", type=float, default=0.1,
                        help="Expert output loss (default 0.1)")
+    return parser
+
+def _get_pcan_type(parser: argparse.ArgumentParser):
+    """
+    Optimizer parameters:
+        --policy-type <str>
+    """
+    group = parser.add_argument_group("PCAN parameters")
+    group.add_argument("--KQ-hidden-size", type=str, default='256 256',
+                       help="Dimension of hidden layers for pcan KQ networks (default '256 256')")
+    group.add_argument("--V-hidden-size", type=str, default='128 128',
+                       help="Dimension of hidden layers for pcan V networks (default '128 128')")
+    group.add_argument("--PCANOut-hidden-size", type=str, default='128',
+                       help="Dimension of hidden layers for pcan out networks (default '128')")
+    group.add_argument("--num-heads", type=int, default=1,
+                       help="Number of attention heads for pcan out networks (default 1)")
+    group.add_argument("--obs-pred-coef", type=float, default=0.5,
+                       help="Number of attention heads for pcan out networks (default 1)")
     return parser
 
 def _get_policy_type(parser: argparse.ArgumentParser):

@@ -137,14 +137,14 @@ class MultipleCombatEnv(BaseEnv):
 
         self._tempsims.clear()
 
-    def step(self, action: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
+    def step(self, action_credit: Tuple[np.ndarray, np.ndarray]) -> Tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
         """Run one timestep of the environment's dynamics. When end of
         episode is reached, you are responsible for calling `reset()`
         to reset this environment's observation. Accepts an action and
         returns a tuple (observation, reward_visualize, done, info).
 
         Args:
-            action (dict): the agents' actions, each key corresponds to an agent_id
+            action_credit (tuple): the agents' actions and credit, allow opponent's action and credit input
 
         Returns:
             (tuple):
@@ -154,6 +154,7 @@ class MultipleCombatEnv(BaseEnv):
                 dones: whether the episode has ended, in which case further step() calls are undefined
                 info: auxiliary information
         """
+        action, credit = action_credit
         self.current_step += 1
         info = {"current_step": self.current_step}
 
@@ -172,17 +173,17 @@ class MultipleCombatEnv(BaseEnv):
         obs = self.get_obs()
         share_obs = self.get_state()
 
+        # 奖励采用信用分配法，默认信用分配为平均分配
         rewards = {}
         for agent_id in self.agents.keys():
             reward, info = self.task.get_reward(self, agent_id, info)
             rewards[agent_id] = [reward]
-        # todo: 这里要直接对奖励做均分嘛？
-        ego_reward = np.mean([rewards[ego_id] for ego_id in self.ego_ids])
-        enm_reward = np.mean([rewards[enm_id] for enm_id in self.enm_ids])
-        for ego_id in self.ego_ids:
-            rewards[ego_id] = [ego_reward]
-        for enm_id in self.enm_ids:
-            rewards[enm_id] = [enm_reward]
+        ego_rewards = np.array([rewards[ego_id] for ego_id in self.ego_ids]).reshape(-1) @ credit[0]
+        enm_rewards = np.array([rewards[enm_id] for enm_id in self.enm_ids]).reshape(-1) @ credit[1]
+        for i, ego_id in enumerate(self.ego_ids):
+            rewards[ego_id] = [ego_rewards[i]]
+        for i, enm_id in enumerate(self.enm_ids):
+            rewards[enm_id] = [enm_rewards[i]]
 
         dones = {}
         for agent_id in self.agents.keys():

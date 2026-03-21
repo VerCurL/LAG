@@ -1,38 +1,35 @@
 import torch
-from .ppo_actor import PPOMoEActor
-from .ppo_critic import PPOMoECritic
+from .ppo_actor import PPOActor
+from .ppo_critic import PPOCritic
 
 
-class PPOMoEPolicy:
+class PPOPCANPolicy:
     def __init__(self, args, obs_space, cent_obs_space, act_space, device=torch.device("cpu")):
 
         self.args = args
         self.device = device
-        self.num_agents = args.num_agents
         # optimizer config
         self.lr = args.lr
-        
+
         self.obs_space = obs_space
         self.cent_obs_space = cent_obs_space
         self.act_space = act_space
 
-        self.actor = PPOMoEActor(args, self.obs_space, self.act_space, self.device)
-        self.critic = PPOMoECritic(args, self.cent_obs_space, self.device)
+        self.actor = PPOActor(args, self.obs_space, self.act_space, self.device)
+        self.critic = PPOCritic(args, self.cent_obs_space, self.device)
 
         self.optimizer = torch.optim.Adam([
             {'params': self.actor.parameters()},
             {'params': self.critic.parameters()}
         ], lr=self.lr)
 
-
     def get_actions(self, cent_obs, obs, rnn_states_actor, rnn_states_critic, masks):
         """
         Returns:
             values, actions, action_log_probs, rnn_states_actor, rnn_states_critic
         """
-        actions, action_log_probs, rnn_states_actor = self.actor(obs, rnn_states_actor, masks)
-        values, rnn_states_critic, _, _ = self.critic(cent_obs, rnn_states_critic, masks)
-        credit = torch.full((obs.shape[0] // self.num_agents, self.num_agents, self.num_agents), 1 / self.num_agents)
+        actions, action_log_probs, rnn_states_actor, credit = self.actor(obs, rnn_states_actor, masks)
+        values, rnn_states_critic = self.critic(cent_obs, rnn_states_critic, masks)
         return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic, credit
 
     def get_values(self, cent_obs, rnn_states_critic, masks):
@@ -40,7 +37,7 @@ class PPOMoEPolicy:
         Returns:
             values
         """
-        values, _, _, _ = self.critic(cent_obs, rnn_states_critic, masks)
+        values, _ = self.critic(cent_obs, rnn_states_critic, masks)
         return values
 
     def evaluate_actions(self, cent_obs, obs, rnn_states_actor, rnn_states_critic, action, masks, active_masks=None):
@@ -48,26 +45,16 @@ class PPOMoEPolicy:
         Returns:
             values, action_log_probs, dist_entropy
         """
-        action_log_probs, dist_entropy, actor_experts_out, actor_record_info \
-            = self.actor.evaluate_actions(obs, rnn_states_actor, action, masks, active_masks)
-        values, _, critic_experts_out, critic_record_info = self.critic(cent_obs, rnn_states_critic, masks)
-        return (
-            values,
-            action_log_probs,
-            dist_entropy,
-            actor_experts_out,
-            actor_record_info,
-            critic_experts_out,
-            critic_record_info,
-        )
+        action_log_probs, dist_entropy, obs_next, credit, pcan_record_info = self.actor.evaluate_actions(obs, rnn_states_actor, action, masks, active_masks)
+        values, _ = self.critic(cent_obs, rnn_states_critic, masks)
+        return values, action_log_probs, dist_entropy, obs_next, credit, pcan_record_info
 
     def act(self, obs, rnn_states_actor, masks, deterministic=False):
         """
         Returns:
             actions, rnn_states_actor
         """
-        actions, _, rnn_states_actor = self.actor(obs, rnn_states_actor, masks, deterministic)
-        credit = torch.full((obs.shape[0] // self.num_agents, self.num_agents, self.num_agents), 1 / self.num_agents)
+        actions, _, rnn_states_actor, credit = self.actor(obs, rnn_states_actor, masks, deterministic)
         return actions, rnn_states_actor, credit
 
     def prep_training(self):
@@ -79,4 +66,4 @@ class PPOMoEPolicy:
         self.critic.eval()
 
     def copy(self):
-        return PPOMoEPolicy(self.args, self.obs_space, self.act_space, self.device)
+        return PPOPCANPolicy(self.args, self.obs_space, self.act_space, self.device)

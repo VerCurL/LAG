@@ -133,10 +133,11 @@ class DummyVecEnv(VecEnv):
         super().__init__(len(self.envs), env.observation_space, env.action_space)
 
         self.actions = None
+        self.credit = None
         self.num_agents = getattr(self.envs[0], "num_agents", 1)
 
-    def step_async(self, actions):
-        self.actions = actions
+    def step_async(self, action_credit):
+        self.actions, self.credit = action_credit
 
     def step_wait(self):
         results = [env.step(a) for (a, env) in zip(self.actions, self.envs)]
@@ -266,11 +267,13 @@ class SubprocVecEnv(VecEnv):
         self.remotes[0].send(('get_num_agents', None))
         self.num_agents = self.remotes[0].recv().x
 
-    def step_async(self, actions):
+    def step_async(self, data):
         self._assert_not_closed()
+        actions, credit = data
         actions = np.array_split(actions, self.nremotes)
-        for remote, action in zip(self.remotes, actions):
-            remote.send(('step', action))
+        credit = np.array_split(credit, self.nremotes)
+        for remote, action_chunk, credit_chunk in zip(self.remotes, actions, credit):
+            remote.send(('step', (action_chunk, credit_chunk)))
         self.waiting = True
 
     def step_wait(self):
@@ -345,7 +348,7 @@ class ShareDummyVecEnv(DummyVecEnv, ShareVecEnv):
         self.num_agents = getattr(self.envs[0], "num_agents", 1)
 
     def step_wait(self):
-        results = [env.step(a) for (a, env) in zip(self.actions, self.envs)]
+        results = [env.step((a, c)) for (a, c, env) in zip(self.actions, self.credit, self.envs)]
         obs, share_obs, rews, dones, infos = map(list, zip(*results))
         for (i, done) in enumerate(dones):
             if 'bool' in done.__class__.__name__:
@@ -360,6 +363,7 @@ class ShareDummyVecEnv(DummyVecEnv, ShareVecEnv):
             else:
                 raise NotImplementedError("Unexpected type of done!")
         self.actions = None
+        self.credit = None
         return self._flatten(obs), self._flatten(share_obs), self._flatten(rews), self._flatten(dones), np.array(infos)
 
     def reset(self):
@@ -377,8 +381,9 @@ def shareworker(remote: Connection, parent_remote: Connection, env_fn_wrappers):
         parent_remote (Connection): used for mainprocess to send/receive data. [Need to be closed in subprocess!]
         env_fn_wrappers (method): functions to create gym.Env instance.
     """
-    def step_env(env, action):
-        obs, share_obs, reward, done, info = env.step(action)
+    def step_env(env, action, credit):
+        action_credit = action, credit
+        obs, share_obs, reward, done, info = env.step(action_credit)
         if 'bool' in done.__class__.__name__:
             if done:
                 obs, share_obs = env.reset()
@@ -398,7 +403,9 @@ def shareworker(remote: Connection, parent_remote: Connection, env_fn_wrappers):
         while True:
             cmd, data = remote.recv()
             if cmd == 'step':
-                remote.send([step_env(env, action) for env, action in zip(envs, data)])
+                actions, credit = data
+                remote.send([step_env(env, action_pre, credit_pre)
+                             for env, action_pre, credit_pre in zip(envs, actions, credit)])
             elif cmd == 'reset':
                 remote.send([env.reset() for env in envs])
             elif cmd == 'close':

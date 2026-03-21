@@ -25,48 +25,37 @@ class AlgorithmsLogger:
         """
         # 写入表头
         if self.first_write:
-            if self.algorithm_name in ["ppo", "mappo"]:
-                header = [
-                    "episode",                      # 训练的episode数
-                    "policy_loss",                  # 策略损失
-                    "policy_entropy_loss",          # 策略熵损失
-                    "value_loss",                   # 价值损失
-                    "average_episode_rewards",      # 每局奖励
-                    "env_time",                     # 虚拟仿真时间
-                    "train_time",                   # 训练时间
-                    "fps",                          # 每秒帧数
-
-                    # "value_mean",                   # 价值均值
-                    # "value_std",                    # 价值标准差
-                    # "approx_kl",                    # 近似KL散度
-                    # "win_rate"                      # 胜率
-                ]
-                self.writer.writerow(header)
-            elif self.algorithm_name in ["ppoMoE", "mappoMoE"]:
+            header = [
+                "episode",              # 训练的episode数
+                "policy_loss",          # 策略损失
+                "policy_entropy_loss",  # 策略熵损失
+                "value_loss",           # 价值损失
+                "actor_grad_norm",      # 策略网络梯度
+                "critic_grad_norm",     # 价值网络梯度
+                "average_episode_rewards",      # 每局奖励
+                "env_time",             # 虚拟仿真时间
+                "train_time",           # 训练时间
+                "fps",                  # 每秒帧数
+            ]
+            # 按照算法添加额外列
+            if self.algorithm_name in ["mappo-v1"]:
+                pass
+            elif self.algorithm_name in ["mappoMoE-v1"]:
                 self.expert_usage_len = info["expert_usage_len"]
-                header = [
-                    "episode",
-                    "policy_loss",
-                    "policy_entropy_loss",
-                    "value_loss",
-                    "expert_out_loss",
-                    "average_episode_rewards",
-                    "env_time",                         # 虚拟仿真时间
-                    "train_time",                       # 训练时间
-                    "fps",
+                header += [
+                    "expert_out_loss",      # 专家交叉损失
                     "gate_entropy",
                     "gate_max_prob",
                 ]
                 # 添加 expert_usage 的展开列
                 header += [f"expert_usage_{i + 1}" for i in range(self.expert_usage_len)]
-                # # 继续后面的指标
-                # header += [
-                #     "value_mean",
-                #     "value_std",
-                #     "approx_kl",
-                #     "win_rate"
-                # ]
-                self.writer.writerow(header)
+            elif self.algorithm_name in ["mappoPCAN-v1"]:
+                header += [
+                    "obs_pred_loss",        # 态势预测损失
+                    "credit_diag_mean",     # credit对角线均值
+                    "credit_entropy",       # credit行熵的均值
+                ]
+            self.writer.writerow(header)
 
         self.csv_file.flush()
 
@@ -79,7 +68,7 @@ class AlgorithmsLogger:
         # 在第一次 log 时写入表头（因为这时才能拿到 expert_usage 的长度）
         if self.first_write:
             info = {}
-            if self.algorithm_name in ["ppoMoE", "mappoMoE"]:
+            if self.algorithm_name in ["mappoMoE-v1"]:
                 info["expert_usage_len"] = len(expert_usage)
 
             # expert_usage 必须可迭代
@@ -92,29 +81,32 @@ class AlgorithmsLogger:
             data.get("policy_loss", None),
             data.get("policy_entropy_loss", None),
             data.get("value_loss", None),
-            data.get("expert_out_loss", None),
+            data.get("actor_grad_norm", None),
+            data.get("critic_grad_norm", None),
             data.get("average_episode_rewards", None),
             data.get("env_time", None),
             data.get("train_time", None),
             data.get("fps", None),
-            data.get("gate_entropy", None),
-            data.get("gate_max_prob", None),
+
         ]
 
-        if self.algorithm_name in ["ppoMoE", "mappoMoE"]:
+        if self.algorithm_name in ["mappoMoE-v1"]:
+            row += [
+                data.get("expert_out_loss", None),
+                data.get("gate_entropy", None),
+                data.get("gate_max_prob", None),
+            ]
             # 写入 expert_usage 展开
             if expert_usage is None:
                 row += [None] * self.expert_usage_len
             else:
                 row += list(expert_usage)
-
-        # # 写后续字段
-        # row += [
-        #     data.get("value_mean", None),
-        #     data.get("value_std", None),
-        #     data.get("approx_kl", None),
-        #     data.get("win_rate", None)
-        # ]
+        elif self.algorithm_name in ["mappoPCAN-v1"]:
+            row += [
+                data.get("obs_pred_loss", None),
+                data.get("credit_diag_mean", None),
+                data.get("credit_entropy", None),
+            ]
 
         self.writer.writerow(row)
         self.csv_file.flush()
