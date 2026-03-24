@@ -61,7 +61,7 @@ def _get_prepare_config(parser: argparse.ArgumentParser):
     group.add_argument("--env-name", type=str, default='JSBSim',
                        help="specify the name of environment")
     group.add_argument("--algorithm-name", type=str, default='ppo',
-                       choices=["mappo-v1", "mappoMoE-v1", "mappoPCAN-v1"],
+                       choices=["mappo-v1", "mappoMoE-v1", "mappoPCAN-v1", "mappoPCAN-v2"],
                        help="Specifiy the algorithm (default ppo)")
     group.add_argument("--experiment-name", type=str, default="check",
                        help="An identifier to distinguish different experiment.")
@@ -378,6 +378,8 @@ def _get_pcan_type(parser: argparse.ArgumentParser):
     group.add_argument("--num-heads", type=int, default=1,
                        help="Number of attention heads for pcan out networks (default 1)")
     group.add_argument("--obs-pred-coef", type=float, default=0.5,
+                       help="Number of attention heads for pcan out networks (default 1)")
+    group.add_argument("--rewards-pred-coef", type=float, default=0.5,
                        help="Number of attention heads for pcan out networks (default 1)")
     return parser
 

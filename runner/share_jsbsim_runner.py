@@ -42,6 +42,9 @@ class ShareJSBSimRunner(Runner):
         elif self.algorithm_name == "mappoPCAN-v1":
             from algorithms.mappoPCAN_v1.ppo_trainer import PPOPCANTrainer as Trainer
             from algorithms.mappoPCAN_v1.ppo_policy import PPOPCANPolicy as Policy
+        elif self.algorithm_name == "mappoPCAN-v2":
+            from algorithms.mappoPCAN_v2.ppo_trainer import PPOPCANTrainer as Trainer
+            from algorithms.mappoPCAN_v2.ppo_policy import PPOPCANPolicy as Policy
         else:
             raise NotImplementedError
         self.policy = Policy(self.all_args, self.obs_space, self.share_obs_space, self.act_space, device=self.device)

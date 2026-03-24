@@ -55,6 +55,12 @@ class AlgorithmsLogger:
                     "credit_diag_mean",     # credit对角线均值
                     "credit_entropy",       # credit行熵的均值
                 ]
+            elif self.algorithm_name in ["mappoPCAN-v2"]:
+                header += [
+                    "rewards_pred_loss",    # 奖励预测损失
+                    "credit_diag_mean",     # credit对角线均值
+                    "credit_entropy",       # credit行熵的均值
+                ]
             self.writer.writerow(header)
 
         self.csv_file.flush()
@@ -104,6 +110,12 @@ class AlgorithmsLogger:
         elif self.algorithm_name in ["mappoPCAN-v1"]:
             row += [
                 data.get("obs_pred_loss", None),
+                data.get("credit_diag_mean", None),
+                data.get("credit_entropy", None),
+            ]
+        elif self.algorithm_name in ["mappoPCAN-v2"]:
+            row += [
+                data.get("rewards_pred_loss", None),
                 data.get("credit_diag_mean", None),
                 data.get("credit_entropy", None),
             ]

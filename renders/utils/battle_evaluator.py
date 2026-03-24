@@ -191,10 +191,10 @@ class BattleEvaluator:
         #     return "ego"
         # if final_row["ego_total_blood"] < final_row["enm_total_blood"]:
         #     return "enm"
-        if final_row["ego_cumulative_reward"] > final_row["enm_cumulative_reward"]:
-            return "ego"
-        if final_row["ego_cumulative_reward"] < final_row["enm_cumulative_reward"]:
-            return "enm"
+        # if final_row["ego_cumulative_reward"] > final_row["enm_cumulative_reward"]:
+        #     return "ego"
+        # if final_row["ego_cumulative_reward"] < final_row["enm_cumulative_reward"]:
+        #     return "enm"
         return "draw"
 
     def _plot_episode_curves(self, episode_dir):

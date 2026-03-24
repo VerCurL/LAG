@@ -20,19 +20,21 @@ class PPOPCANTrainer():
         self.num_mini_batch = args.num_mini_batch
         self.value_loss_coef = args.value_loss_coef
         self.entropy_coef = args.entropy_coef
-        self.obs_pred_coef = args.obs_pred_coef
+        self.rewards_pred_coef = args.rewards_pred_coef
         self.use_max_grad_norm = args.use_max_grad_norm
         self.max_grad_norm = args.max_grad_norm
         # rnn configs
         self.use_recurrent_policy = args.use_recurrent_policy
         self.data_chunk_length = args.data_chunk_length
+
+        self.num_agents = args.num_agents
         # 上一时刻credit
         self._prev_credit_snapshot = None
 
     def ppo_update(self, policy: PPOPCANPolicy, sample):
         # -------- 收集buffer_size缓冲值 --------
         obs_batch, share_obs_batch, actions_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, advantages_batch, \
-            returns_batch, value_preds_batch, rnn_states_actor_batch, rnn_states_critic_batch, _ = sample
+            returns_batch, value_preds_batch, rnn_states_actor_batch, rnn_states_critic_batch, rewards_batch = sample
 
         old_action_log_probs_batch = check(old_action_log_probs_batch).to(**self.tpdv)
         advantages_batch = check(advantages_batch).to(**self.tpdv)
@@ -40,7 +42,7 @@ class PPOPCANTrainer():
         value_preds_batch = check(value_preds_batch).to(**self.tpdv)
 
         # -------- 评估行为获得所需值 --------
-        values, action_log_probs, dist_entropy, obs_next, credit, pcan_record_info\
+        values, action_log_probs, dist_entropy, rewards_pred, credit, pcan_record_info\
             = policy.evaluate_actions(share_obs_batch, obs_batch, rnn_states_actor_batch,
                         rnn_states_critic_batch, actions_batch, masks_batch)
 
@@ -65,29 +67,16 @@ class PPOPCANTrainer():
         # 策略熵损失
         policy_entropy_loss = -dist_entropy.mean()
 
-        # 态势预测损失
-        time_batch, dim = obs_batch.shape
-        obs_batch = torch.from_numpy(obs_batch).to(self.device)
-        masks_batch = torch.from_numpy(masks_batch).to(self.device)
-        # print("obs_batch: ", obs_batch.shape)
-        # print("obs_next: ", obs_next.shape)
-        # print("masks_batch: ", masks_batch.shape)
-        obs_target = obs_batch.view(self.data_chunk_length, time_batch // self.data_chunk_length, dim)
-        obs_pred = obs_next.view(self.data_chunk_length, time_batch // self.data_chunk_length, dim)
-        masks_batch = masks_batch.view(self.data_chunk_length, time_batch // self.data_chunk_length, masks_batch.shape[-1])
-        # print("obs_target: ", obs_target.shape)
-        # print("obs_target[:-1]: ", obs_target[:-1].shape)
-        # print("obs_pred: ", obs_pred.shape)
-        # print("masks_batch: ", masks_batch.shape)
-        valid_transition = masks_batch[1:]                  # [L-1, N, 1]
-        per_dim_obs_loss = F.mse_loss(obs_pred[:-1], obs_target[1:], reduction='none')          # [L-1, N, D]
-        per_transition_obs_loss = per_dim_obs_loss.mean(dim=-1, keepdim=True)                   # [L-1, N, 1]
-        masked_transition_obs_loss = per_transition_obs_loss * valid_transition
-        valid_count = valid_transition.sum().clamp(min=1.0)
-        obs_pred_loss = masked_transition_obs_loss.sum() / valid_count
+        # 奖励预测损失
+        time_batch, reward_dim = rewards_batch.shape
+        # [L * N, D] -> [L, N, D]
+        rewards_target = torch.from_numpy(rewards_batch).to(self.device)
+        rewards_target = rewards_target.view(self.data_chunk_length, time_batch // self.data_chunk_length, reward_dim)
+        rewards_pred = rewards_pred.view(self.data_chunk_length, time_batch // self.data_chunk_length, reward_dim)
+        rewards_pred_loss = F.mse_loss(rewards_pred, rewards_target)           # [L, N, D] -loss_mean-> 1
 
         # 损失加权求和
-        loss = policy_loss + value_loss * self.value_loss_coef + policy_entropy_loss * self.entropy_coef + obs_pred_loss * self.obs_pred_coef
+        loss = policy_loss + value_loss * self.value_loss_coef + policy_entropy_loss * self.entropy_coef + rewards_pred_loss * self.rewards_pred_coef
 
         # 记录
         credit_diag_mean, credit_entropy = self._summarize_credit(credit)
@@ -105,7 +94,7 @@ class PPOPCANTrainer():
             critic_grad_norm = get_gard_norm(policy.critic.parameters())
         policy.optimizer.step()
 
-        return (policy_loss, value_loss, policy_entropy_loss, obs_pred_loss, credit_diag_mean, credit_entropy,
+        return (policy_loss, value_loss, policy_entropy_loss, rewards_pred_loss, credit_diag_mean, credit_entropy,
                 head_diversity, pcan_output_norm, credit_change_rate, ratio, actor_grad_norm, critic_grad_norm)
 
     def train(self, policy: PPOPCANPolicy, buffer: SharedReplayBuffer):
@@ -113,7 +102,7 @@ class PPOPCANTrainer():
         train_info['value_loss'] = 0
         train_info['policy_loss'] = 0
         train_info['policy_entropy_loss'] = 0
-        train_info['obs_pred_loss'] = 0
+        train_info['rewards_pred_loss'] = 0
         train_info["credit_diag_mean"] = 0
         train_info["credit_entropy"] = 0
         train_info["head_diversity"] = 0
@@ -131,14 +120,14 @@ class PPOPCANTrainer():
 
             for sample in data_generator:
 
-                (policy_loss, value_loss, policy_entropy_loss, obs_pred_loss, credit_diag_mean, credit_entropy,
+                (policy_loss, value_loss, policy_entropy_loss, rewards_pred_loss, credit_diag_mean, credit_entropy,
                  head_diversity, pcan_output_norm, credit_change_rate, ratio, actor_grad_norm, critic_grad_norm) \
                     = self.ppo_update(policy, sample)
 
                 train_info['value_loss'] += value_loss.item()
                 train_info['policy_loss'] += policy_loss.item()
                 train_info['policy_entropy_loss'] += policy_entropy_loss.item()
-                train_info['obs_pred_loss'] += obs_pred_loss.item()
+                train_info['rewards_pred_loss'] += rewards_pred_loss.item()
                 train_info["credit_diag_mean"] += credit_diag_mean.item()
                 train_info["credit_entropy"] += credit_entropy.item()
                 train_info["head_diversity"] += head_diversity.item()

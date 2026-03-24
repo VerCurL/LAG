@@ -28,7 +28,7 @@ class PPOTrainer():
     def ppo_update(self, policy: PPOPolicy, sample):
 
         obs_batch, share_obs_batch, actions_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, advantages_batch, \
-            returns_batch, value_preds_batch, rnn_states_actor_batch, rnn_states_critic_batch = sample
+            returns_batch, value_preds_batch, rnn_states_actor_batch, rnn_states_critic_batch, _ = sample
 
         old_action_log_probs_batch = check(old_action_log_probs_batch).to(**self.tpdv)
         advantages_batch = check(advantages_batch).to(**self.tpdv)

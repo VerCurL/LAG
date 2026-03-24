@@ -4,7 +4,7 @@ import torch.nn as nn
 from ..utils.mlp import MLPBase
 from ..utils.gru import GRULayer
 from ..utils.act import ACTLayer
-from ..utils.pcan_v1 import PCANBase
+from ..utils.pcan_v2 import PCANBase
 from ..utils.utils import check
 
 
@@ -54,7 +54,7 @@ class PPOActor(nn.Module):
 
         actions, action_log_probs = self.act(actor_features, deterministic)
 
-        _, credit = self.pcan(actor_features, obs)
+        _, credit = self.pcan(actor_features)
 
         return actions, action_log_probs, rnn_states, credit
 
@@ -74,5 +74,5 @@ class PPOActor(nn.Module):
 
         action_log_probs, dist_entropy = self.act.evaluate_actions(actor_features, action, active_masks)
 
-        obs_next, credit = self.pcan(actor_features, obs)
-        return action_log_probs, dist_entropy, obs_next, credit, self.pcan.record_info
+        rewards_pred, credit = self.pcan(actor_features)
+        return action_log_probs, dist_entropy, rewards_pred, credit, self.pcan.record_info
