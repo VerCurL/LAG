@@ -29,7 +29,7 @@ class PCANLayer(nn.Module):
         # -------- 记录信息 --------
         self.record_info = {}
 
-    def forward(self, h: torch.Tensor):
+    def forward(self, h: torch.Tensor, s: torch.Tensor):
         # n_rollout_threads: B, agent_num: N, head_num: H
         batch_size = h.size(0)      # n_rollout_threads * agent_num
         n_rollout_threads = batch_size // self.agent_num
@@ -38,7 +38,7 @@ class PCANLayer(nn.Module):
         KQ_dim, V_dim = self._KQ_hidden_size[-1], self._V_hidden_size[-1]
         K = self.K_module(h).reshape(n_rollout_threads, self.agent_num, KQ_dim)
         Q = self.Q_module(h).reshape(n_rollout_threads, self.agent_num, KQ_dim)
-        V = self.V_module(h).reshape(n_rollout_threads, self.agent_num, V_dim)
+        V = self.V_module(s).reshape(n_rollout_threads, self.agent_num, V_dim)
 
         # reshape成多头，size:(B, H, N, K/Q/V_head_dim)
         KQ_head_dim = KQ_dim // self.head_num
@@ -93,13 +93,15 @@ class PCANBase(nn.Module):
             self.feature_norm = nn.LayerNorm(V_input_dim)
 
         self.PCAN = PCANLayer(
-            agent_num=agent_num, head_num=head_num, KQ_input_dim=KQ_input_dim, V_input_dim=KQ_input_dim,
+            agent_num=agent_num, head_num=head_num, KQ_input_dim=KQ_input_dim, V_input_dim=V_input_dim,
             activation_id=activation_id, KQ_hidden_size=KQ_hidden_size, V_hidden_size=V_hidden_size,
             output_hidden_size=output_hidden_size
         )
 
-    def forward(self, h):
-        output, credit = self.PCAN(h)
+    def forward(self, h, s):
+        if self._use_feature_normalization:
+            s = self.feature_norm(s)
+        output, credit = self.PCAN(h, s)
         return output, credit
 
     @property
