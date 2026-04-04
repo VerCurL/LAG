@@ -26,14 +26,14 @@ class Buffer(ABC):
 class ReplayBuffer(Buffer):
 
     @staticmethod
-    def _flatten(T: int, N: int, x: np.ndarray):
-        return x.reshape(T * N, *x.shape[2:])
+    def _flatten(T: int, N: int, M: int, x: np.ndarray):
+        return x.reshape(T * N * M, *x.shape[3:])
 
     @staticmethod
     def _cast(x: np.ndarray):
         # T: buffer_size, n: n_rollout_threads, m: num_agents
-        # size: (T, n, m, dim) -> (n, m, T, dim) -> (n*m*T, dim)
-        return x.transpose(1, 2, 0, *range(3, x.ndim)).reshape(-1, *x.shape[3:])
+        # size: (T, n, m, dim) -> (n, T, m, dim) -> (n*T, m, dim)
+        return x.transpose(1, 0, 2, *range(3, x.ndim)).reshape(-2, *x.shape[2:])
 
     def __init__(self, args, num_agents, obs_space, act_space):
         # buffer config
@@ -376,6 +376,7 @@ class SharedReplayBuffer(ReplayBuffer):
                 self.n_rollout_threads, self.buffer_size, data_chunk_length))
 
         # Transpose and reshape parallel data into sequential data
+        # size: [T, n, m, dim] -> [n*T, m, dim]
         obs = self._cast(self.obs[:-1])
         share_obs = self._cast(self.share_obs[:-1])
         actions = self._cast(self.actions)
@@ -394,7 +395,7 @@ class SharedReplayBuffer(ReplayBuffer):
 
         # Get mini-batch size and shuffle chunk data
         # 按照data_chunk_length切分时间步能切多少块
-        data_chunks = self.n_rollout_threads * self.buffer_size * self.num_agents // data_chunk_length
+        data_chunks = self.n_rollout_threads * self.buffer_size // data_chunk_length
         # 每num_mini_batch块一组可以分多少组
         mini_batch_size = data_chunks // num_mini_batch
         rand = torch.randperm(data_chunks).numpy()
@@ -417,7 +418,7 @@ class SharedReplayBuffer(ReplayBuffer):
             for index in indices:
 
                 ind = index * data_chunk_length
-                # size [T+1, N, M, Dim] => [T, N, M, Dim] => [N, M, T, Dim] => [N * M * T, Dim] => [L, Dim]
+                # size [T+1, N, M, Dim] => [T, N, M, Dim] => [N, T, M, Dim] => [N * T, M, Dim] => [L, M, Dim]
                 obs_batch.append(obs[ind:ind + data_chunk_length])
                 share_obs_batch.append(share_obs[ind:ind + data_chunk_length])
                 actions_batch.append(actions[ind:ind + data_chunk_length])
@@ -428,13 +429,13 @@ class SharedReplayBuffer(ReplayBuffer):
                 returns_batch.append(returns[ind:ind + data_chunk_length])
                 value_preds_batch.append(value_preds[ind:ind + data_chunk_length])
                 rewards_batch.append(rewards[ind:ind + data_chunk_length])
-                # size [T+1, N, M, Dim] => [T, N, M, Dim] => [N, M, T, Dim] => [N * M * T, Dim] => [1, Dim]
+                # size [T+1, N, M, Dim] => [T, N, M, Dim] => [N, T, M, Dim] => [N * T, M, Dim] => [1, M, Dim]
                 rnn_states_actor_batch.append(rnn_states_actor[ind])
                 rnn_states_critic_batch.append(rnn_states_critic[ind])
 
-            L, N = data_chunk_length, mini_batch_size
+            L, N, M = data_chunk_length, mini_batch_size, self.num_agents
 
-            # These are all from_numpys of size (L, N, Dim)
+            # These are all from_numpys of size (L, N, M, Dim)
             obs_batch = np.stack(obs_batch, axis=1)
             share_obs_batch = np.stack(share_obs_batch, axis=1)
             actions_batch = np.stack(actions_batch, axis=1)
@@ -446,21 +447,21 @@ class SharedReplayBuffer(ReplayBuffer):
             value_preds_batch = np.stack(value_preds_batch, axis=1)
             rewards_batch = np.stack(rewards_batch, axis=1)
 
-            # States is just a (N, -1) from_numpy
-            rnn_states_actor_batch = np.stack(rnn_states_actor_batch).reshape(N, *self.rnn_states_actor.shape[3:])
-            rnn_states_critic_batch = np.stack(rnn_states_critic_batch).reshape(N, *self.rnn_states_critic.shape[3:])
+            # States is just a (N * M, -1) from_numpy
+            rnn_states_actor_batch = np.stack(rnn_states_actor_batch).reshape(N * M, *self.rnn_states_actor.shape[3:])
+            rnn_states_critic_batch = np.stack(rnn_states_critic_batch).reshape(N * M, *self.rnn_states_critic.shape[3:])
 
-            # Flatten the (L, N, ...) from_numpys to (L * N, ...)
-            obs_batch = self._flatten(L, N, obs_batch)
-            share_obs_batch = self._flatten(L, N, share_obs_batch)
-            actions_batch = self._flatten(L, N, actions_batch)
-            masks_batch = self._flatten(L, N, masks_batch)
-            active_masks_batch = self._flatten(L, N, active_masks_batch)
-            old_action_log_probs_batch = self._flatten(L, N, old_action_log_probs_batch)
-            advantages_batch = self._flatten(L, N, advantages_batch)
-            returns_batch = self._flatten(L, N, returns_batch)
-            value_preds_batch = self._flatten(L, N, value_preds_batch)
-            rewards_batch = self._flatten(L, N, rewards_batch)
+            # Flatten the (L, N, M, ...) from_numpys to (L * N * M, ...)
+            obs_batch = self._flatten(L, N, M, obs_batch)
+            share_obs_batch = self._flatten(L, N, M, share_obs_batch)
+            actions_batch = self._flatten(L, N, M, actions_batch)
+            masks_batch = self._flatten(L, N, M, masks_batch)
+            active_masks_batch = self._flatten(L, N, M, active_masks_batch)
+            old_action_log_probs_batch = self._flatten(L, N, M, old_action_log_probs_batch)
+            advantages_batch = self._flatten(L, N, M, advantages_batch)
+            returns_batch = self._flatten(L, N, M, returns_batch)
+            value_preds_batch = self._flatten(L, N, M, value_preds_batch)
+            rewards_batch = self._flatten(L, N, M, rewards_batch)
 
             yield obs_batch, share_obs_batch, actions_batch, masks_batch, active_masks_batch, \
                 old_action_log_probs_batch, advantages_batch, returns_batch, value_preds_batch, \

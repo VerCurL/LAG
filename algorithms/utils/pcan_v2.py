@@ -30,22 +30,22 @@ class PCANLayer(nn.Module):
         self.record_info = {}
 
     def forward(self, h: torch.Tensor, s: torch.Tensor):
-        # n_rollout_threads: B, agent_num: N, head_num: H
-        batch_size = h.size(0)      # n_rollout_threads * agent_num
-        n_rollout_threads = batch_size // self.agent_num
+        # n_rollout_threads/batch_size: B, agent_num: N, head_num: H
+        batch_size = h.size(0)      # B * N
+        size_B = batch_size // self.agent_num
 
         # size:(B * N, K/Q/V_dim) -> (B, N, K/Q/V_dim)
         KQ_dim, V_dim = self._KQ_hidden_size[-1], self._V_hidden_size[-1]
-        K = self.K_module(h).reshape(n_rollout_threads, self.agent_num, KQ_dim)
-        Q = self.Q_module(h).reshape(n_rollout_threads, self.agent_num, KQ_dim)
-        V = self.V_module(s).reshape(n_rollout_threads, self.agent_num, V_dim)
+        K = self.K_module(h).reshape(size_B, self.agent_num, KQ_dim)
+        Q = self.Q_module(h).reshape(size_B, self.agent_num, KQ_dim)
+        V = self.V_module(s).reshape(size_B, self.agent_num, V_dim)
 
         # reshape成多头，size:(B, H, N, K/Q/V_head_dim)
         KQ_head_dim = KQ_dim // self.head_num
         V_head_dim = V_dim // self.head_num
-        K = K.view(n_rollout_threads, self.agent_num, self.head_num, KQ_head_dim).transpose(1, 2)
-        Q = Q.view(n_rollout_threads, self.agent_num, self.head_num, KQ_head_dim).transpose(1, 2)
-        V = V.view(n_rollout_threads, self.agent_num, self.head_num, V_head_dim).transpose(1, 2)
+        K = K.view(size_B, self.agent_num, self.head_num, KQ_head_dim).transpose(1, 2)
+        Q = Q.view(size_B, self.agent_num, self.head_num, KQ_head_dim).transpose(1, 2)
+        V = V.view(size_B, self.agent_num, self.head_num, V_head_dim).transpose(1, 2)
 
         # 缩放点积注意力，size:(B, H, N, N)
         scores = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(KQ_head_dim)
@@ -60,8 +60,8 @@ class PCANLayer(nn.Module):
         heads = torch.matmul(attn_weights, V)
 
         # 拼接heads，(B, H, N, VHD) -> (B, N, VD) -> (B * N, VD)
-        heads = heads.transpose(1, 2).contiguous().view(n_rollout_threads, self.agent_num, V_dim)
-        heads = heads.view(n_rollout_threads * self.agent_num, V_dim)
+        heads = heads.transpose(1, 2).contiguous().view(size_B, self.agent_num, V_dim)
+        heads = heads.view(size_B * self.agent_num, V_dim)
 
         # ⭐输出投影：(B, 1)
         output = self.output_module(heads)

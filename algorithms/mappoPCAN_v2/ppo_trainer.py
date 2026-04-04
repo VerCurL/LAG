@@ -69,11 +69,11 @@ class PPOPCANTrainer():
 
         # 奖励预测损失
         time_batch, reward_dim = rewards_batch.shape
-        # [L * N, D] -> [L, N, D]
-        rewards_target = torch.from_numpy(rewards_batch).to(self.device)
-        rewards_target = rewards_target.view(self.data_chunk_length, time_batch // self.data_chunk_length, reward_dim)
-        rewards_pred = rewards_pred.view(self.data_chunk_length, time_batch // self.data_chunk_length, reward_dim)
-        rewards_pred_loss = F.mse_loss(rewards_pred, rewards_target)           # [L, N, D] -loss_mean-> 1
+        # [L * N * M, D] -> [L * N, M, D]
+        rewards_target = check(rewards_batch).to(**self.tpdv)
+        rewards_target = rewards_target.view(time_batch // self.num_agents, self.num_agents, reward_dim)
+        rewards_pred = rewards_pred.view(time_batch // self.num_agents, self.num_agents, reward_dim)
+        rewards_pred_loss = F.mse_loss(rewards_pred, rewards_target)           # [L * N, M, D] -loss_mean-> 1
 
         # 损失加权求和
         loss = policy_loss + value_loss * self.value_loss_coef + policy_entropy_loss * self.entropy_coef + rewards_pred_loss * self.rewards_pred_coef
