@@ -12,9 +12,19 @@ class MLPLayer(nn.Module):
 
         fc_h = []
         for j in range(len(self._size) - 1):
-            fc_h += [
-                nn.Linear(self._size[j], self._size[j + 1]), active_func, nn.LayerNorm(self._size[j + 1])
-            ]
+            in_dim = self._size[j]
+            out_dim = self._size[j + 1]
+            is_last = (j == len(self._size) - 2)
+
+            fc_h.append(nn.Linear(in_dim, out_dim))
+
+            # 最后一层如果输出是 1，就不要再做激活和 LayerNorm
+            if is_last and out_dim == 1:
+                pass
+            else:
+                fc_h.append(active_func)
+                fc_h.append(nn.LayerNorm(out_dim))
+
         self.fc = nn.Sequential(*fc_h)
 
     def forward(self, x: torch.Tensor):
