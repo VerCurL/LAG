@@ -29,10 +29,10 @@ class PPOPolicy:
         Returns:
             values, actions, action_log_probs, rnn_states_actor, rnn_states_critic
         """
-        actions, action_log_probs, rnn_states_actor = self.actor(obs, rnn_states_actor, masks)
+        actions, action_log_probs, rnn_states_actor, actor_features = self.actor(obs, rnn_states_actor, masks)
         values, rnn_states_critic = self.critic(cent_obs, rnn_states_critic, masks)
         credit = torch.full((obs.shape[0] // self.num_agents, self.num_agents, self.num_agents), 1 / self.num_agents)
-        return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic, credit
+        return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic, actor_features, credit
 
     def get_values(self, cent_obs, rnn_states_critic, masks):
         """
@@ -56,7 +56,7 @@ class PPOPolicy:
         Returns:
             actions, rnn_states_actor
         """
-        actions, _, rnn_states_actor = self.actor(obs, rnn_states_actor, masks, deterministic)
+        actions, _, rnn_states_actor, _ = self.actor(obs, rnn_states_actor, masks, deterministic)
         credit = torch.full((obs.shape[0] // self.num_agents, self.num_agents, self.num_agents), 1 / self.num_agents)
         return actions, rnn_states_actor, credit
 

@@ -107,7 +107,7 @@ class ShareJSBSimRunner(Runner):
                 start_env = time.time()
                 for step in range(self.buffer_size):
                     # Sample actions
-                    values, actions, action_log_probs, rnn_states_actor, rnn_states_critic, credit = self.collect(step)
+                    values, actions, action_log_probs, rnn_states_actor, rnn_states_critic, actor_features, credit = self.collect(step)
 
                     # Obser reward and next obs
                     obs, share_obs, rewards, dones, infos = self.envs.step((actions, credit))
@@ -120,7 +120,7 @@ class ShareJSBSimRunner(Runner):
                             total_num_steps=self.total_num_steps,
                         )
 
-                    data = obs, share_obs, actions, rewards, dones, action_log_probs, values, rnn_states_actor, rnn_states_critic
+                    data = obs, share_obs, actions, rewards, dones, action_log_probs, values, rnn_states_actor, rnn_states_critic, actor_features
 
                     # insert data into buffer
                     self.insert(data)
@@ -191,7 +191,7 @@ class ShareJSBSimRunner(Runner):
     @torch.no_grad()
     def collect(self, step):
         self.policy.prep_rollout()
-        values, actions, action_log_probs, rnn_states_actor, rnn_states_critic, credit \
+        values, actions, action_log_probs, rnn_states_actor, rnn_states_critic, actor_features, credit \
             = self.policy.get_actions(np.concatenate(self.buffer.share_obs[step]),
                                       np.concatenate(self.buffer.obs[step]),
                                       np.concatenate(self.buffer.rnn_states_actor[step]),
@@ -204,6 +204,7 @@ class ShareJSBSimRunner(Runner):
         rnn_states_actor = np.array(np.split(_t2n(rnn_states_actor), self.n_rollout_threads))
         rnn_states_critic = np.array(np.split(_t2n(rnn_states_critic), self.n_rollout_threads))
         credit = np.array(np.split(_t2n(credit), self.n_rollout_threads))
+        actor_features = np.array(np.split(_t2n(actor_features), self.n_rollout_threads))
 
         # [Selfplay] get actions of opponent policy
         if self.use_selfplay:
@@ -221,7 +222,7 @@ class ShareJSBSimRunner(Runner):
             actions = np.concatenate((actions, opponent_actions), axis=1)
             credit = np.concatenate((credit, opponent_credits), axis=1)
 
-        return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic, credit
+        return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic, actor_features, credit
 
     @torch.no_grad()
     def compute(self):
@@ -233,7 +234,7 @@ class ShareJSBSimRunner(Runner):
         self.buffer.compute_returns(next_values)
 
     def insert(self, data: List[np.ndarray]):
-        obs, share_obs, actions, rewards, dones, action_log_probs, values, rnn_states_actor, rnn_states_critic = data
+        obs, share_obs, actions, rewards, dones, action_log_probs, values, rnn_states_actor, rnn_states_critic, actor_features = data
         dones = dones.squeeze(axis=-1)
         dones_env = np.all(dones, axis=-1)
 
@@ -258,8 +259,8 @@ class ShareJSBSimRunner(Runner):
             masks = masks[:, :self.num_agents // 2, ...]
             active_masks = active_masks[:, :self.num_agents // 2, ...]
 
-        self.buffer.insert(obs, share_obs, actions, rewards, masks, action_log_probs, values, \
-            rnn_states_actor, rnn_states_critic, active_masks = active_masks)
+        self.buffer.insert(obs, share_obs, actions, rewards, masks, action_log_probs, values,
+                           rnn_states_actor, rnn_states_critic, actor_features, active_masks = active_masks)
 
     @torch.no_grad()
     def eval(self, total_num_steps):

@@ -31,10 +31,33 @@ class PPOPCANTrainer():
         # 上一时刻credit
         self._prev_credit_snapshot = None
 
+    def pcan_update(self, policy: PPOPCANPolicy, sample):
+        # -------- 收集buffer_size缓冲值 --------
+        obs_batch, actor_features_batch, rewards_batch = sample
+        rewards_batch = check(rewards_batch).to(**self.tpdv)
+
+        # -------- 评估pcan网络获得预测奖励和credit --------
+        rewards_pred, credit, pcan_record_info = policy.pcan(obs_batch, actor_features_batch)
+
+        # -------- 计算损失函数 --------
+        # 奖励预测损失
+        rewards_pred_loss = F.mse_loss(rewards_pred, rewards_batch)           # [L, D] -loss_mean-> 1
+
+        # -------- 开始梯度下降 --------
+        policy.optimizer.zero_grad()
+        rewards_pred_loss.backward()
+
+        # -------- 记录信息 --------
+        credit_diag_mean, credit_entropy = self._summarize_credit(credit)
+        credit_change_rate = self._compute_credit_change_rate(credit)
+        head_diversity, pcan_output_norm = self._summarize_pcan_record(pcan_record_info)
+
+        return rewards_pred_loss, credit_diag_mean, credit_entropy, credit_change_rate, head_diversity, pcan_output_norm
+
     def ppo_update(self, policy: PPOPCANPolicy, sample):
         # -------- 收集buffer_size缓冲值 --------
         obs_batch, share_obs_batch, actions_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, advantages_batch, \
-            returns_batch, value_preds_batch, rnn_states_actor_batch, rnn_states_critic_batch, rewards_batch = sample
+            returns_batch, value_preds_batch, rnn_states_actor_batch, rnn_states_critic_batch = sample
 
         old_action_log_probs_batch = check(old_action_log_probs_batch).to(**self.tpdv)
         advantages_batch = check(advantages_batch).to(**self.tpdv)
@@ -42,19 +65,10 @@ class PPOPCANTrainer():
         value_preds_batch = check(value_preds_batch).to(**self.tpdv)
 
         # -------- 评估行为获得所需值 --------
-        values, action_log_probs, dist_entropy, rewards_pred, credit, pcan_record_info\
-            = policy.evaluate_actions(share_obs_batch, obs_batch, rnn_states_actor_batch,
-                        rnn_states_critic_batch, actions_batch, masks_batch)
+        values, action_log_probs, dist_entropy \
+            = policy.evaluate_actions(share_obs_batch, obs_batch, rnn_states_actor_batch, rnn_states_critic_batch, actions_batch, masks_batch)
 
         # -------- 计算损失函数 --------
-        old_action_log_probs_batch = self._train_sample(old_action_log_probs_batch)
-        advantages_batch = self._train_sample(advantages_batch)
-        returns_batch = self._train_sample(returns_batch)
-        value_preds_batch = self._train_sample(value_preds_batch)
-        values = self._train_sample(values)
-        action_log_probs = self._train_sample(action_log_probs)
-        dist_entropy = self._train_sample(dist_entropy)
-
         # 策略损失
         ratio = torch.exp(action_log_probs - old_action_log_probs_batch)
         surr1 = ratio * advantages_batch
@@ -75,20 +89,8 @@ class PPOPCANTrainer():
         # 策略熵损失
         policy_entropy_loss = -dist_entropy.mean()
 
-        # 奖励预测损失
-        time_batch, reward_dim = rewards_batch.shape
-        # [L * N * M, D] -> [L * N, M, D]
-        rewards_target = check(rewards_batch).to(**self.tpdv)
-        rewards_target = rewards_target.view(time_batch // self.num_agents, self.num_agents, reward_dim).mean(dim=1)
-        rewards_pred_loss = F.mse_loss(rewards_pred, rewards_target)           # [L * N, D] -loss_mean-> 1
-
         # 损失加权求和
-        loss = policy_loss + value_loss * self.value_loss_coef + policy_entropy_loss * self.entropy_coef + rewards_pred_loss * self.rewards_pred_coef
-
-        # 记录
-        credit_diag_mean, credit_entropy = self._summarize_credit(credit)
-        head_diversity, pcan_output_norm = self._summarize_pcan_record(pcan_record_info)
-        credit_change_rate = self._compute_credit_change_rate(credit)
+        loss = policy_loss + value_loss * self.value_loss_coef + policy_entropy_loss * self.entropy_coef
 
         # -------- 开始梯度下降 --------
         policy.optimizer.zero_grad()
@@ -101,8 +103,7 @@ class PPOPCANTrainer():
             critic_grad_norm = get_gard_norm(policy.critic.parameters())
         policy.optimizer.step()
 
-        return (policy_loss, value_loss, policy_entropy_loss, rewards_pred_loss, credit_diag_mean, credit_entropy,
-                head_diversity, pcan_output_norm, credit_change_rate, ratio, actor_grad_norm, critic_grad_norm)
+        return policy_loss, value_loss, policy_entropy_loss, ratio, actor_grad_norm, critic_grad_norm
 
     def train(self, policy: PPOPCANPolicy, buffer: SharedReplayBuffer):
         train_info = {}
@@ -120,6 +121,19 @@ class PPOPCANTrainer():
         train_info['ratio'] = 0
 
         for _ in range(self.ppo_epoch):
+            # --------- 训练 pcan 网络 ---------
+            pcan_generator = buffer.pcan_generator(self.num_mini_batch)
+            for sample in pcan_generator:
+                rewards_pred_loss, credit_diag_mean, credit_entropy, credit_change_rate, head_diversity, pcan_output_norm\
+                    = self.pcan_update(policy, sample)
+                train_info['rewards_pred_loss'] += rewards_pred_loss.item()
+                train_info["credit_diag_mean"] += credit_diag_mean.item()
+                train_info["credit_entropy"] += credit_entropy.item()
+                train_info["credit_change_rate"] += credit_change_rate.item()
+                train_info["head_diversity"] += head_diversity.item()
+                train_info["pcan_output_norm"] += pcan_output_norm.item()
+
+            # --------- 训练 actor-critic 网络 ---------
             if self.use_recurrent_policy:
                 data_generator = buffer.recurrent_generator(buffer.advantages, self.num_mini_batch, self.data_chunk_length)
             else:
@@ -127,19 +141,12 @@ class PPOPCANTrainer():
 
             for sample in data_generator:
 
-                (policy_loss, value_loss, policy_entropy_loss, rewards_pred_loss, credit_diag_mean, credit_entropy,
-                 head_diversity, pcan_output_norm, credit_change_rate, ratio, actor_grad_norm, critic_grad_norm) \
+                policy_loss, value_loss, policy_entropy_loss, ratio, actor_grad_norm, critic_grad_norm \
                     = self.ppo_update(policy, sample)
 
                 train_info['value_loss'] += value_loss.item()
                 train_info['policy_loss'] += policy_loss.item()
                 train_info['policy_entropy_loss'] += policy_entropy_loss.item()
-                train_info['rewards_pred_loss'] += rewards_pred_loss.item()
-                train_info["credit_diag_mean"] += credit_diag_mean.item()
-                train_info["credit_entropy"] += credit_entropy.item()
-                train_info["head_diversity"] += head_diversity.item()
-                train_info["pcan_output_norm"] += pcan_output_norm.item()
-                train_info["credit_change_rate"] += credit_change_rate.item()
                 train_info['actor_grad_norm'] += actor_grad_norm
                 train_info['critic_grad_norm'] += critic_grad_norm
                 train_info['ratio'] += ratio.mean().item()
@@ -200,7 +207,3 @@ class PPOPCANTrainer():
 
         self._prev_credit_snapshot = current_credit_snapshot
         return credit_change_rate.detach()
-
-    def _train_sample(self, x: torch.Tensor):
-        # size: (T * N * m, dim) -> (T * N, m, dim) -> (T * N, dim)
-        return x.view(-1, self.num_agents, *x.shape[1:])[:, 0, ...]

@@ -28,9 +28,9 @@ class PPOPCANPolicy:
         Returns:
             values, actions, action_log_probs, rnn_states_actor, rnn_states_critic
         """
-        actions, action_log_probs, rnn_states_actor, credit = self.actor(obs, rnn_states_actor, masks)
+        actions, action_log_probs, rnn_states_actor, actor_features, credit = self.actor(obs, rnn_states_actor, masks)
         values, rnn_states_critic = self.critic(cent_obs, rnn_states_critic, masks)
-        return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic, credit
+        return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic, actor_features, credit
 
     def get_values(self, cent_obs, rnn_states_critic, masks):
         """
@@ -45,17 +45,25 @@ class PPOPCANPolicy:
         Returns:
             values, action_log_probs, dist_entropy
         """
-        action_log_probs, dist_entropy, rewards_pred, credit, pcan_record_info = self.actor.evaluate_actions(obs, rnn_states_actor, action, masks, active_masks)
+        action_log_probs, dist_entropy = self.actor.evaluate_actions(obs, rnn_states_actor, action, masks, active_masks)
         values, _ = self.critic(cent_obs, rnn_states_critic, masks)
-        return values, action_log_probs, dist_entropy, rewards_pred, credit, pcan_record_info
+        return values, action_log_probs, dist_entropy
 
     def act(self, obs, rnn_states_actor, masks, deterministic=False):
         """
         Returns:
             actions, rnn_states_actor
         """
-        actions, _, rnn_states_actor, credit = self.actor(obs, rnn_states_actor, masks, deterministic)
+        actions, _, rnn_states_actor, _, credit = self.actor(obs, rnn_states_actor, masks, deterministic)
         return actions, rnn_states_actor, credit
+
+    def pcan(self, obs, actor_features):
+        """
+        Returns:
+            rewards_pred, credit, pcan_record_info
+        """
+        rewards_pred, credit, pcan_record_info = self.actor.evaluate_pcan(obs, actor_features)
+        return rewards_pred, credit, pcan_record_info
 
     def prep_training(self):
         self.actor.train()

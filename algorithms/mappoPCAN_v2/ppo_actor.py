@@ -56,7 +56,7 @@ class PPOActor(nn.Module):
 
         _, credit = self.pcan(actor_features, obs)
 
-        return actions, action_log_probs, rnn_states, credit
+        return actions, action_log_probs, rnn_states, actor_features, credit
 
     def evaluate_actions(self, obs, rnn_states, action, masks, active_masks=None):
         obs = check(obs).to(**self.tpdv)
@@ -74,5 +74,11 @@ class PPOActor(nn.Module):
 
         action_log_probs, dist_entropy = self.act.evaluate_actions(actor_features, action, active_masks)
 
+        return action_log_probs, dist_entropy
+
+    def evaluate_pcan(self, obs, actor_features):
+        obs = check(obs).to(**self.tpdv)
+        actor_features = check(actor_features).to(**self.tpdv)
+
         rewards_pred, credit = self.pcan(actor_features, obs)
-        return action_log_probs, dist_entropy, rewards_pred, credit, self.pcan.record_info
+        return rewards_pred, credit, self.pcan.record_info

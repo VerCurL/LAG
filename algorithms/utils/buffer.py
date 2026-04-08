@@ -2,6 +2,9 @@ import torch
 import numpy as np
 from typing import Union, List
 from abc import ABC, abstractmethod
+
+from numpy.ma.core import indices
+
 from .utils import get_shape_from_space
 
 
@@ -26,14 +29,14 @@ class Buffer(ABC):
 class ReplayBuffer(Buffer):
 
     @staticmethod
-    def _flatten(T: int, N: int, M: int, x: np.ndarray):
-        return x.reshape(T * N * M, *x.shape[3:])
+    def _flatten(T: int, N: int, x: np.ndarray):
+        return x.reshape(T * N, *x.shape[2:])
 
     @staticmethod
     def _cast(x: np.ndarray):
         # T: buffer_size, n: n_rollout_threads, m: num_agents
-        # size: (T, n, m, dim) -> (n, m, T, dim)
-        return x.transpose(1, 2, 0, *range(3, x.ndim))
+        # size: (T, n, m, dim) -> (n, m, T, dim) -> (n*m*T, dim)
+        return x.transpose(1, 2, 0, *range(3, x.ndim)).reshape(-1, *x.shape[3:])
 
     def __init__(self, args, num_agents, obs_space, act_space):
         # buffer config
@@ -73,45 +76,12 @@ class ReplayBuffer(Buffer):
         self.rnn_states_critic = np.zeros((self.buffer_size + 1, self.n_rollout_threads, self.num_agents,
                                            self.recurrent_hidden_layers, self.recurrent_hidden_size_critic),
                                           dtype=np.float32)
+        # pcan
+        self.actor_features = np.zeros((self.buffer_size, self.n_rollout_threads, self.num_agents,
+                                        self.recurrent_hidden_size_actor),
+                                       dtype=np.float32)
+
         self.step = 0
-        self._chunk_index_cache = {}
-
-    def _get_chunk_layout(self, data_chunk_length: int):
-        layout = self._chunk_index_cache.get(data_chunk_length)
-        if layout is not None:
-            return layout
-
-        per_thread_chunks = self.buffer_size * self.num_agents // data_chunk_length
-        chunk_ids = np.arange(per_thread_chunks, dtype=np.int64)
-        start_indices = chunk_ids * data_chunk_length
-        time_starts = start_indices % self.buffer_size
-        agent_starts = start_indices // self.buffer_size
-
-        layout = {
-            # 每个线程一共能切出多少个 chunk
-            "per_thread_chunks": per_thread_chunks,
-            # 每个 chunk 对应的时间窗索引，size: (per_thread_chunks_num, L)
-            "time_indices": (time_starts[:, None] + np.arange(data_chunk_length, dtype=np.int64)[None, :]) % self.buffer_size,
-            # 每个 chunk 的起始时刻，用来取 RNN 初始状态，size: (per_thread_chunks_num,)
-            "state_time_indices": time_starts,
-            # 每个 chunk 对应的 agent 重排顺序，保证“当前定位 agent 放在最前面”，size: (per_thread_chunks_num, M)
-            "agent_indices": (agent_starts[:, None] + np.arange(self.num_agents, dtype=np.int64)[None, :]) % self.num_agents,
-        }
-        self._chunk_index_cache[data_chunk_length] = layout
-        return layout
-
-    @staticmethod
-    def _gather_sequence_batch(x: np.ndarray, env_indices: np.ndarray, agent_indices: np.ndarray, time_indices: np.ndarray):
-        # env_indices: (N,)     agent_indices: (N, M)       time_indices: (N, L)
-        # size: (n, M, T, -1) -[]-> (N, L, M, -1) -T-> (L, N, M, -1)
-        sample = x[env_indices[:, None, None], agent_indices[:, None, :], time_indices[:, :, None]]
-        return sample.transpose(1, 0, 2, *range(3, sample.ndim))
-
-    @staticmethod
-    def _gather_state_batch(x: np.ndarray, env_indices: np.ndarray, agent_indices: np.ndarray, time_indices: np.ndarray):
-        # env_indices: (N,)     agent_indices: (N, M)       time_indices: (N,)
-        # size: (n, M, T, -1) -[]-> (N, M, -1)
-        return x[env_indices[:, None], agent_indices, time_indices[:, None]]
 
     @property
     def advantages(self) -> np.ndarray:
@@ -127,6 +97,7 @@ class ReplayBuffer(Buffer):
                value_preds: np.ndarray,
                rnn_states_actor: np.ndarray,
                rnn_states_critic: np.ndarray,
+               actor_features: np.ndarray,
                bad_masks: Union[np.ndarray, None] = None,
                **kwargs):
         """Insert numpy data.
@@ -148,6 +119,8 @@ class ReplayBuffer(Buffer):
         self.value_preds[self.step] = value_preds.copy()
         self.rnn_states_actor[self.step + 1] = rnn_states_actor.copy()
         self.rnn_states_critic[self.step + 1] = rnn_states_critic.copy()
+        self.actor_features[self.step] = actor_features.copy()
+
         if bad_masks is not None:
             self.bad_masks[self.step + 1] = bad_masks.copy()
 
@@ -342,7 +315,7 @@ class SharedReplayBuffer(ReplayBuffer):
         # NOTE: active_masks[t, :, i] represents whether agent[i] is alive in obs[t] .... differ in different agents
         self.active_masks = np.ones_like(self.masks)
         # pi(a)
-        self.action_log_probs = np.zeros((self.buffer_size, self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
+        self.action_log_probs = np.zeros((self.buffer_size, self.n_rollout_threads, self.num_agents, *act_shape), dtype=np.float32)
         # V(o), R(o) while advantage = returns - value_preds
         self.value_preds = np.zeros((self.buffer_size + 1, self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
         self.returns = np.zeros((self.buffer_size + 1, self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
@@ -353,8 +326,12 @@ class SharedReplayBuffer(ReplayBuffer):
         self.rnn_states_critic = np.zeros((self.buffer_size + 1, self.n_rollout_threads, self.num_agents,
                                            self.recurrent_hidden_layers, self.recurrent_hidden_size_critic),
                                           dtype=np.float32)
+        # pcan
+        self.actor_features = np.zeros((self.buffer_size, self.n_rollout_threads, self.num_agents,
+                                        self.recurrent_hidden_size_actor),
+                                       dtype=np.float32)
+
         self.step = 0
-        self._chunk_index_cache = {}
 
     def insert(self,
                obs: np.ndarray,
@@ -366,6 +343,7 @@ class SharedReplayBuffer(ReplayBuffer):
                value_preds: np.ndarray,
                rnn_states_actor: np.ndarray,
                rnn_states_critic: np.ndarray,
+               actor_features: np.ndarray,
                bad_masks: Union[np.ndarray, None] = None,
                active_masks: Union[np.ndarray, None] = None,
                available_actions: Union[np.ndarray, None] = None):
@@ -387,12 +365,46 @@ class SharedReplayBuffer(ReplayBuffer):
             self.active_masks[self.step + 1] = active_masks.copy()
         if available_actions is not None:
             pass
-        return super().insert(obs, actions, rewards, masks, action_log_probs, value_preds, rnn_states_actor, rnn_states_critic)
+        return super().insert(obs, actions, rewards, masks, action_log_probs, value_preds, rnn_states_actor, rnn_states_critic, actor_features)
 
     def after_update(self):
         self.active_masks[0] = self.active_masks[-1].copy()
         self.share_obs[0] = self.share_obs[-1].copy()
         return super().after_update()
+
+    def pcan_generator(self, num_mini_batch: int):
+        """
+        sample unit: one synchronized group at one (env, time)
+        yields:
+            obs_batch:            [B, M, obs_dim]
+            actor_features_batch: [B, M, feat_dim]
+            rewards_batch:        [B, M, 1]
+            masks_batch:   [B, M, 1]
+        """
+        T, N, M = self.buffer_size, self.n_rollout_threads, self.num_agents
+
+        # size: (T, N, M, dim) -sum-> (T, N, dim) -T-> (N, T, dim) -reshape-> (N * T, dim)
+        rewards = self.rewards.sum(axis=2)
+        rewards = rewards.transpose(1, 0, 2).reshape(N * T, self.rewards.shape[-1])
+
+        # size: (T, N, M, dim) -T-> (N, T, M, dim) -reshape-> (N * T, M, dim)
+        obs = self.obs[:-1].transpose(1, 0, 2, 3).reshape(N * T, M, self.obs.shape[-1])
+        actor_features = self.actor_features.transpose(1, 0, 2, 3).reshape(N * T, M, self.actor_features.shape[-1])
+
+        batch_size = N * T
+        mini_batch_size = batch_size // num_mini_batch
+
+        indices = np.arange(batch_size)
+        np.random.shuffle(indices)
+
+        for i in range(num_mini_batch):
+            batch_idx = indices[i * mini_batch_size : (i + 1) * mini_batch_size]
+            # size: [L * M, dim]
+            obs_batch = obs[batch_idx].reshape(-1, obs.shape[-1])
+            actor_features_batch = actor_features[batch_idx].reshape(-1, actor_features.shape[-1])
+            # size: [L, dim]
+            rewards_batch = rewards[batch_idx]
+            yield obs_batch, actor_features_batch, rewards_batch
 
     def recurrent_generator(self, advantages: np.ndarray, num_mini_batch: int, data_chunk_length: int):
         """
@@ -415,7 +427,6 @@ class SharedReplayBuffer(ReplayBuffer):
                 self.n_rollout_threads, self.buffer_size, data_chunk_length))
 
         # Transpose and reshape parallel data into sequential data
-        # size: [T, n, m, dim] -> [n, m, T, dim]
         obs = self._cast(self.obs[:-1])
         share_obs = self._cast(self.share_obs[:-1])
         actions = self._cast(self.actions)
@@ -427,60 +438,73 @@ class SharedReplayBuffer(ReplayBuffer):
         value_preds = self._cast(self.value_preds[:-1])
         rnn_states_actor = self._cast(self.rnn_states_actor[:-1])
         rnn_states_critic = self._cast(self.rnn_states_critic[:-1])
-        # size: (T, n, m, dim) -sum-> (T, n, 1, dim) -broadcast-> (T, n, m, dim)
-        rewards = np.broadcast_to(self.rewards.sum(axis=2, keepdims=True), self.rewards.shape)
-        rewards = self._cast(rewards)
-        layout = self._get_chunk_layout(data_chunk_length)
-        per_thread_chunks = layout["per_thread_chunks"]
 
         # Get mini-batch size and shuffle chunk data
-        data_chunks = self.n_rollout_threads * per_thread_chunks
+        # 按照data_chunk_length切分时间步能切多少块
+        data_chunks = self.n_rollout_threads * self.buffer_size * self.num_agents // data_chunk_length
+        # 每num_mini_batch块一组可以分多少组
         mini_batch_size = data_chunks // num_mini_batch
         rand = torch.randperm(data_chunks).numpy()
         sampler = [rand[i * mini_batch_size:(i + 1) * mini_batch_size] for i in range(num_mini_batch)]
 
         for indices in sampler:
-            env_indices = indices // per_thread_chunks  # 记录indices中的chunk都在第几个线程，size: (N,)
-            local_indices = indices % per_thread_chunks  # 记录indices中的chunk在所在线程中的索引，size: (N,)
-            agent_indices = layout["agent_indices"][local_indices]  # 按照在当前线程中的索引获取agents的顺序，size: (N, m)
-            time_indices = layout["time_indices"][local_indices]  # 按照在当前线程中的索引获取时间序列，size: (N, L)
-            state_time_indices = layout["state_time_indices"][local_indices]  # 按照在当前线程中的索引获取时间序列开头，size: (N,)
+            obs_batch = []
+            share_obs_batch = []
+            actions_batch = []
+            masks_batch = []
+            active_masks_batch = []
+            old_action_log_probs_batch = []
+            advantages_batch = []
+            returns_batch = []
+            value_preds_batch = []
+            rnn_states_actor_batch = []
+            rnn_states_critic_batch = []
 
-            L, N, M = data_chunk_length, mini_batch_size, self.num_agents
+            for index in indices:
 
-            # These are all from_numpys of size (L, N, M, -1)
-            obs_batch = self._gather_sequence_batch(obs, env_indices, agent_indices, time_indices)
-            share_obs_batch = self._gather_sequence_batch(share_obs, env_indices, agent_indices, time_indices)
-            actions_batch = self._gather_sequence_batch(actions, env_indices, agent_indices, time_indices)
-            masks_batch = self._gather_sequence_batch(masks, env_indices, agent_indices, time_indices)
-            active_masks_batch = self._gather_sequence_batch(active_masks, env_indices, agent_indices, time_indices)
-            old_action_log_probs_batch = self._gather_sequence_batch(old_action_log_probs, env_indices, agent_indices,
-                                                                     time_indices)
-            advantages_batch = self._gather_sequence_batch(advantages, env_indices, agent_indices, time_indices)
-            returns_batch = self._gather_sequence_batch(returns, env_indices, agent_indices, time_indices)
-            value_preds_batch = self._gather_sequence_batch(value_preds, env_indices, agent_indices, time_indices)
-            rewards_batch = self._gather_sequence_batch(rewards, env_indices, agent_indices, time_indices)
+                ind = index * data_chunk_length
+                # size [T+1, N, M, Dim] => [T, N, M, Dim] => [N, M, T, Dim] => [N * M * T, Dim] => [L, Dim]
+                obs_batch.append(obs[ind:ind + data_chunk_length])
+                share_obs_batch.append(share_obs[ind:ind + data_chunk_length])
+                actions_batch.append(actions[ind:ind + data_chunk_length])
+                masks_batch.append(masks[ind:ind + data_chunk_length])
+                active_masks_batch.append(active_masks[ind:ind + data_chunk_length])
+                old_action_log_probs_batch.append(old_action_log_probs[ind:ind + data_chunk_length])
+                advantages_batch.append(advantages[ind:ind + data_chunk_length])
+                returns_batch.append(returns[ind:ind + data_chunk_length])
+                value_preds_batch.append(value_preds[ind:ind + data_chunk_length])
+                # size [T+1, N, M, Dim] => [T, N, M, Dim] => [N, M, T, Dim] => [N * M * T, Dim] => [1, Dim]
+                rnn_states_actor_batch.append(rnn_states_actor[ind])
+                rnn_states_critic_batch.append(rnn_states_critic[ind])
 
-            # States is just a (N, M, -1) from_numpy
-            rnn_states_actor_batch = self._gather_state_batch(
-                rnn_states_actor, env_indices, agent_indices, state_time_indices
-            ).reshape(N * M, *self.rnn_states_actor.shape[3:])
-            rnn_states_critic_batch = self._gather_state_batch(
-                rnn_states_critic, env_indices, agent_indices, state_time_indices
-            ).reshape(N * M, *self.rnn_states_critic.shape[3:])
+            L, N = data_chunk_length, mini_batch_size
 
-            # Flatten the (L, N, M, ...) from_numpys to (L * N * M, ...)
-            obs_batch = self._flatten(L, N, M, obs_batch)
-            share_obs_batch = self._flatten(L, N, M, share_obs_batch)
-            actions_batch = self._flatten(L, N, M, actions_batch)
-            masks_batch = self._flatten(L, N, M, masks_batch)
-            active_masks_batch = self._flatten(L, N, M, active_masks_batch)
-            old_action_log_probs_batch = self._flatten(L, N, M, old_action_log_probs_batch)
-            advantages_batch = self._flatten(L, N, M, advantages_batch)
-            returns_batch = self._flatten(L, N, M, returns_batch)
-            value_preds_batch = self._flatten(L, N, M, value_preds_batch)
-            rewards_batch = self._flatten(L, N, M, rewards_batch)
+            # These are all from_numpys of size (L, N, Dim)
+            obs_batch = np.stack(obs_batch, axis=1)
+            share_obs_batch = np.stack(share_obs_batch, axis=1)
+            actions_batch = np.stack(actions_batch, axis=1)
+            masks_batch = np.stack(masks_batch, axis=1)
+            active_masks_batch = np.stack(active_masks_batch, axis=1)
+            old_action_log_probs_batch = np.stack(old_action_log_probs_batch, axis=1)
+            advantages_batch = np.stack(advantages_batch, axis=1)
+            returns_batch = np.stack(returns_batch, axis=1)
+            value_preds_batch = np.stack(value_preds_batch, axis=1)
+
+            # States is just a (N, -1) from_numpy
+            rnn_states_actor_batch = np.stack(rnn_states_actor_batch).reshape(N, *self.rnn_states_actor.shape[3:])
+            rnn_states_critic_batch = np.stack(rnn_states_critic_batch).reshape(N, *self.rnn_states_critic.shape[3:])
+
+            # Flatten the (L, N, ...) from_numpys to (L * N, ...)
+            obs_batch = self._flatten(L, N, obs_batch)
+            share_obs_batch = self._flatten(L, N, share_obs_batch)
+            actions_batch = self._flatten(L, N, actions_batch)
+            masks_batch = self._flatten(L, N, masks_batch)
+            active_masks_batch = self._flatten(L, N, active_masks_batch)
+            old_action_log_probs_batch = self._flatten(L, N, old_action_log_probs_batch)
+            advantages_batch = self._flatten(L, N, advantages_batch)
+            returns_batch = self._flatten(L, N, returns_batch)
+            value_preds_batch = self._flatten(L, N, value_preds_batch)
 
             yield obs_batch, share_obs_batch, actions_batch, masks_batch, active_masks_batch, \
                 old_action_log_probs_batch, advantages_batch, returns_batch, value_preds_batch, \
-                rnn_states_actor_batch, rnn_states_critic_batch, rewards_batch
+                rnn_states_actor_batch, rnn_states_critic_batch

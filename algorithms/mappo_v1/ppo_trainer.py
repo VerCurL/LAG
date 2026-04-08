@@ -29,7 +29,7 @@ class PPOTrainer():
     def ppo_update(self, policy: PPOPolicy, sample):
 
         obs_batch, share_obs_batch, actions_batch, masks_batch, active_masks_batch, old_action_log_probs_batch, advantages_batch, \
-            returns_batch, value_preds_batch, rnn_states_actor_batch, rnn_states_critic_batch, _ = sample
+            returns_batch, value_preds_batch, rnn_states_actor_batch, rnn_states_critic_batch = sample
 
         old_action_log_probs_batch = check(old_action_log_probs_batch).to(**self.tpdv)
         advantages_batch = check(advantages_batch).to(**self.tpdv)
@@ -37,26 +37,12 @@ class PPOTrainer():
         value_preds_batch = check(value_preds_batch).to(**self.tpdv)
 
         # Reshape to do in a single forward pass for all steps
-        share_obs_batch = self._train_sample(share_obs_batch)
-        obs_batch = self._train_sample(obs_batch)
-        rnn_states_actor_batch = self._train_sample(rnn_states_actor_batch)
-        rnn_states_critic_batch = self._train_sample(rnn_states_critic_batch)
-        actions_batch = self._train_sample(actions_batch)
-        masks_batch = self._train_sample(masks_batch)
         values, action_log_probs, dist_entropy = policy.evaluate_actions(share_obs_batch,
                                                                          obs_batch,
                                                                          rnn_states_actor_batch,
                                                                          rnn_states_critic_batch,
                                                                          actions_batch,
                                                                          masks_batch)
-
-        old_action_log_probs_batch = self._train_sample(old_action_log_probs_batch)
-        advantages_batch = self._train_sample(advantages_batch)
-        returns_batch = self._train_sample(returns_batch)
-        value_preds_batch = self._train_sample(value_preds_batch)
-        values = self._train_sample(values)
-        action_log_probs = self._train_sample(action_log_probs)
-        dist_entropy = self._train_sample(dist_entropy)
 
         # Obtain the loss function
         ratio = torch.exp(action_log_probs - old_action_log_probs_batch)
