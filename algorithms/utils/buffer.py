@@ -35,25 +35,6 @@ class ReplayBuffer(Buffer):
         # size: (T, n, m, dim) -> (n, m, T, dim)
         return x.transpose(1, 2, 0, *range(3, x.ndim))
 
-    @staticmethod
-    def _chunk(x: np.ndarray, ind: int, length: int, T: int):
-        # 计算起点
-        group_start = ind // T
-        time_start = ind % T
-        m = x.shape[0]
-
-        # ⭐ 用索引代替 roll（O(1)）
-        group_idx = (np.arange(m) + group_start) % m
-
-        # ⭐ 时间索引（支持越界）
-        time_idx = np.arange(time_start, time_start + length) % T
-
-        # ⭐ 直接索引（不会整体copy）
-        sample = x[group_idx][:, time_idx, :]
-
-        # size: (m, T, dim) -roll-> (m, T, dim) -chunk-> (m, length, dim) -T-> (length, m, dim)
-        return sample.transpose(1, 0, *range(2, x.ndim))
-
     def __init__(self, args, num_agents, obs_space, act_space):
         # buffer config
         self.buffer_size = args.buffer_size
@@ -93,6 +74,44 @@ class ReplayBuffer(Buffer):
                                            self.recurrent_hidden_layers, self.recurrent_hidden_size_critic),
                                           dtype=np.float32)
         self.step = 0
+        self._chunk_index_cache = {}
+
+    def _get_chunk_layout(self, data_chunk_length: int):
+        layout = self._chunk_index_cache.get(data_chunk_length)
+        if layout is not None:
+            return layout
+
+        per_thread_chunks = self.buffer_size * self.num_agents // data_chunk_length
+        chunk_ids = np.arange(per_thread_chunks, dtype=np.int64)
+        start_indices = chunk_ids * data_chunk_length
+        time_starts = start_indices % self.buffer_size
+        agent_starts = start_indices // self.buffer_size
+
+        layout = {
+            # 每个线程一共能切出多少个 chunk
+            "per_thread_chunks": per_thread_chunks,
+            # 每个 chunk 对应的时间窗索引，size: (per_thread_chunks_num, L)
+            "time_indices": (time_starts[:, None] + np.arange(data_chunk_length, dtype=np.int64)[None, :]) % self.buffer_size,
+            # 每个 chunk 的起始时刻，用来取 RNN 初始状态，size: (per_thread_chunks_num,)
+            "state_time_indices": time_starts,
+            # 每个 chunk 对应的 agent 重排顺序，保证“当前定位 agent 放在最前面”，size: (per_thread_chunks_num, M)
+            "agent_indices": (agent_starts[:, None] + np.arange(self.num_agents, dtype=np.int64)[None, :]) % self.num_agents,
+        }
+        self._chunk_index_cache[data_chunk_length] = layout
+        return layout
+
+    @staticmethod
+    def _gather_sequence_batch(x: np.ndarray, env_indices: np.ndarray, agent_indices: np.ndarray, time_indices: np.ndarray):
+        # env_indices: (N,)     agent_indices: (N, M)       time_indices: (N, L)
+        # size: (n, M, T, -1) -[]-> (N, L, M, -1) -T-> (L, N, M, -1)
+        sample = x[env_indices[:, None, None], agent_indices[:, None, :], time_indices[:, :, None]]
+        return sample.transpose(1, 0, 2, *range(3, sample.ndim))
+
+    @staticmethod
+    def _gather_state_batch(x: np.ndarray, env_indices: np.ndarray, agent_indices: np.ndarray, time_indices: np.ndarray):
+        # env_indices: (N,)     agent_indices: (N, M)       time_indices: (N,)
+        # size: (n, M, T, -1) -[]-> (N, M, -1)
+        return x[env_indices[:, None], agent_indices, time_indices[:, None]]
 
     @property
     def advantages(self) -> np.ndarray:
@@ -335,6 +354,7 @@ class SharedReplayBuffer(ReplayBuffer):
                                            self.recurrent_hidden_layers, self.recurrent_hidden_size_critic),
                                           dtype=np.float32)
         self.step = 0
+        self._chunk_index_cache = {}
 
     def insert(self,
                obs: np.ndarray,
@@ -407,70 +427,47 @@ class SharedReplayBuffer(ReplayBuffer):
         value_preds = self._cast(self.value_preds[:-1])
         rnn_states_actor = self._cast(self.rnn_states_actor[:-1])
         rnn_states_critic = self._cast(self.rnn_states_critic[:-1])
-        # size: (T, n, m, dim) -sum-> (T, n, 1, dim) -repeat-> (T, n, m, dim)
-        rewards = self.rewards.sum(axis=2, keepdims=True)
-        rewards = np.repeat(rewards, self.num_agents, axis=2)
+        # size: (T, n, m, dim) -sum-> (T, n, 1, dim) -broadcast-> (T, n, m, dim)
+        rewards = np.broadcast_to(self.rewards.sum(axis=2, keepdims=True), self.rewards.shape)
         rewards = self._cast(rewards)
+        layout = self._get_chunk_layout(data_chunk_length)
+        per_thread_chunks = layout["per_thread_chunks"]
 
         # Get mini-batch size and shuffle chunk data
-        # 按照data_chunk_length切分时间步能切多少块
-        data_chunks = self.n_rollout_threads * self.buffer_size * self.num_agents // data_chunk_length
-        # 每num_mini_batch块一组可以分多少组
+        data_chunks = self.n_rollout_threads * per_thread_chunks
         mini_batch_size = data_chunks // num_mini_batch
         rand = torch.randperm(data_chunks).numpy()
         sampler = [rand[i * mini_batch_size:(i + 1) * mini_batch_size] for i in range(num_mini_batch)]
 
         for indices in sampler:
-            obs_batch = []
-            share_obs_batch = []
-            actions_batch = []
-            masks_batch = []
-            active_masks_batch = []
-            old_action_log_probs_batch = []
-            advantages_batch = []
-            returns_batch = []
-            value_preds_batch = []
-            rnn_states_actor_batch = []
-            rnn_states_critic_batch = []
-            rewards_batch = []
-
-            for index in indices:
-                t_chunk = self.buffer_size // data_chunk_length
-                k, l = index // (t_chunk * self.num_agents), index % (t_chunk * self.num_agents)
-                ind = l * data_chunk_length
-
-                # size [T+1, n, m, dim] => [T, n, m, Dim] => [n, m, T, dim] => [m, length, dim] => [length, m, dim]
-                obs_batch.append(self._chunk(obs[k], ind, data_chunk_length, self.buffer_size))
-                share_obs_batch.append(self._chunk(share_obs[k], ind, data_chunk_length, self.buffer_size))
-                actions_batch.append(self._chunk(actions[k], ind, data_chunk_length, self.buffer_size))
-                masks_batch.append(self._chunk(masks[k], ind, data_chunk_length, self.buffer_size))
-                active_masks_batch.append(self._chunk(active_masks[k], ind, data_chunk_length, self.buffer_size))
-                old_action_log_probs_batch.append(self._chunk(old_action_log_probs[k], ind, data_chunk_length, self.buffer_size))
-                advantages_batch.append(self._chunk(advantages[k], ind, data_chunk_length, self.buffer_size))
-                returns_batch.append(self._chunk(returns[k], ind, data_chunk_length, self.buffer_size))
-                value_preds_batch.append(self._chunk(value_preds[k], ind, data_chunk_length, self.buffer_size))
-                rewards_batch.append(self._chunk(rewards[k], ind, data_chunk_length, self.buffer_size))
-                # size [T+1, n, m, dim] => [T, n, m, dim] => [n, m, T, dim] => [m, 1, dim] => [1, m, dim]
-                rnn_states_actor_batch.append(self._chunk(rnn_states_actor[k], ind, 1, self.buffer_size))
-                rnn_states_critic_batch.append(self._chunk(rnn_states_critic[k], ind, 1, self.buffer_size))
+            env_indices = indices // per_thread_chunks  # 记录indices中的chunk都在第几个线程，size: (N,)
+            local_indices = indices % per_thread_chunks  # 记录indices中的chunk在所在线程中的索引，size: (N,)
+            agent_indices = layout["agent_indices"][local_indices]  # 按照在当前线程中的索引获取agents的顺序，size: (N, m)
+            time_indices = layout["time_indices"][local_indices]  # 按照在当前线程中的索引获取时间序列，size: (N, L)
+            state_time_indices = layout["state_time_indices"][local_indices]  # 按照在当前线程中的索引获取时间序列开头，size: (N,)
 
             L, N, M = data_chunk_length, mini_batch_size, self.num_agents
 
-            # These are all from_numpys of size (L, N, M, Dim)
-            obs_batch = np.stack(obs_batch, axis=1)
-            share_obs_batch = np.stack(share_obs_batch, axis=1)
-            actions_batch = np.stack(actions_batch, axis=1)
-            masks_batch = np.stack(masks_batch, axis=1)
-            active_masks_batch = np.stack(active_masks_batch, axis=1)
-            old_action_log_probs_batch = np.stack(old_action_log_probs_batch, axis=1)
-            advantages_batch = np.stack(advantages_batch, axis=1)
-            returns_batch = np.stack(returns_batch, axis=1)
-            value_preds_batch = np.stack(value_preds_batch, axis=1)
-            rewards_batch = np.stack(rewards_batch, axis=1)
+            # These are all from_numpys of size (L, N, M, -1)
+            obs_batch = self._gather_sequence_batch(obs, env_indices, agent_indices, time_indices)
+            share_obs_batch = self._gather_sequence_batch(share_obs, env_indices, agent_indices, time_indices)
+            actions_batch = self._gather_sequence_batch(actions, env_indices, agent_indices, time_indices)
+            masks_batch = self._gather_sequence_batch(masks, env_indices, agent_indices, time_indices)
+            active_masks_batch = self._gather_sequence_batch(active_masks, env_indices, agent_indices, time_indices)
+            old_action_log_probs_batch = self._gather_sequence_batch(old_action_log_probs, env_indices, agent_indices,
+                                                                     time_indices)
+            advantages_batch = self._gather_sequence_batch(advantages, env_indices, agent_indices, time_indices)
+            returns_batch = self._gather_sequence_batch(returns, env_indices, agent_indices, time_indices)
+            value_preds_batch = self._gather_sequence_batch(value_preds, env_indices, agent_indices, time_indices)
+            rewards_batch = self._gather_sequence_batch(rewards, env_indices, agent_indices, time_indices)
 
-            # States is just a (1, N, M, -1) -> (N * M, -1) from_numpy
-            rnn_states_actor_batch = np.stack(rnn_states_actor_batch, axis=1).reshape(N * M, *self.rnn_states_actor.shape[3:])
-            rnn_states_critic_batch = np.stack(rnn_states_critic_batch, axis=1).reshape(N * M, *self.rnn_states_critic.shape[3:])
+            # States is just a (N, M, -1) from_numpy
+            rnn_states_actor_batch = self._gather_state_batch(
+                rnn_states_actor, env_indices, agent_indices, state_time_indices
+            ).reshape(N * M, *self.rnn_states_actor.shape[3:])
+            rnn_states_critic_batch = self._gather_state_batch(
+                rnn_states_critic, env_indices, agent_indices, state_time_indices
+            ).reshape(N * M, *self.rnn_states_critic.shape[3:])
 
             # Flatten the (L, N, M, ...) from_numpys to (L * N * M, ...)
             obs_batch = self._flatten(L, N, M, obs_batch)
