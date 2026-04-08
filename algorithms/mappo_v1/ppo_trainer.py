@@ -37,6 +37,12 @@ class PPOTrainer():
         value_preds_batch = check(value_preds_batch).to(**self.tpdv)
 
         # Reshape to do in a single forward pass for all steps
+        share_obs_batch = self._train_sample(share_obs_batch)
+        obs_batch = self._train_sample(obs_batch)
+        rnn_states_actor_batch = self._train_sample(rnn_states_actor_batch)
+        rnn_states_critic_batch = self._train_sample(rnn_states_critic_batch)
+        actions_batch = self._train_sample(actions_batch)
+        masks_batch = self._train_sample(masks_batch)
         values, action_log_probs, dist_entropy = policy.evaluate_actions(share_obs_batch,
                                                                          obs_batch,
                                                                          rnn_states_actor_batch,
