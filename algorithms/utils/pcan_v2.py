@@ -24,6 +24,7 @@ class PCANLayer(nn.Module):
         self.K_module = MLPLayer(KQ_input_dim, KQ_hidden_size, activation_id)
         self.Q_module = MLPLayer(KQ_input_dim, KQ_hidden_size, activation_id)
         self.V_module = MLPLayer(V_input_dim, V_hidden_size, activation_id)
+        self.weight_net = nn.Linear(self._V_hidden_size[-1], 1)
         self.output_module = MLPLayer(self._V_hidden_size[-1], output_hidden_size + " " + str(self._output_hidden_size[-1]), activation_id)
 
         # -------- 记录信息 --------
@@ -60,11 +61,15 @@ class PCANLayer(nn.Module):
         heads = torch.matmul(attn_weights, V)
 
         # 拼接heads，(B, H, N, VHD) -> (B, N, VD) -> (B * N, VD)
+        ## (B, H, N, VHD) -> (B, N, VD)
         heads = heads.transpose(1, 2).contiguous().view(size_B, self.agent_num, V_dim)
-        heads = heads.view(size_B * self.agent_num, V_dim)
+        ## (B, N, 1)
+        weights = torch.softmax(self.weight_net(heads), dim=1)
+        ## 加权求和 (B, VD)
+        global_feat = (weights * heads).mean(dim=1)
 
         # ⭐输出投影：(B, 1)
-        output = self.output_module(heads)
+        output = self.output_module(global_feat)
 
         self.record_info = {
             "attn_weights": attn_weights.detach(),                      # (B, H, N, N)

@@ -32,8 +32,27 @@ class ReplayBuffer(Buffer):
     @staticmethod
     def _cast(x: np.ndarray):
         # T: buffer_size, n: n_rollout_threads, m: num_agents
-        # size: (T, n, m, dim) -> (n, T, m, dim) -> (n*T, m, dim)
-        return x.transpose(1, 0, 2, *range(3, x.ndim)).reshape(-2, *x.shape[2:])
+        # size: (T, n, m, dim) -> (n, m, T, dim)
+        return x.transpose(1, 2, 0, *range(3, x.ndim))
+
+    @staticmethod
+    def _chunk(x: np.ndarray, ind: int, length: int, T: int):
+        # 计算起点
+        group_start = ind // T
+        time_start = ind % T
+        m = x.shape[0]
+
+        # ⭐ 用索引代替 roll（O(1)）
+        group_idx = (np.arange(m) + group_start) % m
+
+        # ⭐ 时间索引（支持越界）
+        time_idx = np.arange(time_start, time_start + length) % T
+
+        # ⭐ 直接索引（不会整体copy）
+        sample = x[group_idx][:, time_idx, :]
+
+        # size: (m, T, dim) -roll-> (m, T, dim) -chunk-> (m, length, dim) -T-> (length, m, dim)
+        return sample.transpose(1, 0, *range(2, x.ndim))
 
     def __init__(self, args, num_agents, obs_space, act_space):
         # buffer config
@@ -304,7 +323,7 @@ class SharedReplayBuffer(ReplayBuffer):
         # NOTE: active_masks[t, :, i] represents whether agent[i] is alive in obs[t] .... differ in different agents
         self.active_masks = np.ones_like(self.masks)
         # pi(a)
-        self.action_log_probs = np.zeros((self.buffer_size, self.n_rollout_threads, self.num_agents, *act_shape), dtype=np.float32)
+        self.action_log_probs = np.zeros((self.buffer_size, self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
         # V(o), R(o) while advantage = returns - value_preds
         self.value_preds = np.zeros((self.buffer_size + 1, self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
         self.returns = np.zeros((self.buffer_size + 1, self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
@@ -376,7 +395,7 @@ class SharedReplayBuffer(ReplayBuffer):
                 self.n_rollout_threads, self.buffer_size, data_chunk_length))
 
         # Transpose and reshape parallel data into sequential data
-        # size: [T, n, m, dim] -> [n*T, m, dim]
+        # size: [T, n, m, dim] -> [n, m, T, dim]
         obs = self._cast(self.obs[:-1])
         share_obs = self._cast(self.share_obs[:-1])
         actions = self._cast(self.actions)
@@ -388,14 +407,14 @@ class SharedReplayBuffer(ReplayBuffer):
         value_preds = self._cast(self.value_preds[:-1])
         rnn_states_actor = self._cast(self.rnn_states_actor[:-1])
         rnn_states_critic = self._cast(self.rnn_states_critic[:-1])
-        # size: (T, N, M, dim) -sum-> (T, N, 1, dim) -repeat-> (T, N, M, dim)
+        # size: (T, n, m, dim) -sum-> (T, n, 1, dim) -repeat-> (T, n, m, dim)
         rewards = self.rewards.sum(axis=2, keepdims=True)
         rewards = np.repeat(rewards, self.num_agents, axis=2)
         rewards = self._cast(rewards)
 
         # Get mini-batch size and shuffle chunk data
         # 按照data_chunk_length切分时间步能切多少块
-        data_chunks = self.n_rollout_threads * self.buffer_size // data_chunk_length
+        data_chunks = self.n_rollout_threads * self.buffer_size * self.num_agents // data_chunk_length
         # 每num_mini_batch块一组可以分多少组
         mini_batch_size = data_chunks // num_mini_batch
         rand = torch.randperm(data_chunks).numpy()
@@ -416,22 +435,24 @@ class SharedReplayBuffer(ReplayBuffer):
             rewards_batch = []
 
             for index in indices:
+                t_chunk = self.buffer_size // data_chunk_length
+                k, l = index // (t_chunk * self.num_agents), index % (t_chunk * self.num_agents)
+                ind = l * data_chunk_length
 
-                ind = index * data_chunk_length
-                # size [T+1, N, M, Dim] => [T, N, M, Dim] => [N, T, M, Dim] => [N * T, M, Dim] => [L, M, Dim]
-                obs_batch.append(obs[ind:ind + data_chunk_length])
-                share_obs_batch.append(share_obs[ind:ind + data_chunk_length])
-                actions_batch.append(actions[ind:ind + data_chunk_length])
-                masks_batch.append(masks[ind:ind + data_chunk_length])
-                active_masks_batch.append(active_masks[ind:ind + data_chunk_length])
-                old_action_log_probs_batch.append(old_action_log_probs[ind:ind + data_chunk_length])
-                advantages_batch.append(advantages[ind:ind + data_chunk_length])
-                returns_batch.append(returns[ind:ind + data_chunk_length])
-                value_preds_batch.append(value_preds[ind:ind + data_chunk_length])
-                rewards_batch.append(rewards[ind:ind + data_chunk_length])
-                # size [T+1, N, M, Dim] => [T, N, M, Dim] => [N, T, M, Dim] => [N * T, M, Dim] => [1, M, Dim]
-                rnn_states_actor_batch.append(rnn_states_actor[ind])
-                rnn_states_critic_batch.append(rnn_states_critic[ind])
+                # size [T+1, n, m, dim] => [T, n, m, Dim] => [n, m, T, dim] => [m, length, dim] => [length, m, dim]
+                obs_batch.append(self._chunk(obs[k], ind, data_chunk_length, self.buffer_size))
+                share_obs_batch.append(self._chunk(share_obs[k], ind, data_chunk_length, self.buffer_size))
+                actions_batch.append(self._chunk(actions[k], ind, data_chunk_length, self.buffer_size))
+                masks_batch.append(self._chunk(masks[k], ind, data_chunk_length, self.buffer_size))
+                active_masks_batch.append(self._chunk(active_masks[k], ind, data_chunk_length, self.buffer_size))
+                old_action_log_probs_batch.append(self._chunk(old_action_log_probs[k], ind, data_chunk_length, self.buffer_size))
+                advantages_batch.append(self._chunk(advantages[k], ind, data_chunk_length, self.buffer_size))
+                returns_batch.append(self._chunk(returns[k], ind, data_chunk_length, self.buffer_size))
+                value_preds_batch.append(self._chunk(value_preds[k], ind, data_chunk_length, self.buffer_size))
+                rewards_batch.append(self._chunk(rewards[k], ind, data_chunk_length, self.buffer_size))
+                # size [T+1, n, m, dim] => [T, n, m, dim] => [n, m, T, dim] => [m, 1, dim] => [1, m, dim]
+                rnn_states_actor_batch.append(self._chunk(rnn_states_actor[k], ind, 1, self.buffer_size))
+                rnn_states_critic_batch.append(self._chunk(rnn_states_critic[k], ind, 1, self.buffer_size))
 
             L, N, M = data_chunk_length, mini_batch_size, self.num_agents
 
@@ -447,9 +468,9 @@ class SharedReplayBuffer(ReplayBuffer):
             value_preds_batch = np.stack(value_preds_batch, axis=1)
             rewards_batch = np.stack(rewards_batch, axis=1)
 
-            # States is just a (N * M, -1) from_numpy
-            rnn_states_actor_batch = np.stack(rnn_states_actor_batch).reshape(N * M, *self.rnn_states_actor.shape[3:])
-            rnn_states_critic_batch = np.stack(rnn_states_critic_batch).reshape(N * M, *self.rnn_states_critic.shape[3:])
+            # States is just a (1, N, M, -1) -> (N * M, -1) from_numpy
+            rnn_states_actor_batch = np.stack(rnn_states_actor_batch, axis=1).reshape(N * M, *self.rnn_states_actor.shape[3:])
+            rnn_states_critic_batch = np.stack(rnn_states_critic_batch, axis=1).reshape(N * M, *self.rnn_states_critic.shape[3:])
 
             # Flatten the (L, N, M, ...) from_numpys to (L * N * M, ...)
             obs_batch = self._flatten(L, N, M, obs_batch)

@@ -47,6 +47,14 @@ class PPOPCANTrainer():
                         rnn_states_critic_batch, actions_batch, masks_batch)
 
         # -------- 计算损失函数 --------
+        old_action_log_probs_batch = self._train_sample(old_action_log_probs_batch)
+        advantages_batch = self._train_sample(advantages_batch)
+        returns_batch = self._train_sample(returns_batch)
+        value_preds_batch = self._train_sample(value_preds_batch)
+        values = self._train_sample(values)
+        action_log_probs = self._train_sample(action_log_probs)
+        dist_entropy = self._train_sample(dist_entropy)
+
         # 策略损失
         ratio = torch.exp(action_log_probs - old_action_log_probs_batch)
         surr1 = ratio * advantages_batch
@@ -71,9 +79,8 @@ class PPOPCANTrainer():
         time_batch, reward_dim = rewards_batch.shape
         # [L * N * M, D] -> [L * N, M, D]
         rewards_target = check(rewards_batch).to(**self.tpdv)
-        rewards_target = rewards_target.view(time_batch // self.num_agents, self.num_agents, reward_dim)
-        rewards_pred = rewards_pred.view(time_batch // self.num_agents, self.num_agents, reward_dim)
-        rewards_pred_loss = F.mse_loss(rewards_pred, rewards_target)           # [L * N, M, D] -loss_mean-> 1
+        rewards_target = rewards_target.view(time_batch // self.num_agents, self.num_agents, reward_dim).mean(dim=1)
+        rewards_pred_loss = F.mse_loss(rewards_pred, rewards_target)           # [L * N, D] -loss_mean-> 1
 
         # 损失加权求和
         loss = policy_loss + value_loss * self.value_loss_coef + policy_entropy_loss * self.entropy_coef + rewards_pred_loss * self.rewards_pred_coef
@@ -193,3 +200,7 @@ class PPOPCANTrainer():
 
         self._prev_credit_snapshot = current_credit_snapshot
         return credit_change_rate.detach()
+
+    def _train_sample(self, x: torch.Tensor):
+        # size: (T * N * m, dim) -> (T * N, m, dim) -> (T * N, dim)
+        return x.view(-1, self.num_agents, *x.shape[1:])[:, 0, ...]

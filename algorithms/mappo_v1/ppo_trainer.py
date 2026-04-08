@@ -21,6 +21,7 @@ class PPOTrainer():
         self.entropy_coef = args.entropy_coef
         self.use_max_grad_norm = args.use_max_grad_norm
         self.max_grad_norm = args.max_grad_norm
+        self.num_agents = args.num_agents
         # rnn configs
         self.use_recurrent_policy = args.use_recurrent_policy
         self.data_chunk_length = args.data_chunk_length
@@ -42,6 +43,14 @@ class PPOTrainer():
                                                                          rnn_states_critic_batch,
                                                                          actions_batch,
                                                                          masks_batch)
+
+        old_action_log_probs_batch = self._train_sample(old_action_log_probs_batch)
+        advantages_batch = self._train_sample(advantages_batch)
+        returns_batch = self._train_sample(returns_batch)
+        value_preds_batch = self._train_sample(value_preds_batch)
+        values = self._train_sample(values)
+        action_log_probs = self._train_sample(action_log_probs)
+        dist_entropy = self._train_sample(dist_entropy)
 
         # Obtain the loss function
         ratio = torch.exp(action_log_probs - old_action_log_probs_batch)
@@ -109,3 +118,6 @@ class PPOTrainer():
             train_info[k] /= num_updates
 
         return train_info
+
+    def _train_sample(self, x: torch.Tensor):
+        return x.view(-1, self.num_agents, *x.shape[1:])[:, 0, ...]
