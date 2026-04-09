@@ -46,6 +46,7 @@ class PPOPCANTrainer():
         # -------- 开始梯度下降 --------
         policy.optimizer.zero_grad()
         rewards_pred_loss.backward()
+        policy.optimizer.step()
 
         # -------- 记录信息 --------
         credit_diag_mean, credit_entropy = self._summarize_credit(credit)
