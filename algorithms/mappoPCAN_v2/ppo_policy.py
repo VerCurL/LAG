@@ -57,12 +57,12 @@ class PPOPCANPolicy:
         actions, _, rnn_states_actor, _, credit = self.actor(obs, rnn_states_actor, masks, deterministic)
         return actions, rnn_states_actor, credit
 
-    def pcan(self, obs, actor_features):
+    def pcan(self, obs, rnn_state_actor, masks):
         """
         Returns:
             rewards_pred, credit, pcan_record_info
         """
-        rewards_pred, credit, pcan_record_info = self.actor.evaluate_pcan(obs, actor_features)
+        rewards_pred, credit, pcan_record_info = self.actor.evaluate_pcan(obs, rnn_state_actor, masks)
         return rewards_pred, credit, pcan_record_info
 
     def prep_training(self):

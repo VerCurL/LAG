@@ -33,11 +33,11 @@ class PPOPCANTrainer():
 
     def pcan_update(self, policy: PPOPCANPolicy, sample):
         # -------- 收集buffer_size缓冲值 --------
-        obs_batch, actor_features_batch, rewards_batch = sample
+        rewards_batch, obs_batch, masks_batch, rnn_states_actor_batch = sample
         rewards_batch = check(rewards_batch).to(**self.tpdv)
 
         # -------- 评估pcan网络获得预测奖励和credit --------
-        rewards_pred, credit, pcan_record_info = policy.pcan(obs_batch, actor_features_batch)
+        rewards_pred, credit, pcan_record_info = policy.pcan(obs_batch, rnn_states_actor_batch, masks_batch)
 
         # -------- 计算损失函数 --------
         # 奖励预测损失
@@ -122,7 +122,7 @@ class PPOPCANTrainer():
 
         for _ in range(self.ppo_epoch):
             # --------- 训练 pcan 网络 ---------
-            pcan_generator = buffer.pcan_generator(self.num_mini_batch)
+            pcan_generator = buffer.pcan_generator(self.num_mini_batch, self.data_chunk_length)
             for sample in pcan_generator:
                 rewards_pred_loss, credit_diag_mean, credit_entropy, credit_change_rate, head_diversity, pcan_output_norm\
                     = self.pcan_update(policy, sample)

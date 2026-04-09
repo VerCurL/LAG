@@ -76,9 +76,26 @@ class PPOActor(nn.Module):
 
         return action_log_probs, dist_entropy
 
-    def evaluate_pcan(self, obs, actor_features):
+    def evaluate_actor_features(self, obs, rnn_states, masks):
         obs = check(obs).to(**self.tpdv)
-        actor_features = check(actor_features).to(**self.tpdv)
+        rnn_states = check(rnn_states).to(**self.tpdv)
+        masks = check(masks).to(**self.tpdv)
 
+        actor_features = self.base(obs)
+        if self.use_recurrent_policy:
+            actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
+
+        return actor_features
+
+    def evaluate_pcan(self, obs, rnn_states, masks):
+        obs = check(obs).to(**self.tpdv)
+        rnn_states = check(rnn_states).to(**self.tpdv)
+        masks = check(masks).to(**self.tpdv)
+
+        actor_features = self.base(obs)
+        if self.use_recurrent_policy:
+            actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
+
+        actor_features.detach()
         rewards_pred, credit = self.pcan(actor_features, obs)
         return rewards_pred, credit, self.pcan.record_info

@@ -38,6 +38,16 @@ class ReplayBuffer(Buffer):
         # size: (T, n, m, dim) -> (n, m, T, dim) -> (n*m*T, dim)
         return x.transpose(1, 2, 0, *range(3, x.ndim)).reshape(-1, *x.shape[3:])
 
+    @staticmethod
+    def _flatten_pcan(T: int, N: int, M: int, x: np.ndarray):
+        return x.reshape(T * N * M, *x.shape[3:])
+
+    @staticmethod
+    def _cast_pcan(x: np.ndarray):
+        # T: buffer_size, n: n_rollout_threads, m: num_agents
+        # size: (T, n, m, dim) -> (n, T, m, dim) -> (n*T, m, dim)
+        return x.transpose(1, 0, 2, *range(3, x.ndim)).reshape(-1, *x.shape[2:])
+
     def __init__(self, args, num_agents, obs_space, act_space):
         # buffer config
         self.buffer_size = args.buffer_size
@@ -372,39 +382,58 @@ class SharedReplayBuffer(ReplayBuffer):
         self.share_obs[0] = self.share_obs[-1].copy()
         return super().after_update()
 
-    def pcan_generator(self, num_mini_batch: int):
-        """
-        sample unit: one synchronized group at one (env, time)
-        yields:
-            obs_batch:            [B, M, obs_dim]
-            actor_features_batch: [B, M, feat_dim]
-            rewards_batch:        [B, M, 1]
-            masks_batch:   [B, M, 1]
-        """
-        T, N, M = self.buffer_size, self.n_rollout_threads, self.num_agents
+    def pcan_generator(self, num_mini_batch: int, data_chunk_length: int):
+        assert self.n_rollout_threads * self.buffer_size >= data_chunk_length, (
+            "PPO requires the number of processes ({}) * buffer size ({}) "
+            "to be greater than or equal to the number of data chunk length ({}).".format(
+                self.n_rollout_threads, self.buffer_size, data_chunk_length))
 
+        # Transpose and reshape parallel data into sequential data
         # size: (T, N, M, dim) -sum-> (T, N, dim) -T-> (N, T, dim) -reshape-> (N * T, dim)
         rewards = self.rewards.sum(axis=2)
-        rewards = rewards.transpose(1, 0, 2).reshape(N * T, self.rewards.shape[-1])
+        rewards = rewards.transpose(1, 0, 2).reshape(self.n_rollout_threads * self.buffer_size, self.rewards.shape[-1])
+        # size: (T, N, M, dim) -cast-> (N * T, M, dim)
+        obs = self._cast_pcan(self.obs[:-1])
+        masks = self._cast_pcan(self.masks[:-1])
+        rnn_states_actor = self._cast_pcan(self.rnn_states_actor[:-1])
 
-        # size: (T, N, M, dim) -T-> (N, T, M, dim) -reshape-> (N * T, M, dim)
-        obs = self.obs[:-1].transpose(1, 0, 2, 3).reshape(N * T, M, self.obs.shape[-1])
-        actor_features = self.actor_features.transpose(1, 0, 2, 3).reshape(N * T, M, self.actor_features.shape[-1])
+        # Get mini-batch size and shuffle chunk data
+        # 按照data_chunk_length切分时间步能切多少块
+        data_chunks = self.buffer_size * self.n_rollout_threads // data_chunk_length
+        # 每num_mini_batch块一组可以分多少组
+        mini_batch_size = data_chunks // num_mini_batch
+        rand = torch.randperm(data_chunks).numpy()
+        sampler = [rand[i * mini_batch_size:(i + 1) * mini_batch_size] for i in range(num_mini_batch)]
 
-        batch_size = N * T
-        mini_batch_size = batch_size // num_mini_batch
+        for indices in sampler:
+            rewards_batch = []
+            obs_batch = []
+            masks_batch = []
+            rnn_states_actor_batch = []
 
-        indices = np.arange(batch_size)
-        np.random.shuffle(indices)
+            for index in indices:
+                ind = index * data_chunk_length
+                # size: [N * T, dim] => [L, Dim]
+                rewards_batch.append(rewards[ind:ind + data_chunk_length])
+                # size: [N * T, M, Dim] => [L, M, Dim]
+                obs_batch.append(obs[ind:ind + data_chunk_length])
+                masks_batch.append(masks[ind:ind + data_chunk_length])
+                # size: [N * T, M, Dim] => [1, M, Dim]
+                rnn_states_actor_batch.append(rnn_states_actor[ind])
 
-        for i in range(num_mini_batch):
-            batch_idx = indices[i * mini_batch_size : (i + 1) * mini_batch_size]
-            # size: [L * M, dim]
-            obs_batch = obs[batch_idx].reshape(-1, obs.shape[-1])
-            actor_features_batch = actor_features[batch_idx].reshape(-1, actor_features.shape[-1])
-            # size: [L, dim]
-            rewards_batch = rewards[batch_idx]
-            yield obs_batch, actor_features_batch, rewards_batch
+            L, N, M = data_chunk_length, mini_batch_size, self.num_agents
+
+            # These are all from_numpys of size
+            # size: (L, N, Dim)
+            rewards_batch = self._flatten_pcan(L, N, 1, np.stack(rewards_batch, axis=1))
+            # size: (L, N, M, Dim)
+            obs_batch = self._flatten_pcan(L, N, M, np.stack(obs_batch, axis=1))
+            masks_batch = self._flatten_pcan(L, N, M, np.stack(masks_batch, axis=1))
+            # size: (N, 1, M, Dim) -> (N * M, dim)
+            rnn_states_actor_batch = np.stack(rnn_states_actor_batch).reshape(N * M, *self.rnn_states_actor.shape[3:])
+
+            yield rewards_batch, obs_batch, masks_batch, rnn_states_actor_batch
+
 
     def recurrent_generator(self, advantages: np.ndarray, num_mini_batch: int, data_chunk_length: int):
         """
