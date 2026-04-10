@@ -122,18 +122,6 @@ class PPOPCANTrainer():
         train_info['ratio'] = 0
 
         for _ in range(self.ppo_epoch):
-            # --------- 训练 pcan 网络 ---------
-            pcan_generator = buffer.pcan_generator(self.num_mini_batch, self.data_chunk_length)
-            for sample in pcan_generator:
-                rewards_pred_loss, credit_diag_mean, credit_entropy, credit_change_rate, head_diversity, pcan_output_norm\
-                    = self.pcan_update(policy, sample)
-                train_info['rewards_pred_loss'] += rewards_pred_loss.item()
-                train_info["credit_diag_mean"] += credit_diag_mean.item()
-                train_info["credit_entropy"] += credit_entropy.item()
-                train_info["credit_change_rate"] += credit_change_rate.item()
-                train_info["head_diversity"] += head_diversity.item()
-                train_info["pcan_output_norm"] += pcan_output_norm.item()
-
             # --------- 训练 actor-critic 网络 ---------
             if self.use_recurrent_policy:
                 data_generator = buffer.recurrent_generator(buffer.advantages, self.num_mini_batch, self.data_chunk_length)
@@ -151,6 +139,20 @@ class PPOPCANTrainer():
                 train_info['actor_grad_norm'] += actor_grad_norm
                 train_info['critic_grad_norm'] += critic_grad_norm
                 train_info['ratio'] += ratio.mean().item()
+
+            # --------- 训练 pcan 网络 ---------
+            pcan_generator = buffer.pcan_generator(self.num_mini_batch, self.data_chunk_length)
+
+            for sample in pcan_generator:
+                rewards_pred_loss, credit_diag_mean, credit_entropy, credit_change_rate, head_diversity, pcan_output_norm \
+                    = self.pcan_update(policy, sample)
+
+                train_info['rewards_pred_loss'] += rewards_pred_loss.item()
+                train_info["credit_diag_mean"] += credit_diag_mean.item()
+                train_info["credit_entropy"] += credit_entropy.item()
+                train_info["credit_change_rate"] += credit_change_rate.item()
+                train_info["head_diversity"] += head_diversity.item()
+                train_info["pcan_output_norm"] += pcan_output_norm.item()
 
         num_updates = self.ppo_epoch * self.num_mini_batch
 
