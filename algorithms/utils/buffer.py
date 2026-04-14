@@ -317,7 +317,7 @@ class SharedReplayBuffer(ReplayBuffer):
         # NOTE: active_masks[t, :, i] represents whether agent[i] is alive in obs[t] .... differ in different agents
         self.active_masks = np.ones_like(self.masks)
         # pi(a)
-        self.action_log_probs = np.zeros((self.buffer_size, self.n_rollout_threads, self.num_agents, *act_shape), dtype=np.float32)
+        self.action_log_probs = np.zeros((self.buffer_size, self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
         # V(o), R(o) while advantage = returns - value_preds
         self.value_preds = np.zeros((self.buffer_size + 1, self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
         self.returns = np.zeros((self.buffer_size + 1, self.n_rollout_threads, self.num_agents, 1), dtype=np.float32)
@@ -373,6 +373,16 @@ class SharedReplayBuffer(ReplayBuffer):
         self.active_masks[0] = self.active_masks[-1].copy()
         self.share_obs[0] = self.share_obs[-1].copy()
         return super().after_update()
+
+    @property
+    def advantages_mask(self) -> np.ndarray:
+        advantages = self.returns[:-1] - self.value_preds[:-1]  # type: np.ndarray
+        active_masks = self.active_masks[:-1]
+        adv_mean = (advantages * active_masks).sum() / (active_masks.sum() + 1e-5)
+        adv_var = (((advantages - adv_mean) ** 2) * active_masks).sum() / (active_masks.sum() + 1e-5)
+        advantages = (advantages - adv_mean) / (np.sqrt(adv_var) + 1e-5)
+        advantages = advantages * active_masks
+        return advantages
 
     def pcan_generator(self, num_mini_batch: int, data_chunk_length: int):
         assert self.n_rollout_threads * self.buffer_size >= data_chunk_length, (
@@ -517,7 +527,7 @@ class SharedReplayBuffer(ReplayBuffer):
 
             # ===== 6. flatten =====
             B = len(indices)
-
+            # size: (B * L, ...)
             obs_batch = obs_batch.reshape(B * L, -1)
             share_obs_batch = share_obs_batch.reshape(B * L, -1)
             actions_batch = actions_batch.reshape(B * L, -1)
