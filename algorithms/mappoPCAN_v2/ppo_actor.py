@@ -97,5 +97,5 @@ class PPOActor(nn.Module):
             actor_features, rnn_states = self.rnn(actor_features, rnn_states, masks)
 
         actor_features.detach()
-        rewards_pred, credit = self.pcan(actor_features, obs)
-        return rewards_pred, credit, self.pcan.record_info
+        target_pred, credit = self.pcan(actor_features, obs)
+        return target_pred, credit, self.pcan.record_info

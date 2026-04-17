@@ -33,15 +33,15 @@ class PPOPCANTrainer():
 
     def pcan_update(self, policy: PPOPCANPolicy, sample):
         # -------- 收集buffer_size缓冲值 --------
-        rewards_batch, obs_batch, masks_batch, rnn_states_actor_batch = sample
-        rewards_batch = check(rewards_batch).to(**self.tpdv)
+        nstep_return_batch, obs_batch, masks_batch, rnn_states_actor_batch = sample
+        nstep_return_batch = check(nstep_return_batch).to(**self.tpdv)
 
         # -------- 评估pcan网络获得预测奖励和credit --------
-        rewards_pred, credit, pcan_record_info = policy.pcan(obs_batch, rnn_states_actor_batch, masks_batch)
+        target_pred, credit, pcan_record_info = policy.pcan(obs_batch, rnn_states_actor_batch, masks_batch)
 
         # -------- 计算损失函数 --------
         # 奖励预测损失
-        rewards_pred_loss = F.mse_loss(rewards_pred, rewards_batch)           # [L, D] -loss_mean-> 1
+        rewards_pred_loss = F.mse_loss(target_pred, nstep_return_batch)           # [L, D] -loss_mean-> 1
 
         # -------- 开始梯度下降 --------
         policy.optimizer.zero_grad()

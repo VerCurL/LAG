@@ -79,6 +79,7 @@ class ReplayBuffer(Buffer):
                                            self.recurrent_hidden_layers, self.recurrent_hidden_size_critic),
                                           dtype=np.float32)
         # pcan
+        self.pcan_nstep_returns = np.zeros((self.buffer_size, self.n_rollout_threads, 1), dtype=np.float32)
         self.actor_features = np.zeros((self.buffer_size, self.n_rollout_threads, self.num_agents,
                                         self.recurrent_hidden_size_actor),
                                        dtype=np.float32)
@@ -148,6 +149,8 @@ class ReplayBuffer(Buffer):
         self.returns = np.zeros_like(self.returns, dtype=np.float32)
         self.rnn_states_actor = np.zeros_like(self.rnn_states_actor)
         self.rnn_states_critic = np.zeros_like(self.rnn_states_critic)
+        self.actor_features = np.zeros_like(self.actor_features, dtype=np.float32)
+        self.pcan_nstep_returns = np.zeros_like(self.pcan_nstep_returns, dtype=np.float32)
 
     def compute_returns(self, next_value: np.ndarray):
         """
@@ -329,6 +332,7 @@ class SharedReplayBuffer(ReplayBuffer):
                                            self.recurrent_hidden_layers, self.recurrent_hidden_size_critic),
                                           dtype=np.float32)
         # pcan
+        self.pcan_nstep_returns = np.zeros((self.buffer_size, self.n_rollout_threads, 1), dtype=np.float32)
         self.actor_features = np.zeros((self.buffer_size, self.n_rollout_threads, self.num_agents,
                                         self.recurrent_hidden_size_actor),
                                        dtype=np.float32)
@@ -384,6 +388,59 @@ class SharedReplayBuffer(ReplayBuffer):
         advantages = advantages * active_masks
         return advantages
 
+    def compute_pcan_nstep_returns(self, n_step: int, gamma: float = None):
+        """
+        Compute n-step discounted return for PCAN target using team rewards.
+
+        team reward is defined as self.rewards.sum(axis=2), shape [T, N, 1].
+
+        Complexity:
+            O(T * N * M) for summing rewards over agents
+            O(T * N) for the backward recurrence
+        """
+        if gamma is None:
+            gamma = self.gamma
+
+        T = self.buffer_size
+        N = self.n_rollout_threads
+
+        # [T, N, 1]
+        team_rewards = self.rewards.sum(axis=2)
+
+        # masks[t+1] = 1 - done_t
+        # shared env termination mask, take agent 0
+        # [T, N, 1]
+        team_masks = self.masks[1:, :, 0, :].astype(np.float32)
+
+        self.pcan_nstep_returns.fill(0.0)
+
+        if n_step <= 0:
+            return
+
+        # run_len[t] = 从 t 开始，连续还能往后走多少步（按 mask 计）
+        # shape: [T, N, 1]
+        run_len = np.zeros((T, N, 1), dtype=np.int32)
+        run = np.zeros((N, 1), dtype=np.int32)
+
+        for t in reversed(range(T)):
+            run = (run + 1) * team_masks[t].astype(np.int32)
+            run_len[t] = run
+
+        gamma_n = gamma ** n_step
+
+        # backward recurrence
+        for t in reversed(range(T)):
+            val = team_rewards[t].copy()
+
+            if t + 1 < T:
+                val += gamma * team_masks[t] * self.pcan_nstep_returns[t + 1]
+
+            if t + n_step < T:
+                alive_n = (run_len[t] >= n_step).astype(np.float32)
+                val -= gamma_n * alive_n * team_rewards[t + n_step]
+
+            self.pcan_nstep_returns[t] = val
+
     def pcan_generator(self, num_mini_batch: int, data_chunk_length: int):
         assert self.n_rollout_threads * self.buffer_size >= data_chunk_length, (
             "PPO requires the number of processes ({}) * buffer size ({}) "
@@ -393,9 +450,9 @@ class SharedReplayBuffer(ReplayBuffer):
         T, N, M = self.buffer_size, self.n_rollout_threads, self.num_agents
 
         # ===== 1. 数据预处理 =====
-        # size: (T, N, M, dim) -sum-> (T, N, dim) -T-> (N, T, dim) -reshape-> (N * T, dim)
-        rewards = self.rewards.sum(axis=2)
-        rewards = rewards.transpose(1, 0, 2).reshape(N * T, -1)
+        # size: (T, N, 1) -T-> (N, T, 1) -reshape-> (N * T, 1)
+        nstep_return = self.pcan_nstep_returns
+        nstep_return = nstep_return.transpose(1, 0, 2).reshape(N * T, -1)
         # size: (T, N, M, dim) -cast-> (N * T, M, dim)
         obs = self._cast_pcan(self.obs[:-1])
         masks = self._cast_pcan(self.masks[:-1])
@@ -407,7 +464,7 @@ class SharedReplayBuffer(ReplayBuffer):
         num_chunks = total_steps // L
 
         # size: (N * T, dim) -> (num_chunks, L, dim)
-        rewards = rewards.reshape(num_chunks, L, -1)
+        nstep_return = nstep_return.reshape(num_chunks, L, -1)
 
         # size: (N * T, M, dim) -> (num_chunks, L, M, dim)
         obs = obs.reshape(num_chunks, L, M, -1)
@@ -428,19 +485,19 @@ class SharedReplayBuffer(ReplayBuffer):
 
         # ===== 4. 直接索引（核心优化点）=====
         for indices in sampler:
-            rewards_batch = rewards[indices]                    # (N_batch, L, dim)
+            nstep_return_batch = nstep_return[indices]                    # (N_batch, L, dim)
             obs_batch = obs[indices]                            # (N_batch, L, M, dim)
             masks_batch = masks[indices]
             rnn_states_actor_batch = rnn_states_actor[indices]  # (N_batch, M, dim)
 
             # ===== 5. flatten =====
             N_batch = len(indices)
-            rewards_batch = rewards_batch.reshape(N_batch * L, -1)
+            nstep_return_batch = nstep_return_batch.reshape(N_batch * L, -1)
             obs_batch = obs_batch.reshape(N_batch * L * M, -1)
             masks_batch = masks_batch.reshape(N_batch * L * M, -1)
             rnn_states_actor_batch = rnn_states_actor_batch.reshape(N_batch * M, *self.rnn_states_actor.shape[3:])
 
-            yield rewards_batch, obs_batch, masks_batch, rnn_states_actor_batch
+            yield nstep_return_batch, obs_batch, masks_batch, rnn_states_actor_batch
 
     def recurrent_generator(self, advantages: np.ndarray, num_mini_batch: int, data_chunk_length: int):
         """

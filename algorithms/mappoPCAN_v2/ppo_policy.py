@@ -62,8 +62,8 @@ class PPOPCANPolicy:
         Returns:
             rewards_pred, credit, pcan_record_info
         """
-        rewards_pred, credit, pcan_record_info = self.actor.evaluate_pcan(obs, rnn_state_actor, masks)
-        return rewards_pred, credit, pcan_record_info
+        target_pred, credit, pcan_record_info = self.actor.evaluate_pcan(obs, rnn_state_actor, masks)
+        return target_pred, credit, pcan_record_info
 
     def prep_training(self):
         self.actor.train()
