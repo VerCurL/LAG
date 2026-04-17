@@ -115,7 +115,7 @@ class ShareJSBSimRunner(Runner):
                     # Obser reward and next obs
                     obs, share_obs, rewards, dones, infos = self.envs.step((actions, credit))
 
-                    if self.flight_recorder is not None:
+                    if self.flight_recorder is not None and (episode % 100 == 0 or episode == episodes - 1):
                         self.flight_recorder.record_infos(
                             infos=infos,
                             episode=episode,
@@ -170,7 +170,7 @@ class ShareJSBSimRunner(Runner):
                 # logger record
                 self.logger.log(episode, train_infos)
 
-                if self.flight_recorder is not None:
+                if self.flight_recorder is not None and (episode % 100 == 0 or episode == episodes - 1):
                     self.flight_recorder.dump_episode(
                         episode=episode,
                         draw_plot=self.all_args.flight_recorder_plot,

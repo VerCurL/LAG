@@ -9,7 +9,7 @@ import numpy as np
 
 class FlightDataRecorder:
     """
-    Record per-step flight metrics and reward breakdown into CSV and plots.
+    Record per-step flight metrics and reward breakdown for env 0 only.
     """
 
     def __init__(
@@ -24,68 +24,65 @@ class FlightDataRecorder:
         self.csv_name_prefix = csv_name_prefix
         self.tracked_agent_id = tracked_agent_id
         self.plot_agent_ids = set(plot_agent_ids) if plot_agent_ids else None
-        self.rows_by_env: Dict[int, List[Dict[str, float]]] = defaultdict(list)
+        self.rows: List[Dict[str, float]] = []
         self.last_dumped_episode: Optional[int] = None
 
     def record_infos(self, infos, episode: int, rollout_step: int, total_num_steps: int):
         """
-        Parse vec-env infos and record one row per agent for all env threads.
+        Parse vec-env infos and record one row per agent for env 0 only.
         """
         if infos is None or len(infos) == 0:
             return
 
-        for env_index, info in enumerate(infos):
-            if not isinstance(info, dict):
+        info = infos[0]
+        if not isinstance(info, dict):
+            return
+
+        reward_breakdown = info.get("reward_breakdown", {})
+        flight_metrics = info.get("flight_metrics", {})
+        current_step = info.get("current_step", rollout_step + 1)
+
+        agent_ids = sorted(set(reward_breakdown.keys()) | set(flight_metrics.keys()))
+        for agent_id in agent_ids:
+            if self.tracked_agent_id and agent_id != self.tracked_agent_id:
                 continue
 
-            reward_breakdown = info.get("reward_breakdown", {})
-            flight_metrics = info.get("flight_metrics", {})
-            current_step = info.get("current_step", rollout_step + 1)
+            row = {
+                "episode": int(episode),
+                "rollout_step": int(rollout_step),
+                "env_step": int(current_step),
+                "total_num_steps": int(total_num_steps),
+                "env_index": 0,
+                "agent_id": agent_id,
+            }
 
-            agent_ids = sorted(set(reward_breakdown.keys()) | set(flight_metrics.keys()))
-            for agent_id in agent_ids:
-                if self.tracked_agent_id and agent_id != self.tracked_agent_id:
-                    continue
+            metrics = flight_metrics.get(agent_id, {})
+            for key, value in metrics.items():
+                row[key] = self._to_float(value)
 
-                row = {
-                    "episode": int(episode),
-                    "rollout_step": int(rollout_step),
-                    "env_step": int(current_step),
-                    "total_num_steps": int(total_num_steps),
-                    "env_index": int(env_index),
-                    "agent_id": agent_id,
-                }
+            rewards = reward_breakdown.get(agent_id, {})
+            for key, value in rewards.items():
+                row[f"reward_{key}"] = self._to_float(value)
 
-                metrics = flight_metrics.get(agent_id, {})
-                for key, value in metrics.items():
-                    row[key] = self._to_float(value)
-
-                rewards = reward_breakdown.get(agent_id, {})
-                for key, value in rewards.items():
-                    row[f"reward_{key}"] = self._to_float(value)
-
-                self.rows_by_env[env_index].append(row)
+            self.rows.append(row)
 
     def dump_episode(self, episode: int, draw_plot: bool = False):
         """
-        Dump current episode data into:
-          save_dir/<episode>/flight_trace_env{idx}.csv
+        Dump current episode data for env 0 into:
+          save_dir/<episode>/flight_trace_env0.csv
         """
-        if not self.rows_by_env:
+        if not self.rows:
             return
 
         episode_dir = os.path.join(self.save_dir, str(int(episode)))
         os.makedirs(episode_dir, exist_ok=True)
 
-        for env_index, rows in self.rows_by_env.items():
-            if not rows:
-                continue
-            csv_path = os.path.join(episode_dir, f"{self.csv_name_prefix}_env{env_index}.csv")
-            self._write_rows_to_csv(rows, csv_path)
-            if draw_plot:
-                self._plot_rows(rows, episode_dir, env_index)
+        csv_path = os.path.join(episode_dir, f"{self.csv_name_prefix}_env0.csv")
+        self._write_rows_to_csv(self.rows, csv_path)
+        if draw_plot:
+            self._plot_rows(self.rows, episode_dir, 0)
 
-        self.rows_by_env.clear()
+        self.rows.clear()
         self.last_dumped_episode = int(episode)
 
     def close(self):
