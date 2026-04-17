@@ -378,9 +378,12 @@ def _get_pcan_type(parser: argparse.ArgumentParser):
     group.add_argument("--num-heads", type=int, default=1,
                        help="Number of attention heads for pcan out networks (default 1)")
     group.add_argument("--obs-pred-coef", type=float, default=0.5,
-                       help="Number of attention heads for pcan out networks (default 1)")
+                       help="Obs loss coef of pcan out networks (default 0.5)")
     group.add_argument("--rewards-pred-coef", type=float, default=0.5,
-                       help="Number of attention heads for pcan out networks (default 1)")
+                       help="Rewards loss coef of pcan out networks (default 0.5)")
+    group.add_argument("--pcan-nstep", type=int, default=8,
+                       help="Number of attention heads for pcan out networks (default 8)")
+
     return parser
 
 def _get_policy_type(parser: argparse.ArgumentParser):
