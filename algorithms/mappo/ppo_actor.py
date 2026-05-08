@@ -44,7 +44,7 @@ class PPOActor(nn.Module):
 
         actions, action_log_probs = self.act(actor_features, deterministic)
 
-        return actions, action_log_probs, rnn_states, actor_features
+        return actions, action_log_probs, rnn_states
 
     def evaluate_actions(self, obs, rnn_states, action, masks, active_masks=None):
         obs = check(obs).to(**self.tpdv)

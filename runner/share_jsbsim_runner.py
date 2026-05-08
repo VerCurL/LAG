@@ -108,10 +108,10 @@ class ShareJSBSimRunner(Runner):
                 start_env = time.time()
                 for step in range(self.buffer_size):
                     # Sample actions
-                    values, actions, action_log_probs, rnn_states_actor, rnn_states_critic, actor_features, credit = self.collect(step)
+                    values, actions, action_log_probs, rnn_states_actor, rnn_states_critic = self.collect(step)
 
                     # Obser reward and next obs
-                    obs, share_obs, rewards, dones, infos = self.envs.step((actions, credit))
+                    obs, share_obs, rewards, dones, infos = self.envs.step(actions)
 
                     if self.flight_recorder is not None and (episode % 50 == 0 or episode == episodes - 1):
                         self.flight_recorder.record_infos(
@@ -121,7 +121,7 @@ class ShareJSBSimRunner(Runner):
                             total_num_steps=self.total_num_steps,
                         )
 
-                    data = obs, share_obs, actions, rewards, dones, action_log_probs, values, rnn_states_actor, rnn_states_critic, actor_features
+                    data = obs, share_obs, actions, rewards, dones, action_log_probs, values, rnn_states_actor, rnn_states_critic
 
                     # insert data into buffer
                     self.insert(data)
@@ -192,38 +192,41 @@ class ShareJSBSimRunner(Runner):
     @torch.no_grad()
     def collect(self, step):
         self.policy.prep_rollout()
-        values, actions, action_log_probs, rnn_states_actor, rnn_states_critic, actor_features, credit \
+
+        # 获取当前策略的动作和值函数
+        values, actions, action_log_probs, rnn_states_actor, rnn_states_critic \
             = self.policy.get_actions(np.concatenate(self.buffer.share_obs[step]),
                                       np.concatenate(self.buffer.obs[step]),
                                       np.concatenate(self.buffer.rnn_states_actor[step]),
                                       np.concatenate(self.buffer.rnn_states_critic[step]),
                                       np.concatenate(self.buffer.masks[step]))
-        # split parallel data [N*M, shape] => [N, M, shape]
+
+        # 将并行数据分割回批次形式 [N*M, shape] -> [N, M, shape]
         values = np.array(np.split(_t2n(values), self.n_rollout_threads))
         actions = np.array(np.split(_t2n(actions), self.n_rollout_threads))
         action_log_probs = np.array(np.split(_t2n(action_log_probs), self.n_rollout_threads))
         rnn_states_actor = np.array(np.split(_t2n(rnn_states_actor), self.n_rollout_threads))
         rnn_states_critic = np.array(np.split(_t2n(rnn_states_critic), self.n_rollout_threads))
-        credit = np.array(np.split(_t2n(credit), self.n_rollout_threads))
-        actor_features = np.array(np.split(_t2n(actor_features), self.n_rollout_threads))
 
-        # [Selfplay] get actions of opponent policy
+        # 自对弈模式：获取对手策略的动作
         if self.use_selfplay:
             opponent_actions = np.zeros_like(actions)
-            opponent_credits = np.zeros_like(credit)
             for policy_idx, policy in enumerate(self.opponent_policy):
+                # 为每个对手策略分配的环境索引
                 env_idx = self.opponent_env_split[policy_idx]
-                opponent_action, opponent_rnn_states, opponent_credit \
+                # 获取对手动作
+                opponent_action, opponent_rnn_states \
                     = policy.act(np.concatenate(self.opponent_obs[env_idx]),
                                  np.concatenate(self.opponent_rnn_states[env_idx]),
                                  np.concatenate(self.opponent_masks[env_idx]))
+                # 存储对手动作和RNN状态
                 opponent_actions[env_idx] = np.array(np.split(_t2n(opponent_action), len(env_idx)))
-                opponent_credits[env_idx] = np.array(np.split(_t2n(opponent_credit), len(env_idx)))
                 self.opponent_rnn_states[env_idx] = np.array(np.split(_t2n(opponent_rnn_states), len(env_idx)))
-            actions = np.concatenate((actions, opponent_actions), axis=1)
-            credit = np.concatenate((credit, opponent_credits), axis=1)
 
-        return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic, actor_features, credit
+            # 将己方和对手动作合并
+            actions = np.concatenate((actions, opponent_actions), axis=1)
+
+        return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic
 
     @torch.no_grad()
     def compute(self):
@@ -236,7 +239,7 @@ class ShareJSBSimRunner(Runner):
         self.buffer.compute_pcan_nstep_returns(n_step=self.pcan_nstep)
 
     def insert(self, data: List[np.ndarray]):
-        obs, share_obs, actions, rewards, dones, action_log_probs, values, rnn_states_actor, rnn_states_critic, actor_features = data
+        obs, share_obs, actions, rewards, dones, action_log_probs, values, rnn_states_actor, rnn_states_critic = data
         dones = dones.squeeze(axis=-1)
         dones_env = np.all(dones, axis=-1)
 
@@ -262,7 +265,7 @@ class ShareJSBSimRunner(Runner):
             active_masks = active_masks[:, :self.num_agents // 2, ...]
 
         self.buffer.insert(obs, share_obs, actions, rewards, masks, action_log_probs, values,
-                           rnn_states_actor, rnn_states_critic, actor_features, active_masks = active_masks)
+                           rnn_states_actor, rnn_states_critic, active_masks = active_masks)
 
     @torch.no_grad()
     def eval(self, total_num_steps):

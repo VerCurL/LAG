@@ -108,14 +108,14 @@ class BaseEnv(gymnasium.Env):
         obs = self.get_obs()
         return self._pack(obs)
 
-    def step(self, action_credit: Tuple[np.ndarray, np.ndarray]) -> Tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
+    def step(self, action: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
         """Run one timestep of the environment's dynamics. When end of
         episode is reached, you are responsible for calling `reset()`
         to reset this environment's observation. Accepts an action and
         returns a tuple (observation, reward_visualize, done, info).
 
         Args:
-            action_credit (tuple): the agents' actions and credit, allow opponent's action and credit input
+            action (np.ndarray): the agents' actions, allow opponent's action input
 
         Returns:
             (tuple):
@@ -124,7 +124,6 @@ class BaseEnv(gymnasium.Env):
                 dones: whether the episode has ended, in which case further step() calls are undefined
                 info: auxiliary information
         """
-        action, credit = action_credit
         self.current_step += 1
         info = {"current_step": self.current_step}
         # apply actions
@@ -151,7 +150,7 @@ class BaseEnv(gymnasium.Env):
         for agent_id in self.agents.keys():
             reward, info = self.task.get_reward(self, agent_id, info)
             rewards[agent_id] = [reward]
-        # print(f"[reward debug] rewards: {rewards}")
+
         return self._pack(obs), self._pack(rewards), self._pack(dones), info
 
     def get_obs(self):

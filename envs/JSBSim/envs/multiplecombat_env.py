@@ -137,7 +137,7 @@ class MultipleCombatEnv(BaseEnv):
 
         self._tempsims.clear()
 
-    def step(self, action_credit: Tuple[np.ndarray, np.ndarray]) -> Tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
+    def step(self, action: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
         """Run one timestep of the environment's dynamics. When end of
         episode is reached, you are responsible for calling `reset()`
         to reset this environment's observation. Accepts an action and
@@ -154,37 +154,49 @@ class MultipleCombatEnv(BaseEnv):
                 dones: whether the episode has ended, in which case further step() calls are undefined
                 info: auxiliary information
         """
-        action, credit = action_credit
         self.current_step += 1
         info = {"current_step": self.current_step}
 
-        # apply actions
+        # 应用所有智能体的动作
         action = self._unpack(action)
         for agent_id in self.agents.keys():
+            # 将智能体的动作归一化后设置到飞机控制系统
             a_action = self.task.normalize_action(self, agent_id, action[agent_id])
             self.agents[agent_id].set_property_values(self.task.action_var, a_action)
-        # run simulation
+
+        # 运行模拟器
         for _ in range(self.agent_interaction_steps):
+            # 更新所有飞机模拟器
             for sim in self._jsbsims.values():
                 sim.run()
+            # 更新所有临时模拟器（如导弹）
             for sim in self._tempsims.values():
                 sim.run()
+
+        # 执行任务特定的单步逻辑
         self.task.step(self)
+
+        # 获取观察和共享状态
         obs = self.get_obs()
         share_obs = self.get_state()
 
-        # 奖励采用信用分配法，默认信用分配为平均分配
+        # 计算各智能体的奖励
         rewards = {}
         for agent_id in self.agents.keys():
             reward, info = self.task.get_reward(self, agent_id, info)
             rewards[agent_id] = [reward]
-        ego_rewards = np.array([rewards[ego_id] for ego_id in self.ego_ids]).reshape(-1) @ credit[0]
-        enm_rewards = np.array([rewards[enm_id] for enm_id in self.enm_ids]).reshape(-1) @ credit[1]
-        for i, ego_id in enumerate(self.ego_ids):
-            rewards[ego_id] = [ego_rewards[i]]
-        for i, enm_id in enumerate(self.enm_ids):
-            rewards[enm_id] = [enm_rewards[i]]
 
+        # 计算团队平均奖励（红/蓝队分别取平均）
+        ego_reward = np.mean([rewards[ego_id] for ego_id in self.ego_ids])
+        enm_reward = np.mean([rewards[enm_id] for enm_id in self.enm_ids])
+
+        # 将团队平均奖励分配给团队中的每个成员
+        for ego_id in self.ego_ids:
+            rewards[ego_id] = [ego_reward]
+        for enm_id in self.enm_ids:
+            rewards[enm_id] = [enm_reward]
+
+        # 判断各智能体是否完成任务
         dones = {}
         for agent_id in self.agents.keys():
             done, info = self.task.get_termination(self, agent_id, info)

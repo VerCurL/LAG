@@ -8,7 +8,6 @@ class PPOPolicy:
 
         self.args = args
         self.device = device
-        self.num_agents = args.num_agents
         # optimizer config
         self.lr = args.lr
         
@@ -29,10 +28,9 @@ class PPOPolicy:
         Returns:
             values, actions, action_log_probs, rnn_states_actor, rnn_states_critic
         """
-        actions, action_log_probs, rnn_states_actor, actor_features = self.actor(obs, rnn_states_actor, masks)
+        actions, action_log_probs, rnn_states_actor = self.actor(obs, rnn_states_actor, masks)
         values, rnn_states_critic = self.critic(cent_obs, rnn_states_critic, masks)
-        credit = torch.full((obs.shape[0] // self.num_agents, self.num_agents, self.num_agents), 1 / self.num_agents)
-        return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic, actor_features, credit
+        return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic
 
     def get_values(self, cent_obs, rnn_states_critic, masks):
         """
@@ -56,9 +54,8 @@ class PPOPolicy:
         Returns:
             actions, rnn_states_actor
         """
-        actions, _, rnn_states_actor, _ = self.actor(obs, rnn_states_actor, masks, deterministic)
-        credit = torch.full((obs.shape[0] // self.num_agents, self.num_agents, self.num_agents), 1 / self.num_agents)
-        return actions, rnn_states_actor, credit
+        actions, _, rnn_states_actor = self.actor(obs, rnn_states_actor, masks, deterministic)
+        return actions, rnn_states_actor
 
     def prep_training(self):
         self.actor.train()
