@@ -34,12 +34,9 @@ class ShareJSBSimRunner(Runner):
         self.pcan_nstep = self.all_args.pcan_nstep
 
         # policy & algorithm
-        if self.algorithm_name == "mappo-v1":
-            from algorithms.mappo_v1.ppo_trainer import PPOTrainer as Trainer
-            from algorithms.mappo_v1.ppo_policy import PPOPolicy as Policy
-        elif self.algorithm_name == "mappo-v2":
-            from algorithms.mappo_v2.ppo_trainer import PPOTrainer as Trainer
-            from algorithms.mappo_v2.ppo_policy import PPOPolicy as Policy
+        if self.algorithm_name == "mappo":
+            from algorithms.mappo.ppo_trainer import PPOTrainer as Trainer
+            from algorithms.mappo.ppo_policy import PPOPolicy as Policy
         elif self.algorithm_name == "mappoMoE-v1":
             from algorithms.mappoMoE_v1.ppo_trainer import PPOMoETrainer as Trainer
             from algorithms.mappoMoE_v1.ppo_policy import PPOMoEPolicy as Policy
