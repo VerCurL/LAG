@@ -6,6 +6,8 @@ from .ppo_policy import PPOPolicy
 from ..utils.buffer import SharedReplayBuffer
 from ..utils.utils import check, get_gard_norm
 
+def _t2n(x):
+    return x.detach().cpu().numpy()
 
 class PPOTrainer():
     def __init__(self, args, device=torch.device("cpu")):
@@ -86,6 +88,9 @@ class PPOTrainer():
         train_info['critic_grad_norm'] = 0
         train_info['ratio'] = 0
 
+        # 更新buffer中的累计奖励值
+        self.compute(policy, buffer)
+
         for _ in range(self.ppo_epoch):
             if self.use_recurrent_policy:
                 data_generator = buffer.recurrent_generator(buffer.advantages, self.num_mini_batch, self.data_chunk_length)
@@ -111,5 +116,12 @@ class PPOTrainer():
 
         return train_info
 
-    def _train_sample(self, x: torch.Tensor):
-        return x.view(-1, self.num_agents, *x.shape[1:])[:, 0, ...]
+    @torch.no_grad()
+    def compute(self, policy: PPOPolicy, buffer: SharedReplayBuffer):
+        policy.prep_rollout()
+        next_values = policy.get_values(np.concatenate(buffer.share_obs[-1]),
+                                        np.concatenate(buffer.rnn_states_critic[-1]),
+                                        np.concatenate(buffer.masks[-1]))
+        next_values = np.array(np.split(_t2n(next_values), buffer.n_rollout_threads))
+        buffer.compute_returns(next_values)
+        policy.prep_training()
