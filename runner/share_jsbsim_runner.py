@@ -31,7 +31,6 @@ class ShareJSBSimRunner(Runner):
         self.num_agents = self.envs.num_agents
         self.all_args.num_agents = self.num_agents // 2
         self.use_selfplay = self.all_args.use_selfplay  # type: bool
-        self.pcan_nstep = self.all_args.pcan_nstep
 
         # policy & algorithm
         if self.algorithm_name == "mappo":
@@ -236,7 +235,6 @@ class ShareJSBSimRunner(Runner):
                                              np.concatenate(self.buffer.masks[-1]))
         next_values = np.array(np.split(_t2n(next_values), self.buffer.n_rollout_threads))
         self.buffer.compute_returns(next_values)
-        self.buffer.compute_pcan_nstep_returns(n_step=self.pcan_nstep)
 
     def insert(self, data: List[np.ndarray]):
         obs, share_obs, actions, rewards, dones, action_log_probs, values, rnn_states_actor, rnn_states_critic = data
