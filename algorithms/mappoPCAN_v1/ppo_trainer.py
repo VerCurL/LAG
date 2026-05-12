@@ -165,6 +165,13 @@ class PPOPCANTrainer():
         for k in train_info.keys():
             train_info[k] /= num_updates
 
+        train_info['fact_threat_mean'] = fact_threat_mean
+        train_info['fact_attack_mean'] = fact_attack_mean
+        train_info['contribution_mean'] = contribution_mean
+        train_info['contribution_std'] = contribution_std
+        train_info['weight_min'] = weight_min
+        train_info['weight_max'] = weight_max
+
         return train_info
 
     @torch.no_grad()

@@ -51,9 +51,16 @@ class AlgorithmsLogger:
                 header += [f"expert_usage_{i + 1}" for i in range(self.expert_usage_len)]
             elif self.algorithm_name in ["mappoPCAN-v1"]:
                 header += [
-                    "obs_pred_loss",        # 态势预测损失
-                    "credit_diag_mean",     # credit对角线均值
-                    "credit_entropy",       # credit行熵的均值
+                    "pcan_loss",
+                    "pcan_grad_norm",
+                    "threat_loss",
+                    "attack_loss",
+                    "fact_threat_mean",
+                    "fact_attack_mean",
+                    "contribution_mean",
+                    "contribution_std",
+                    "weight_min",
+                    "weight_max",
                 ]
             elif self.algorithm_name in ["mappoPCAN-v2"]:
                 header += [
@@ -109,9 +116,16 @@ class AlgorithmsLogger:
                 row += list(expert_usage)
         elif self.algorithm_name in ["mappoPCAN-v1"]:
             row += [
-                data.get("obs_pred_loss", None),
-                data.get("credit_diag_mean", None),
-                data.get("credit_entropy", None),
+                data.get("pcan_loss", None),
+                data.get("pcan_grad_norm", None),
+                data.get("threat_loss", None),
+                data.get("attack_loss", None),
+                data.get("fact_threat_mean", None),
+                data.get("fact_attack_mean", None),
+                data.get("contribution_mean", None),
+                data.get("contribution_std", None),
+                data.get("weight_min", None),
+                data.get("weight_max", None),
             ]
         elif self.algorithm_name in ["mappoPCAN-v2"]:
             row += [
