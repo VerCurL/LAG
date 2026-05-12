@@ -340,6 +340,28 @@ class AircraftSimulator(BaseSimulator):
                 return missile
         return None
 
+    def check_most_dangerous_missile_warning(self):
+        alive_missiles = [
+            missile for missile in self.under_missiles
+            if missile.is_alive
+        ]
+
+        if not alive_missiles:
+            return None
+
+        ego_pos = self.get_position()
+        ego_vel = self.get_velocity()
+
+        def danger_score(missile):
+            rel_pos = ego_pos - missile.get_position()
+            distance = np.linalg.norm(rel_pos) + 1e-6
+            los_dir = rel_pos / distance
+            closing_speed = np.dot(missile.get_velocity() - ego_vel, los_dir)
+            time_to_go = distance / max(closing_speed, 1e-6)
+            return time_to_go
+
+        return min(alive_missiles, key=danger_score)
+
 
 class MissileSimulator(BaseSimulator):
 

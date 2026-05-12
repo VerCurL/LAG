@@ -4,7 +4,7 @@ import pymap3d
 import numpy as np
 
 
-def parse_config(filename, policy_type, fix_position):
+def parse_config(filename, policy_type, algorithm, fix_position):
     """Parse JSBSim config file.
 
     Args:
@@ -19,6 +19,7 @@ def parse_config(filename, policy_type, fix_position):
     with open(filepath, 'r', encoding='utf-8') as f:
         config_data = yaml.load(f, Loader=yaml.FullLoader)
     config_data['policy_type'] = policy_type
+    config_data['algorithm'] = algorithm
     config_data['fix_position'] = fix_position
     return type('EnvConfig', (object,), config_data)
 

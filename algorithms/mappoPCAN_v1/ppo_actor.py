@@ -35,10 +35,6 @@ class PPOActor(nn.Module):
             input_size = self.rnn.output_size
         # (3) act module
         self.act = ACTLayer(act_space, input_size, self.act_hidden_size, self.activation_id, self.gain)
-        # (4) pcan module
-        self.pcan = PCANBase(obs_space, self.num_agents, self.num_heads, input_size,
-                             self.KQ_hidden_size, self.V_hidden_size, self.PCANOut_hidden_size,
-                             self.activation_id, self.use_feature_normalization)
 
         self.to(device)
 
@@ -54,9 +50,7 @@ class PPOActor(nn.Module):
 
         actions, action_log_probs = self.act(actor_features, deterministic)
 
-        _, credit = self.pcan(actor_features, obs)
-
-        return actions, action_log_probs, rnn_states, credit
+        return actions, action_log_probs, rnn_states
 
     def evaluate_actions(self, obs, rnn_states, action, masks, active_masks=None):
         obs = check(obs).to(**self.tpdv)
@@ -74,5 +68,4 @@ class PPOActor(nn.Module):
 
         action_log_probs, dist_entropy = self.act.evaluate_actions(actor_features, action, active_masks)
 
-        obs_next, credit = self.pcan(actor_features, obs)
-        return action_log_probs, dist_entropy, obs_next, credit, self.pcan.record_info
+        return action_log_probs, dist_entropy

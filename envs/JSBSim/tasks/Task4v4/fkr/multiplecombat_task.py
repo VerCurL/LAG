@@ -315,7 +315,7 @@ class HierarchicalMultipleCombatShootTask(HierarchicalMultipleCombatTask):
             offset += 6
         norm_obs = np.clip(norm_obs, self.observation_space.low, self.observation_space.high)
         # (3) missile info TODO: multiple missile and parnter's missile?
-        missile_sim = env.agents[agent_id].check_missile_warning() #
+        missile_sim = env.agents[agent_id].check_most_dangerous_missile_warning() #
         if missile_sim is not None:
             missile_feature = np.concatenate((missile_sim.get_position(), missile_sim.get_velocity()))
             ego_AO, ego_TA, R, side_flag = get_AO_TA_R(ego_feature, missile_feature, return_side=True)

@@ -369,20 +369,27 @@ def _get_pcan_type(parser: argparse.ArgumentParser):
         --policy-type <str>
     """
     group = parser.add_argument_group("PCAN parameters")
-    group.add_argument("--KQ-hidden-size", type=str, default='256 256',
-                       help="Dimension of hidden layers for pcan KQ networks (default '256 256')")
-    group.add_argument("--V-hidden-size", type=str, default='128 128',
-                       help="Dimension of hidden layers for pcan V networks (default '128 128')")
-    group.add_argument("--PCANOut-hidden-size", type=str, default='128',
-                       help="Dimension of hidden layers for pcan out networks (default '128')")
-    group.add_argument("--num-heads", type=int, default=1,
-                       help="Number of attention heads for pcan out networks (default 1)")
-    group.add_argument("--obs-pred-coef", type=float, default=0.5,
-                       help="Obs loss coef of pcan out networks (default 0.5)")
-    group.add_argument("--rewards-pred-coef", type=float, default=0.5,
-                       help="Rewards loss coef of pcan out networks (default 0.5)")
-    group.add_argument("--pcan-nstep", type=int, default=8,
-                       help="Number of attention heads for pcan out networks (default 8)")
+    group.add_argument("--KQ-hidden-size", type=str, default='128 128')
+    group.add_argument("--V-hidden-size", type=str, default='128 128')
+    group.add_argument("--PCANOut-hidden-size", type=str, default='128 128')
+    group.add_argument("--num-heads", type=int, default=1)
+    group.add_argument("--pcan-kstep", type=int, default=20)
+
+
+    # group.add_argument("--KQ-hidden-size", type=str, default='256 256',
+    #                    help="Dimension of hidden layers for pcan KQ networks (default '256 256')")
+    # group.add_argument("--V-hidden-size", type=str, default='128 128',
+    #                    help="Dimension of hidden layers for pcan V networks (default '128 128')")
+    # group.add_argument("--PCANOut-hidden-size", type=str, default='128',
+    #                    help="Dimension of hidden layers for pcan out networks (default '128')")
+    # group.add_argument("--num-heads", type=int, default=1,
+    #                    help="Number of attention heads for pcan out networks (default 1)")
+    # group.add_argument("--obs-pred-coef", type=float, default=0.5,
+    #                    help="Obs loss coef of pcan out networks (default 0.5)")
+    # group.add_argument("--rewards-pred-coef", type=float, default=0.5,
+    #                    help="Rewards loss coef of pcan out networks (default 0.5)")
+    # group.add_argument("--pcan-nstep", type=int, default=8,
+    #                    help="Number of attention heads for pcan out networks (default 8)")
 
     return parser
 

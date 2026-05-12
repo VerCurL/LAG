@@ -11,10 +11,15 @@ class MultipleCombatEnv(BaseEnv):
     """
     MultipleCombatEnv is an multi-player competitive environment.
     """
-    def __init__(self, config_name: str, policy_type: str, fix_position: bool=False):
-        super().__init__(config_name, policy_type, fix_position)
+    def __init__(self, config_name: str, policy_type: str, algorithm: str = "mappo", fix_position: bool=False):
+        super().__init__(config_name, policy_type, algorithm, fix_position)
         # Env-Specific initialization here!
         self._create_records = False
+
+        if algorithm == "mappoPCAN-v1":
+            # todo: 这里还没写好，导弹数需要用config来传
+            from envs.JSBSim.situation.extractor import SituationExtractor
+            self.situation_extractor = SituationExtractor()
 
     @property
     def share_observation_space(self):
@@ -201,5 +206,9 @@ class MultipleCombatEnv(BaseEnv):
         for agent_id in self.agents.keys():
             done, info = self.task.get_termination(self, agent_id, info)
             dones[agent_id] = [done]
+
+        # 判断是否有额外信息要记录
+        if self.situation_extractor is not None:
+            info["pcan_snapshot"] = self.situation_extractor.extract(env=self)
 
         return self._pack(obs), self._pack(share_obs), self._pack(rewards), self._pack(dones), info

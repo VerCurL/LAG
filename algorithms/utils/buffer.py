@@ -7,7 +7,6 @@ from numpy.ma.core import indices
 
 from .utils import get_shape_from_space
 
-
 class Buffer(ABC):
 
     def __init__(self):
@@ -466,4 +465,71 @@ class SharedReplayBuffer(ReplayBuffer):
                 obs_batch, share_obs_batch, actions_batch, masks_batch, active_masks_batch,
                 old_action_log_probs_batch, advantages_batch, returns_batch, value_preds_batch,
                 rnn_states_actor_batch, rnn_states_critic_batch
+            )
+
+class PCANRolloutBuffer:
+    def __init__(self, buffer_size, n_envs):
+        self.buffer_size = buffer_size
+        self.n_envs = n_envs
+        self.snapshots = [[] for _ in range(n_envs)]
+
+    def insert(self, infos):
+        for env_i, info in enumerate(infos):
+            snapshot = info.get("pcan_snapshot")
+            if snapshot is not None:
+                # size: [env_num, step, {}]
+                self.snapshots[env_i].append(snapshot)
+
+    def clear(self):
+        self.snapshots = [[] for _ in range(self.n_envs)]
+
+    def build_field_samples(self, shared_buffer, field_calculator):
+        """
+        暂时假设这里已经根据 snapshots 算好了 threat/attack 标签。
+        shared_buffer 用来取 obs/actions，snapshots 用来后续算标签。
+
+        Returns:
+            obs_samples: [N * T, M, obs_dim]
+            action_samples: [N * T, M, act_dim]
+            threat_targets: [N * T, 1]
+            attack_targets: [N * T, 1]
+        """
+        # T, N, M, obs_dim
+        obs = shared_buffer.obs[:-1]
+        actions = shared_buffer.actions
+
+        # 先转成 [N, T, M, dim]，保持 joint timestep 不被拆散
+        obs = obs.transpose(1, 0, 2, 3)
+        actions = actions.transpose(1, 0, 2, 3)
+
+        N, T, M, obs_dim = obs.shape
+        act_dim = actions.shape[-1]
+
+        obs_samples = obs.reshape(N * T, M, obs_dim)
+        action_samples = actions.reshape(N * T, M, act_dim)
+
+        # 风险场/进攻场真实计算结果
+        threat_targets, attack_targets = field_calculator.build_targets(
+            snapshots=self.snapshots,
+            shared_buffer=shared_buffer,
+        )
+
+        # size: [N * T, M, dim] / [N * T, 1]
+        return (obs_samples, action_samples, threat_targets, attack_targets)
+
+    def pcan_generator(self, field_samples, pcan_mini_batch):
+        obs_samples, action_samples, threat_targets, attack_targets = field_samples
+
+        total_samples = obs_samples.shape[0]
+        batch_size = total_samples // pcan_mini_batch
+        indices = np.random.permutation(total_samples)
+
+        for start in range(0, total_samples, batch_size):
+            batch_idx = indices[start:start + batch_size]
+
+            yield (
+                obs_samples[batch_idx],         # size: [B, M, dim]
+                action_samples[batch_idx],      # size: [B, M, dim]
+                threat_targets[batch_idx],      # size: [B, 1]
+                attack_targets[batch_idx],      # size: [B, 1]
             )

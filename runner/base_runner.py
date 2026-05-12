@@ -102,9 +102,7 @@ class Runner(object):
         self.buffer.compute_returns(next_values)
 
     def train(self):
-        self.policy.prep_training()
         train_infos = self.trainer.train(self.policy, self.buffer)
-        self.buffer.after_update()
         return train_infos
 
     def save(self):
