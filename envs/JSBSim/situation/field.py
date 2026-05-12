@@ -107,6 +107,9 @@ class FieldCalculator:
         threat_vals = []
         attack_vals = []
 
+        if len(team_indices) == 0:
+            return 0.0, 0.0
+
         for ego_idx in team_indices:
             threat_vals.append(self.instant_threat_agent(snapshot, ego_idx, geom))
             attack_vals.append(self.instant_attack_agent(snapshot, ego_idx, geom))
@@ -130,6 +133,9 @@ class FieldCalculator:
 
         # 计算每个敌机产生的威胁场
         n_enemy = len(enemies)
+        if n_enemy == 0:
+            return 0.0
+
         c_nez = 0
         c_attack = 0
 
@@ -186,6 +192,9 @@ class FieldCalculator:
         ]
 
         n_enemy = max(len(enemies), 1)
+        if n_enemy == 0:
+            return 1.0
+
         c_nez = 0
         c_attack = 0
 
