@@ -15,6 +15,7 @@ class MultipleCombatEnv(BaseEnv):
         super().__init__(config_name, policy_type, algorithm, fix_position)
         # Env-Specific initialization here!
         self._create_records = False
+        self.situation_extractor = None
 
         if algorithm == "mappoPCAN-v1":
             # todo: 这里还没写好，导弹数需要用config来传
