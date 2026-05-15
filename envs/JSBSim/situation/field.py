@@ -79,9 +79,14 @@ class FieldCalculator:
                     geom_cache["R"][env_i, t],
                 )
 
+                prev_snapshot = None
+                if t > 0 and not np.all(masks[t, env_i] <= 0.0):
+                    prev_snapshot = env_snapshots[t - 1]
+
                 instant_threat[t], instant_attack[t] = self.instant_team_field(
                     env_snapshots[t],
                     geom_t,
+                    prev_snapshot = prev_snapshot
                 )
 
             # 2. 根据 masks 切分 episode，避免 K 步窗口跨越新一局
@@ -95,7 +100,7 @@ class FieldCalculator:
 
         return threat_targets, attack_targets
 
-    def instant_team_field(self, snapshot, geom):
+    def instant_team_field(self, snapshot, geom, prev_snapshot=None):
         """
         计算当前 step 的团队瞬时场值。
         这里只对 ego_team 的飞机取平均。
@@ -111,12 +116,12 @@ class FieldCalculator:
             return 0.0, 0.0
 
         for ego_idx in team_indices:
-            threat_vals.append(self.instant_threat_agent(snapshot, ego_idx, geom))
-            attack_vals.append(self.instant_attack_agent(snapshot, ego_idx, geom))
+            threat_vals.append(self.instant_threat_agent(snapshot, ego_idx, geom, prev_snapshot=prev_snapshot))
+            attack_vals.append(self.instant_attack_agent(snapshot, ego_idx, geom, prev_snapshot=prev_snapshot))
 
         return float(np.mean(threat_vals)), float(np.mean(attack_vals))
 
-    def instant_threat_agent(self, snapshot, ego_idx, geom):
+    def instant_threat_agent(self, snapshot, ego_idx, geom, prev_snapshot=None):
         aircraft = snapshot["aircraft"]
         ego = aircraft[ego_idx]
         AO_mat, TA_mat, R_mat = geom
@@ -144,6 +149,7 @@ class FieldCalculator:
 
             # 1. 如果敌机没有导弹就没有威胁
             if enm[A_LEFT_MISSILES] <= 0:
+                n_enemy -= 1
                 continue
 
             # 2. 计算和敌机的位置关系
@@ -174,10 +180,11 @@ class FieldCalculator:
         # 平均每个敌机产生的威胁场
         nez_score = min(c_nez / n_enemy, 1.0)
         attack_score = min(c_attack / n_enemy, 1.0)
+        missile_score = self.incoming_missile_score(snapshot, ego_idx)
 
-        return float(np.clip(0.60 * nez_score + 0.4 * attack_score, 0.0, 1.0))
+        return float(np.clip(0.45 * missile_score + 0.35 * nez_score + 0.2 * attack_score, 0.0, 1.0))
 
-    def instant_attack_agent(self, snapshot, ego_idx, geom):
+    def instant_attack_agent(self, snapshot, ego_idx, geom, prev_snapshot=None):
         aircraft = snapshot["aircraft"]
         ego = aircraft[ego_idx]
         AO_mat, TA_mat, R_mat = geom
@@ -191,7 +198,7 @@ class FieldCalculator:
             if row[A_TEAM] != ego[A_TEAM] and row[A_ALIVE] > 0.5
         ]
 
-        n_enemy = max(len(enemies), 1)
+        n_enemy = len(enemies)
         if n_enemy == 0:
             return 1.0
 
@@ -226,19 +233,111 @@ class FieldCalculator:
                     and closing > 0.0
                 )
 
-        hit_score = min(self.hit_count(snapshot, ego_idx) / n_enemy, 1.0)
+        hit_score = min(self.hit_count(snapshot, prev_snapshot, ego_idx) / n_enemy, 1.0)
+        missile_score = self.outgoing_missile_score(snapshot, ego_idx)
         nez_score = min(c_nez / n_enemy, 1.0)
         attack_score = min(c_attack / n_enemy, 1.0)
 
-        return float(np.clip(0.5 * hit_score + 0.3 * nez_score + 0.2 * attack_score, 0.0, 1.0))
+        return float(np.clip(0.35 * hit_score + 0.3 * missile_score + 0.2 * nez_score + 0.15 * attack_score, 0.0, 1.0))
 
-    def hit_count(self, snapshot, ego_idx):
+    def hit_count(self, snapshot, prev_snapshot, ego_idx):
         missiles = snapshot["missiles"]
-
         parent_match = missiles[:, M_PARENT].astype(int) == ego_idx
         success_now = missiles[:, M_SUCCESS] > 0.5
 
-        return int(np.sum(parent_match & success_now))
+        if prev_snapshot is None:
+            return int(np.sum(parent_match & success_now))
+
+        prev_missiles = prev_snapshot["missiles"]
+        n = min(len(missiles), len(prev_missiles))
+
+        success_prev = np.zeros(len(missiles), dtype=bool)
+        success_prev[:n] = prev_missiles[:n, M_SUCCESS] > 0.5
+
+        return int(np.sum(parent_match & success_now & (~success_prev)))
+
+    def incoming_missile_score(self, snapshot, ego_idx):
+        aircraft = snapshot["aircraft"]
+        ego = aircraft[ego_idx]
+
+        if ego[A_THREAT_MISSILE_EXIST] <= 0.5:
+            return 0.0
+
+        m_pos = ego[A_THREAT_MISSILE_POS]
+        m_vel = ego[A_THREAT_MISSILE_VEL]
+
+        rel = ego[A_POS] - m_pos
+        dist = np.linalg.norm(rel)
+
+        closing = float(np.dot(m_vel - ego[A_VEL], rel / (dist + 1e-8)))
+
+        dist_score = np.clip(1.0 - dist / self.r_attack, 0.0, 1.0)
+        closing_score = _sigmoid(closing / 300.0)
+
+        return float(np.clip(dist_score * closing_score, 0.0, 1.0))
+
+    def outgoing_missile_score(self, snapshot, ego_idx):
+        aircraft = snapshot["aircraft"]
+        missiles = snapshot["missiles"]
+
+        parent_match = missiles[:, M_PARENT].astype(int) == ego_idx
+        alive = missiles[:, M_ALIVE] > 0.5
+        success = missiles[:, M_SUCCESS] > 0.5
+
+        # 只看当前 ego 发射、仍在飞行、尚未命中的导弹
+        valid = parent_match & alive & (~success)
+
+        if not np.any(valid):
+            return 0.0
+
+        scores = []
+
+        for m in missiles[valid]:
+            target_idx = int(m[M_TARGET])
+
+            if target_idx < 0 or target_idx >= len(aircraft):
+                continue
+
+            target = aircraft[target_idx]
+
+            if target[A_ALIVE] <= 0.5:
+                continue
+
+            m_pos = m[M_POS]
+            m_vel = m[M_VEL]
+            tgt_pos = target[A_POS]
+            tgt_vel = target[A_VEL]
+
+            rel = tgt_pos - m_pos
+            dist = np.linalg.norm(rel)
+
+            # 导弹相对目标的接近速度
+            # > 0 表示导弹正在接近目标
+            closing = float(
+                np.dot(
+                    m_vel - tgt_vel,
+                    rel / (dist + 1e-8),
+                )
+            )
+
+            # 距离越近，得分越高
+            dist_score = np.clip(1.0 - dist / self.r_attack, 0.0, 1.0)
+
+            # 接近速度越大，得分越高
+            # 300 可理解为速度尺度，可后续调参
+            closing_score = _sigmoid(closing / 300.0)
+
+            # 如果导弹已经远离目标，直接压低得分
+            if closing <= 0.0:
+                closing_score *= 0.2
+
+            scores.append(float(dist_score * closing_score))
+
+        if not scores:
+            return 0.0
+
+        # 取 max 表示最有威胁的一枚我方在途导弹
+        return float(np.clip(max(scores), 0.0, 1.0))
 
     def _discounted_k_window(self, values):
         """
