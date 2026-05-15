@@ -136,50 +136,51 @@ class FieldCalculator:
             if row[A_TEAM] != ego[A_TEAM] and row[A_ALIVE] > 0.5
         ]
 
+        # 获取具有威胁的飞机
+        threat_enemies = [
+            j for j in enemies
+            if aircraft[j, A_LEFT_MISSILES] > 0
+        ]
+
         # 计算每个敌机产生的威胁场
-        n_enemy = len(enemies)
+        n_enemy = len(threat_enemies)
         if n_enemy == 0:
-            return 0.0
+            nez_score = 0.0
+            attack_score = 0.0
+        else:
+            c_nez = 0
+            c_attack = 0
 
-        c_nez = 0
-        c_attack = 0
+            for j in threat_enemies:
+                enm = aircraft[j]
 
-        for j in enemies:
-            enm = aircraft[j]
-
-            # 1. 如果敌机没有导弹就没有威胁
-            if enm[A_LEFT_MISSILES] <= 0:
-                n_enemy -= 1
-                continue
-
-            # 2. 计算和敌机的位置关系
-            AO = float(AO_mat[ego_idx, j])
-            TA = float(TA_mat[ego_idx, j])
-            R = float(R_mat[ego_idx, j])
-            closing = float(
-                np.dot(
-                    enm[A_VEL] - ego[A_VEL],
-                    (ego[A_POS] - enm[A_POS]) / (R + 1e-8),
+                # 1. 计算和敌机的位置关系
+                TA = float(TA_mat[ego_idx, j])
+                R = float(R_mat[ego_idx, j])
+                closing = float(
+                    np.dot(
+                        enm[A_VEL] - ego[A_VEL],
+                        (ego[A_POS] - enm[A_POS]) / (R + 1e-8),
+                    )
                 )
-            )
 
-            # 3. 是否进入敌机的攻击区
-            c_attack += int(
-                self.r_min <= R <= self.r_attack
-                and AO >= self.theta_attack
-                and TA <= np.pi - self.theta_attack
-            )
+                # 2. 是否进入敌机的攻击区
+                c_attack += int(
+                    self.r_min <= R <= self.r_attack
+                    and TA <= np.pi - self.theta_attack
+                )
 
-            # 4. 是否进入敌机的不可逃逸区
-            c_nez += int(
-                R <= self.r_nez
-                and TA <= np.pi - self.theta_nez
-                and closing > 0.0
-            )
+                # 3. 是否进入敌机的不可逃逸区
+                c_nez += int(
+                    R <= self.r_nez
+                    and TA <= np.pi - self.theta_nez
+                    and closing > 0.0
+                )
 
-        # 平均每个敌机产生的威胁场
-        nez_score = min(c_nez / n_enemy, 1.0)
-        attack_score = min(c_attack / n_enemy, 1.0)
+            # 平均每个敌机产生的威胁场
+            nez_score = min(c_nez / n_enemy, 1.0)
+            attack_score = min(c_attack / n_enemy, 1.0)
+
         missile_score = self.incoming_missile_score(snapshot, ego_idx)
 
         return float(np.clip(0.45 * missile_score + 0.35 * nez_score + 0.2 * attack_score, 0.0, 1.0))
@@ -212,7 +213,6 @@ class FieldCalculator:
 
                 # 直接从预计算矩阵中读取 AO / TA / R
                 AO = float(AO_mat[ego_idx, j])
-                TA = float(TA_mat[ego_idx, j])
                 R = float(R_mat[ego_idx, j])
                 closing = float(
                     np.dot(
@@ -221,12 +221,13 @@ class FieldCalculator:
                     )
                 )
 
+                # 1. 是否敌机进入我机的攻击区
                 c_attack += int(
                     self.r_min <= R <= self.r_attack
                     and AO <= self.theta_attack
-                    and TA >= np.pi - self.theta_attack
                 )
 
+                # 2. 是否敌机进入我机的不可逃逸区
                 c_nez += int(
                     R <= self.r_nez
                     and AO <= self.theta_nez
