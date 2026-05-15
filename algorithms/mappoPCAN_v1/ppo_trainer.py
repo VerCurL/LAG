@@ -136,7 +136,7 @@ class PPOPCANTrainer():
                 train_info['attack_loss'] += attack_loss.item()
 
         # --------- 2. 用训练好的 PCAN 重分配 reward ---------
-        fact_threat_mean, fact_attack_mean, contribution_mean, contribution_std, weight_min, weight_max\
+        fact_threat_mean, fact_attack_mean, threat_delta_mean, attack_delta_mean, contribution_mean, contribution_std, weight_min, weight_max\
             = self.redistribute_rewards_by_pcan(policy, buffer, threat_coef=1.0, attack_coef=1.0, softmax_tau=0.2)
 
         # --------- 3. 更新buffer中的累计奖励值 ---------
@@ -167,6 +167,8 @@ class PPOPCANTrainer():
 
         train_info['fact_threat_mean'] = fact_threat_mean
         train_info['fact_attack_mean'] = fact_attack_mean
+        train_info['threat_delta_mean'] = threat_delta_mean
+        train_info['attack_delta_mean'] = attack_delta_mean
         train_info['contribution_mean'] = contribution_mean
         train_info['contribution_std'] = contribution_std
         train_info['weight_min'] = weight_min
@@ -241,10 +243,9 @@ class PPOPCANTrainer():
         # 威胁越低越好：fact_threat - cf_threat < 0 表示当前真实动作降低了威胁
         # 进攻越高越好：fact_attack - cf_attack > 0 表示当前真实动作提升了进攻
         # size: (T, N, M, 1)
-        contribution = (
-                threat_coef * (cf_threat - fact_threat[:, :, None, :])
-                + attack_coef * (fact_attack[:, :, None, :] - cf_attack)
-        )
+        threat_delta = cf_threat - fact_threat[:, :, None, :]
+        attack_delta = fact_attack[:, :, None, :] - cf_attack
+        contribution = threat_coef * threat_delta + attack_coef * attack_delta
 
         # ----------- 5. reward pool -----------
         # 这里用 sum 是为了保持原先所有 agent 的 reward 总量不变。
@@ -270,13 +271,15 @@ class PPOPCANTrainer():
         # ----------- 6. 返回需要记录的值 -----------
         fact_threat_mean = float(np.mean(fact_threat))
         fact_attack_mean = float(np.mean(fact_attack))
+        threat_delta_mean = float(np.mean(threat_delta))
+        attack_delta_mean = float(np.mean(attack_delta))
         contribution_mean = float(np.mean(contribution))
         contribution_std = float(np.std(contribution))
         weight_max = float(np.max(positive_weights))
         weight_min = float(np.min(positive_weights))
 
         policy.prep_training()
-        return fact_threat_mean, fact_attack_mean, contribution_mean, contribution_std, weight_min, weight_max
+        return fact_threat_mean, fact_attack_mean, threat_delta_mean, attack_delta_mean, contribution_mean, contribution_std, weight_min, weight_max
 
     def build_counterfactual_actions(self, actions, masks):
         """
