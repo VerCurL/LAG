@@ -446,6 +446,11 @@ class ShareJSBSimRunner(Runner):
         torch.save(policy_actor_state_dict, str(self.save_dir) + '/actor_latest.pt')
         policy_critic_state_dict = self.policy.critic.state_dict()
         torch.save(policy_critic_state_dict, str(self.save_dir) + '/critic_latest.pt')
+
+        if self.algorithm_name == "mappoPCAN-v1":
+            policy_pcan_state_dict = self.policy.pcan.state_dict()
+            torch.save(policy_pcan_state_dict, str(self.save_dir) + '/critic_latest.pt')
+
         # [Selfplay] save policy & performance
         if self.use_selfplay:
             torch.save(policy_actor_state_dict, str(self.save_dir) + f'/actor_{episode}.pt')
