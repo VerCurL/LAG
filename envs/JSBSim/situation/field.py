@@ -167,13 +167,13 @@ class FieldCalculator:
                 # 2. 是否进入敌机的攻击区
                 c_attack += int(
                     self.r_min <= R <= self.r_attack
-                    and TA <= np.pi - self.theta_attack
+                    and np.pi - TA <= self.theta_attack
                 )
 
                 # 3. 是否进入敌机的不可逃逸区
                 c_nez += int(
                     R <= self.r_nez
-                    and TA <= np.pi - self.theta_nez
+                    and np.pi - TA <= self.theta_nez
                     and closing > 0.0
                 )
 
