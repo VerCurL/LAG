@@ -5,13 +5,13 @@ import torch.nn.functional as F
 from .mlp import MLPLayer
 from .flatten import build_flattener
 
-class PCANLayer(nn.Module):
+class AeroTAFLayer(nn.Module):
     """
     Predictive Credit Assignment Network -- 预测式信用分配网络
     """
     def __init__(self, agent_num: int, head_num: int, KQ_input_dim: int, V_input_dim: int, activation_id,
                  KQ_hidden_size: str, V_hidden_size: str, output_hidden_size: str):
-        super(PCANLayer, self).__init__()
+        super(AeroTAFLayer, self).__init__()
         self.agent_num = agent_num
         # -------- 各个模型的层次结构 --------
         self._KQ_hidden_size = [KQ_input_dim] + list(map(int, KQ_hidden_size.split(' ')))
@@ -88,7 +88,7 @@ class PCANLayer(nn.Module):
     def get_info(self):
         return self.record_info
 
-class PCANBase(nn.Module):
+class AeroTAFBase(nn.Module):
     def __init__(self, obs_space, act_space, agent_num: int, head_num: int, KQ_hidden_size: str, V_hidden_size: str,
                  output_hidden_size: str, activation_id, use_feature_normalization):
         super().__init__()
@@ -101,7 +101,7 @@ class PCANBase(nn.Module):
             self.obs_feature_norm = nn.LayerNorm(obs_input_dim)
             self.act_feature_norm = nn.LayerNorm(act_input_dim)
 
-        self.PCAN = PCANLayer(
+        self.AeroTAF = AeroTAFLayer(
             agent_num=agent_num, head_num=head_num, KQ_input_dim=obs_input_dim, V_input_dim=obs_input_dim + act_input_dim,
             activation_id=activation_id, KQ_hidden_size=KQ_hidden_size, V_hidden_size=V_hidden_size,
             output_hidden_size=output_hidden_size
@@ -111,13 +111,13 @@ class PCANBase(nn.Module):
         if self._use_feature_normalization:
             s = self.obs_feature_norm(s)
             a = self.act_feature_norm(a)
-        threat_output, attack_output = self.PCAN(s, a)
+        threat_output, attack_output = self.AeroTAF(s, a)
         return threat_output, attack_output
 
     @property
     def output_size(self):
-        return self.PCAN.output_size
+        return self.AeroTAF.output_size
 
     @property
     def record_info(self):
-        return self.PCAN.get_info()
+        return self.AeroTAF.get_info()

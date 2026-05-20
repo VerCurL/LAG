@@ -38,18 +38,9 @@ class AlgorithmsLogger:
                 "fps",                  # 每秒帧数
             ]
             # 按照算法添加额外列
-            if self.algorithm_name in ["mappo-v1"]:
+            if self.algorithm_name in ["mappo"]:
                 pass
-            elif self.algorithm_name in ["mappoMoE-v1"]:
-                self.expert_usage_len = info["expert_usage_len"]
-                header += [
-                    "expert_out_loss",      # 专家交叉损失
-                    "gate_entropy",
-                    "gate_max_prob",
-                ]
-                # 添加 expert_usage 的展开列
-                header += [f"expert_usage_{i + 1}" for i in range(self.expert_usage_len)]
-            elif self.algorithm_name in ["mappoPCAN-v1"]:
+            elif self.algorithm_name in ["mappoCFC"]:
                 header += [
                     "pcan_loss",
                     "pcan_grad_norm",
@@ -64,12 +55,6 @@ class AlgorithmsLogger:
                     "weight_min",
                     "weight_max",
                 ]
-            elif self.algorithm_name in ["mappoPCAN-v2"]:
-                header += [
-                    "rewards_pred_loss",    # 奖励预测损失
-                    "credit_diag_mean",     # credit对角线均值
-                    "credit_entropy",       # credit行熵的均值
-                ]
             self.writer.writerow(header)
 
         self.csv_file.flush()
@@ -83,8 +68,6 @@ class AlgorithmsLogger:
         # 在第一次 log 时写入表头（因为这时才能拿到 expert_usage 的长度）
         if self.first_write:
             info = {}
-            if self.algorithm_name in ["mappoMoE-v1"]:
-                info["expert_usage_len"] = len(expert_usage)
 
             # expert_usage 必须可迭代
             self._write_header(info)
@@ -105,18 +88,7 @@ class AlgorithmsLogger:
 
         ]
 
-        if self.algorithm_name in ["mappoMoE-v1"]:
-            row += [
-                data.get("expert_out_loss", None),
-                data.get("gate_entropy", None),
-                data.get("gate_max_prob", None),
-            ]
-            # 写入 expert_usage 展开
-            if expert_usage is None:
-                row += [None] * self.expert_usage_len
-            else:
-                row += list(expert_usage)
-        elif self.algorithm_name in ["mappoPCAN-v1"]:
+        if self.algorithm_name in ["mappoCFC"]:
             row += [
                 data.get("pcan_loss", None),
                 data.get("pcan_grad_norm", None),
@@ -130,12 +102,6 @@ class AlgorithmsLogger:
                 data.get("contribution_std", None),
                 data.get("weight_min", None),
                 data.get("weight_max", None),
-            ]
-        elif self.algorithm_name in ["mappoPCAN-v2"]:
-            row += [
-                data.get("rewards_pred_loss", None),
-                data.get("credit_diag_mean", None),
-                data.get("credit_entropy", None),
             ]
 
         self.writer.writerow(row)

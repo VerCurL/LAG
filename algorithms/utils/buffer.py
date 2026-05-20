@@ -467,7 +467,7 @@ class SharedReplayBuffer(ReplayBuffer):
                 rnn_states_actor_batch, rnn_states_critic_batch
             )
 
-class PCANRolloutBuffer:
+class AeroTAFRolloutBuffer:
     def __init__(self, buffer_size, n_envs):
         self.buffer_size = buffer_size
         self.n_envs = n_envs
@@ -475,7 +475,7 @@ class PCANRolloutBuffer:
 
     def insert(self, infos):
         for env_i, info in enumerate(infos):
-            snapshot = info.get("pcan_snapshot")
+            snapshot = info.get("AeroTAF_snapshot")
             if snapshot is not None:
                 # size: [env_num, step, {}]
                 self.snapshots[env_i].append(snapshot)
@@ -517,11 +517,11 @@ class PCANRolloutBuffer:
         # size: [N * T, M, dim] / [N * T, 1]
         return (obs_samples, action_samples, threat_targets, attack_targets)
 
-    def pcan_generator(self, field_samples, pcan_mini_batch):
+    def AeroTAF_generator(self, field_samples, AeroTAF_mini_batch):
         obs_samples, action_samples, threat_targets, attack_targets = field_samples
 
         total_samples = obs_samples.shape[0]
-        batch_size = total_samples // pcan_mini_batch
+        batch_size = total_samples // AeroTAF_mini_batch
         indices = np.random.permutation(total_samples)
 
         for start in range(0, total_samples, batch_size):

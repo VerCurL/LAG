@@ -6,7 +6,7 @@ from typing import List
 import numpy as np
 import torch
 
-from algorithms.utils.buffer import SharedReplayBuffer, PCANRolloutBuffer
+from algorithms.utils.buffer import SharedReplayBuffer, AeroTAFRolloutBuffer
 from .base_runner import Runner
 from utils.flight_recorder import FlightDataRecorder
 from envs.JSBSim.situation.field import FieldCalculator
@@ -37,15 +37,9 @@ class ShareJSBSimRunner(Runner):
         if self.algorithm_name == "mappo":
             from algorithms.mappo.ppo_trainer import PPOTrainer as Trainer
             from algorithms.mappo.ppo_policy import PPOPolicy as Policy
-        elif self.algorithm_name == "mappoMoE-v1":
-            from algorithms.mappoMoE_v1.ppo_trainer import PPOMoETrainer as Trainer
-            from algorithms.mappoMoE_v1.ppo_policy import PPOMoEPolicy as Policy
-        elif self.algorithm_name == "mappoPCAN-v1":
-            from algorithms.mappoPCAN_v1.ppo_trainer import PPOPCANTrainer as Trainer
-            from algorithms.mappoPCAN_v1.ppo_policy import PPOPCANPolicy as Policy
-        elif self.algorithm_name == "mappoPCAN-v2":
-            from algorithms.mappoPCAN_v2.ppo_trainer import PPOPCANTrainer as Trainer
-            from algorithms.mappoPCAN_v2.ppo_policy import PPOPCANPolicy as Policy
+        elif self.algorithm_name == "mappoCFC":
+            from algorithms.mappoCFC.ppo_trainer import PPOAeroTAFTrainer as Trainer
+            from algorithms.mappoCFC.ppo_policy import PPOAeroTAFPolicy as Policy
         else:
             raise NotImplementedError
         self.policy = Policy(self.all_args, self.obs_space, self.share_obs_space, self.act_space, device=self.device)
@@ -59,13 +53,13 @@ class ShareJSBSimRunner(Runner):
             self.buffer = SharedReplayBuffer(self.all_args, self.num_agents, self.obs_space, self.share_obs_space, self.act_space)
 
         # ⭐特定使用的buffer
-        if self.algorithm_name == "mappoPCAN-v1":
-            self.pcan_buffer = PCANRolloutBuffer(
+        if self.algorithm_name == "mappoCFC":
+            self.AeroTAF_buffer = AeroTAFRolloutBuffer(
                 buffer_size=self.buffer_size,
                 n_envs=self.n_rollout_threads,
             )
         else:
-            self.pcan_buffer = None
+            self.AeroTAF_buffer = None
 
         # ---------- [Selfplay] allocate memory for opponent policy/data in training ----------
         if self.use_selfplay:
@@ -137,8 +131,8 @@ class ShareJSBSimRunner(Runner):
                     self.insert(data)
 
                     # 特定 buffer 使用
-                    if self.pcan_buffer is not None:
-                        self.pcan_buffer.insert(infos=infos)
+                    if self.AeroTAF_buffer is not None:
+                        self.AeroTAF_buffer.insert(infos=infos)
 
                 end_env = time.time()
 
@@ -148,8 +142,8 @@ class ShareJSBSimRunner(Runner):
 
                 # update all buffer
                 self.buffer.after_update()
-                if self.pcan_buffer is not None:
-                    self.pcan_buffer.clear()
+                if self.AeroTAF_buffer is not None:
+                    self.AeroTAF_buffer.clear()
 
                 # post process
                 self.total_num_steps = (episode + 1) * self.buffer_size * self.n_rollout_threads
@@ -258,9 +252,9 @@ class ShareJSBSimRunner(Runner):
         self.buffer.compute_returns(next_values)
 
     def train(self):
-        if self.pcan_buffer is not None:
+        if self.AeroTAF_buffer is not None:
             self.field_calculator = FieldCalculator()
-            train_infos = self.trainer.train(self.policy, self.buffer, self.pcan_buffer, self.field_calculator)
+            train_infos = self.trainer.train(self.policy, self.buffer, self.AeroTAF_buffer, self.field_calculator)
         else:
             train_infos = self.trainer.train(self.policy, self.buffer)
         return train_infos
@@ -447,9 +441,9 @@ class ShareJSBSimRunner(Runner):
         policy_critic_state_dict = self.policy.critic.state_dict()
         torch.save(policy_critic_state_dict, str(self.save_dir) + '/critic_latest.pt')
 
-        if self.algorithm_name == "mappoPCAN-v1":
-            policy_pcan_state_dict = self.policy.pcan.state_dict()
-            torch.save(policy_pcan_state_dict, str(self.save_dir) + '/critic_latest.pt')
+        if self.algorithm_name == "mappoCFC":
+            policy_AeroTAF_state_dict = self.policy.AeroTAF.state_dict()
+            torch.save(policy_AeroTAF_state_dict, str(self.save_dir) + '/AeroTAF_latest.pt')
 
         # [Selfplay] save policy & performance
         if self.use_selfplay:

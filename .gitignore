@@ -143,3 +143,7 @@ dmypy.json
 render_backup/
 gaming_result/
 backup/
+
+# other
+research/
+prompt.md

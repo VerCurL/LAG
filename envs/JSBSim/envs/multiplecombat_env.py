@@ -17,7 +17,7 @@ class MultipleCombatEnv(BaseEnv):
         self._create_records = False
         self.situation_extractor = None
 
-        if algorithm == "mappoPCAN-v1":
+        if algorithm == "mappoCFC":
             # todo: 这里还没写好，导弹数需要用config来传
             from envs.JSBSim.situation.extractor import SituationExtractor
             self.situation_extractor = SituationExtractor()
@@ -210,6 +210,6 @@ class MultipleCombatEnv(BaseEnv):
 
         # 判断是否有额外信息要记录
         if self.situation_extractor is not None:
-            info["pcan_snapshot"] = self.situation_extractor.extract(env=self)
+            info["AeroTAF_snapshot"] = self.situation_extractor.extract(env=self)
 
         return self._pack(obs), self._pack(share_obs), self._pack(rewards), self._pack(dones), info
