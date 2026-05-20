@@ -169,7 +169,7 @@ class AttackWindowReward(BaseRewardFunction):
         # -----------------------------
         # 2) TA：越小越好
         # -----------------------------
-        sigma_ta = 0.5 * (np.pi - task.max_missile_attack_AO)
+        sigma_ta = 1.0 * (np.pi - task.max_missile_attack_AO)
         s_ta = np.exp(- (TA / (sigma_ta + 1e-8)) ** 2)
 
         # -----------------------------
