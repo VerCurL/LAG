@@ -61,6 +61,9 @@ class BaseTask(ABC):
         for reward_function in self.reward_functions:
             reward_function.reset(self, env)
 
+        for condition in self.termination_conditions:
+            condition.reset(self, env)
+
     def step(self, env):
         """ Task-specific step
 
