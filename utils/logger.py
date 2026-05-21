@@ -42,8 +42,8 @@ class AlgorithmsLogger:
                 pass
             elif self.algorithm_name in ["mappoCFC"]:
                 header += [
-                    "pcan_loss",
-                    "pcan_grad_norm",
+                    "AeroTAF_loss",
+                    "AeroTAF_grad_norm",
                     "threat_loss",
                     "attack_loss",
                     "fact_threat_mean",
@@ -90,8 +90,8 @@ class AlgorithmsLogger:
 
         if self.algorithm_name in ["mappoCFC"]:
             row += [
-                data.get("pcan_loss", None),
-                data.get("pcan_grad_norm", None),
+                data.get("AeroTAF_loss", None),
+                data.get("AeroTAF_grad_norm", None),
                 data.get("threat_loss", None),
                 data.get("attack_loss", None),
                 data.get("fact_threat_mean", None),
