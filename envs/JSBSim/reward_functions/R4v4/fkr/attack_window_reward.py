@@ -76,7 +76,7 @@ class AttackWindowReward(BaseRewardFunction):
         progress_term = 0.0
         gate = 0.0
 
-        # 无导弹时才继续占位；有导弹威胁时交给 MissileAvoidReward
+        # 有导弹时才继续占位；有导弹威胁时交给 MissileAvoidReward
         if agent.num_left_missiles <= 0:
             return self._process(0.0, agent_id, (0.0, 0.0, 0.0))
 
@@ -93,7 +93,7 @@ class AttackWindowReward(BaseRewardFunction):
                 continue
 
             enm_feature = np.hstack([enm.get_position(), enm.get_velocity()])
-            AO, TA, R = get_AO_TA_R(enm_feature, ego_feature)
+            AO, TA, R = get_AO_TA_R(ego_feature, enm_feature)
             R_km = R / 1000.0
 
             s = self.get_score(task, AO, TA, R_km)
