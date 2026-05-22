@@ -450,6 +450,16 @@ class ShareJSBSimRunner(Runner):
             torch.save(policy_actor_state_dict, str(self.save_dir) + f'/actor_{episode}.pt')
             self.policy_pool[str(episode)] = self.all_args.init_elo
 
+    def restore(self):
+        policy_actor_state_dict = torch.load(str(self.model_dir) + '/actor_latest.pt')
+        self.policy.actor.load_state_dict(policy_actor_state_dict)
+        policy_critic_state_dict = torch.load(str(self.model_dir) + '/critic_latest.pt')
+        self.policy.critic.load_state_dict(policy_critic_state_dict)
+
+        if self.algorithm_name == "mappoCFC":
+            policy_AeroTAF_state_dict = torch.load(str(self.model_dir) + '/AeroTAF_latest.pt')
+            self.policy.AeroTAF.load_state_dict(policy_AeroTAF_state_dict)
+
     def reset_opponent(self):
         choose_opponents = []
         for policy in self.opponent_policy:
