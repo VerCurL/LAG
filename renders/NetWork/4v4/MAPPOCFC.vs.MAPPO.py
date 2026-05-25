@@ -4,6 +4,7 @@ import time
 import logging
 import traceback
 import multiprocessing as mp
+import argparse
 from collections import defaultdict
 
 import numpy as np
@@ -14,6 +15,20 @@ from envs.JSBSim.envs import MultipleCombatEnv
 from algorithms.mappo.ppo_actor import PPOActor as MAPPOActor
 from algorithms.mappoCFC.ppo_actor import PPOActor as MAPPOCFCActor
 
+def _parent_tag(path):
+    path = os.path.normpath(path)
+    parent = os.path.basename(os.path.dirname(path))
+    return parent if parent else os.path.basename(path)
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--num_games", type=int, required=True)
+    parser.add_argument("--max_parallel", type=int, required=True)
+    parser.add_argument("--ego_policy_index", required=True)
+    parser.add_argument("--enm_policy_index", required=True)
+    parser.add_argument("--ego_run_dir", required=True)
+    parser.add_argument("--enm_run_dir", required=True)
+    return parser.parse_args()
 
 class Args_EGO:
     def __init__(self) -> None:
