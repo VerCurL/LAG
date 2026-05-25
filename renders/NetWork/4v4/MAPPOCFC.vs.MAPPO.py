@@ -493,9 +493,11 @@ def chunks(items, chunk_size):
 
 
 def main():
+    args = parse_args()
+
     num_agents = 8
-    num_games = 100         # 总对战轮数
-    max_parallel = 20       # 最大并行计算数量
+    num_games = args.num_games              # 总对战轮数
+    max_parallel = args.max_parallel        # 最大并行计算数量
     render = True
 
     debug_first_worker = True
@@ -505,13 +507,13 @@ def main():
     device = "cpu"
     # device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    ego_policy_index = "xxx"
-    enm_policy_index = "xxx"
+    ego_policy_index = args.ego_policy_index
+    enm_policy_index = args.enm_policy_index
 
-    ego_run_dir = "/path/run-test"
-    enm_run_dir = "/path/run-test"
+    ego_run_dir = args.ego_run_dir
+    enm_run_dir = args.enm_run_dir
 
-    experiment_name = ego_run_dir.split("/")[-2] + ".vs." + enm_run_dir.split("/")[-2]
+    experiment_name =  _parent_tag(ego_run_dir) + ".vs." + _parent_tag(enm_run_dir)
     experiment_file_name = (
         "../../gaming_result/MAPPOCFC.vs.MAPPO.parallel/"
         + experiment_name
