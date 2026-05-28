@@ -145,5 +145,6 @@ gaming_result/
 backup/
 
 # other
+datasets/
 research/
 prompt.md
