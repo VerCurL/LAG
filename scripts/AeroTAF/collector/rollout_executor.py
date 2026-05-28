@@ -7,6 +7,7 @@ import torch
 
 from envs.JSBSim.envs import MultipleCombatEnv
 from algorithms.mappo.ppo_actor import PPOActor as MAPPOActor
+from .path_utils import canonicalize_task_key, normalize_path, resolve_project_path
 
 
 class ActorArgs:
@@ -40,7 +41,7 @@ def load_state_dict(path, device):
 def make_actor(env, model_path, device):
     args = ActorArgs()
     actor = MAPPOActor(args, env.observation_space, env.action_space, device=device)
-    actor.load_state_dict(load_state_dict(model_path, device))
+    actor.load_state_dict(load_state_dict(resolve_project_path(model_path), device))
     actor.eval()
     return actor
 
@@ -235,7 +236,7 @@ def run_episode_task(task):
             "episode": episode_id,
             "status": "ok",
             "task_kind": task["task_kind"],
-            "task_key": task["task_key"],
+            "task_key": canonicalize_task_key(task["task_key"]),
             "seed": seed,
             "steps": step,
             "winner": winner,
@@ -245,8 +246,8 @@ def run_episode_task(task):
             "enm_alive_count": int(enm_alive_count),
             "ego_total_reward": float(ego_reward_total),
             "enm_total_reward": float(enm_reward_total),
-            "ego_model_path": task["ego_model_path"],
-            "enm_model_path": task["enm_model_path"],
+            "ego_model_path": normalize_path(task["ego_model_path"]),
+            "enm_model_path": normalize_path(task["enm_model_path"]),
             "scenario_id": task["scenario_id"],
             "scenario_bucket": task["scenario_bucket"],
             "pair_type": task["pair_type"],
@@ -275,7 +276,7 @@ def run_episode_task(task):
         )
 
         if task["save_raw"]:
-            out_dir = Path(task["out_dir"])
+            out_dir = resolve_project_path(task["out_dir"])
             out_dir.mkdir(parents=True, exist_ok=True)
             out_path = out_dir / f"episode_{episode_id:06d}.npz"
             np.savez_compressed(
@@ -287,13 +288,13 @@ def run_episode_task(task):
                 dones=np.asarray(done_list, dtype=np.float32),
                 snapshots=np.asarray(snapshot_list, dtype=object),
                 episode_id=np.asarray(episode_id, dtype=np.int32),
-                task_key=task["task_key"],
+                task_key=canonicalize_task_key(task["task_key"]),
                 task_kind=task["task_kind"],
                 random_seed=np.asarray(seed, dtype=np.int32),
                 scenario_id=task["scenario_id"],
                 scenario_bucket=task["scenario_bucket"],
-                ego_model_path=task["ego_model_path"],
-                enm_model_path=task["enm_model_path"],
+                ego_model_path=normalize_path(task["ego_model_path"]),
+                enm_model_path=normalize_path(task["enm_model_path"]),
                 ego_level=task["ego_level"],
                 enm_level=task["enm_level"],
                 ego_style=task["ego_style"],
@@ -304,7 +305,7 @@ def run_episode_task(task):
                 scenario_name=task["scenario_name"],
                 policy_type=task["policy_type"],
             )
-            result["file"] = str(out_path)
+            result["file"] = normalize_path(out_path)
 
         return result
 
@@ -313,9 +314,9 @@ def run_episode_task(task):
             "episode": episode_id,
             "status": "failed",
             "task_kind": task.get("task_kind", "unknown"),
-            "task_key": task.get("task_key", ""),
-            "ego_model_path": task.get("ego_model_path", ""),
-            "enm_model_path": task.get("enm_model_path", ""),
+            "task_key": canonicalize_task_key(task.get("task_key", "")),
+            "ego_model_path": normalize_path(task.get("ego_model_path", "")) if task.get("ego_model_path") else "",
+            "enm_model_path": normalize_path(task.get("enm_model_path", "")) if task.get("enm_model_path") else "",
             "scenario_id": task.get("scenario_id", ""),
             "seed": task.get("seed", -1),
             "error": repr(exc),

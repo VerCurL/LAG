@@ -5,7 +5,14 @@ import sys
 import time
 from pathlib import Path
 
-ROOT_DIR = Path(__file__).resolve().parents[2]
+from scripts.AeroTAF.collector.path_utils import (
+    canonicalize_task_key,
+    get_project_root,
+    resolve_project_path,
+    to_project_relative_path,
+)
+
+ROOT_DIR = get_project_root()
 sys.path.append(str(ROOT_DIR))
 
 from scripts.AeroTAF.collector.dataset_manifest import write_stage1_artifacts
@@ -31,15 +38,6 @@ from scripts.AeroTAF.collector.task_planner import (
     build_stage1_collection_tasks,
     build_stage1_profiling_tasks,
 )
-
-
-def resolve_path(path_text):
-    path = Path(path_text)
-    if path.is_absolute():
-        return path
-    return ROOT_DIR / path
-
-
 def get_parser():
     parser = argparse.ArgumentParser(description="Stage-1 AeroTAF dataset collector.")
     parser.add_argument(
@@ -123,7 +121,7 @@ def get_stage1_paths(metadata_dir):
 def build_common_task_fields(all_args, out_dir):
     return {
         "device": all_args.device,
-        "out_dir": str(out_dir),
+        "out_dir": to_project_relative_path(out_dir),
         "scenario_name": all_args.scenario_name,
         "policy_type": all_args.policy_type,
         "num_agents_total": all_args.num_agents_total,
@@ -171,8 +169,8 @@ def build_manifest(
         "stage": "stage1",
         "scenario_name": all_args.scenario_name,
         "policy_type": all_args.policy_type,
-        "out_dir": str(out_dir),
-        "metadata_dir": str(metadata_dir),
+        "out_dir": to_project_relative_path(out_dir),
+        "metadata_dir": to_project_relative_path(metadata_dir),
         "model_count": len(grouped_registry),
         "tier_counts": {
             "high": sum(1 for item in grouped_registry if item["strength_tier"] == "high"),
@@ -331,7 +329,10 @@ def action_plan(all_args, out_dir, metadata_dir, paths):
 def action_collect(all_args, out_dir, metadata_dir, paths):
     collection_plan = load_collection_plan_or_raise(paths)
     completed_collect_keys, _ = load_existing_raw_state(out_dir)
-    pending_tasks = [task for task in collection_plan if task["task_key"] not in completed_collect_keys]
+    pending_tasks = [
+        task for task in collection_plan
+        if canonicalize_task_key(task["task_key"]) not in completed_collect_keys
+    ]
 
     print(f"Stage-1 collection plan loaded: total={len(collection_plan)}, pending={len(pending_tasks)}")
     if not pending_tasks:
@@ -353,10 +354,14 @@ def main(args):
     parser = get_parser()
     all_args = parser.parse_args(args)
 
-    out_dir = resolve_path(all_args.out_dir)
+    out_dir = resolve_project_path(all_args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    metadata_dir = resolve_path(all_args.metadata_dir) if all_args.metadata_dir else (out_dir.parent / "collector_stage1")
+    metadata_dir = (
+        resolve_project_path(all_args.metadata_dir)
+        if all_args.metadata_dir
+        else (out_dir.parent / "collector_stage1")
+    )
     metadata_dir.mkdir(parents=True, exist_ok=True)
     paths = get_stage1_paths(metadata_dir)
 

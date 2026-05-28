@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .model_registry import normalize_path
+from .path_utils import canonicalize_task_key, normalize_path
 
 
 def load_json_list(path):
@@ -46,13 +46,13 @@ def as_string(value):
 
 
 def build_task_key(task):
-    return "|".join([
+    return canonicalize_task_key("|".join([
         normalize_path(task["ego_model_path"]),
         normalize_path(task["enm_model_path"]),
         str(task.get("scenario_id", "")),
         str(task.get("seed", "")),
         str(task.get("task_kind", "collect")),
-    ])
+    ]))
 
 
 def load_existing_raw_state(raw_dir):
@@ -70,7 +70,7 @@ def load_existing_raw_state(raw_dir):
         try:
             with np.load(npz_path, allow_pickle=True) as data:
                 if "task_key" in data.files:
-                    completed_keys.add(as_string(data["task_key"]))
+                    completed_keys.add(canonicalize_task_key(as_string(data["task_key"])))
                     continue
 
                 if "ego_model_path" in data.files and "enm_model_path" in data.files:
@@ -79,7 +79,13 @@ def load_existing_raw_state(raw_dir):
                     scenario_id = as_string(data["scenario_id"]) if "scenario_id" in data.files else ""
                     seed = as_string(data["random_seed"]) if "random_seed" in data.files else ""
                     task_kind = as_string(data["task_kind"]) if "task_kind" in data.files else "collect"
-                    completed_keys.add("|".join([ego_model_path, enm_model_path, scenario_id, seed, task_kind]))
+                    completed_keys.add(canonicalize_task_key("|".join([
+                        ego_model_path,
+                        enm_model_path,
+                        scenario_id,
+                        seed,
+                        task_kind,
+                    ])))
         except Exception:
             continue
 

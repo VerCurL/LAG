@@ -1,9 +1,7 @@
 import re
 from pathlib import Path
 
-
-def normalize_path(path_text):
-    return str(Path(path_text).expanduser().resolve())
+from .path_utils import normalize_path, resolve_project_path
 
 
 def parse_checkpoint_step(path_text):
@@ -16,14 +14,14 @@ def parse_checkpoint_step(path_text):
 
 def _build_model_entry(path_text, source_index):
     normalized_path = normalize_path(path_text)
-    checkpoint_path = Path(normalized_path)
+    checkpoint_path = resolve_project_path(path_text)
     checkpoint_step = parse_checkpoint_step(normalized_path)
     return {
         "model_id": f"model_{source_index:03d}",
         "checkpoint_path": normalized_path,
         "checkpoint_name": checkpoint_path.name,
         "checkpoint_step": checkpoint_step,
-        "source_run": str(checkpoint_path.parent),
+        "source_run": normalize_path(checkpoint_path.parent),
     }
 
 
@@ -32,7 +30,7 @@ def discover_actor_models(model_roots):
     seen_paths = set()
 
     for root in model_roots:
-        path = Path(root).expanduser()
+        path = resolve_project_path(root)
         if path.is_file() and path.suffix == ".pt":
             normalized_path = normalize_path(path)
             if normalized_path not in seen_paths:
