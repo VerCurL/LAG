@@ -398,7 +398,7 @@ if __name__ == "__main__":
         # "--action", "group",
         # "--action", "plan",
         "--action", "collect",
-        "--model-root", "../results/MultipleCombat/4v4/ShootMissile/HierarchySelfplay/mappo/A128-C512/run-aerotaf",
+        "--model-root", "scripts/results/MultipleCombat/4v4/ShootMissile/HierarchySelfplay/mappo/A128-C512/run-aerotaf",
         "--out-dir", "datasets/aerotaf/4v4_shoot_mappo_pool_stage1/raw",
         "--device", "cpu",
         "--max-parallel", "20",

@@ -1,5 +1,6 @@
 import os
-from pathlib import Path
+import re
+from pathlib import Path, PurePosixPath
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -9,11 +10,25 @@ def get_project_root():
     return PROJECT_ROOT
 
 
+def _normalize_path_text(path_text):
+    return str(path_text).strip().replace("\\", "/")
+
+
+def _is_windows_absolute(path_text):
+    return re.match(r"^[A-Za-z]:/", path_text) is not None
+
+
 def resolve_project_path(path_text):
     path = Path(path_text).expanduser()
     if path.is_absolute():
         return path.resolve()
-    return (PROJECT_ROOT / path).resolve()
+
+    normalized_text = _normalize_path_text(path_text)
+    if _is_windows_absolute(normalized_text):
+        return Path(normalized_text).expanduser().resolve()
+
+    posix_path = PurePosixPath(normalized_text)
+    return PROJECT_ROOT.joinpath(*posix_path.parts).resolve()
 
 
 def to_project_relative_path(path_text):
@@ -27,9 +42,9 @@ def to_project_relative_path(path_text):
         common = ""
 
     if common == os.path.normcase(root_str):
-        return os.path.relpath(resolved_str, root_str)
+        return os.path.relpath(resolved_str, root_str).replace("\\", "/")
 
-    return resolved_str
+    return resolved.as_posix()
 
 
 def normalize_path(path_text):
