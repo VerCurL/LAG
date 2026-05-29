@@ -5,6 +5,10 @@ import sys
 import time
 from pathlib import Path
 
+ROOT_DIR = Path(__file__).resolve().parents[2]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
 from scripts.AeroTAF.collector.path_utils import (
     canonicalize_task_key,
     get_project_root,
@@ -12,7 +16,6 @@ from scripts.AeroTAF.collector.path_utils import (
     to_project_relative_path,
 )
 
-ROOT_DIR = get_project_root()
 sys.path.append(str(ROOT_DIR))
 
 from scripts.AeroTAF.collector.dataset_manifest import write_stage1_artifacts
