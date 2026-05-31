@@ -635,7 +635,7 @@ if __name__ == "__main__":
         "--log-interval", "1",
         "--chunk-length", "50",
         "--chunk-stride", "10",
-        "--train-mini-batches", "4",
+        "--train-mini-batches", "5",
         "--sample-stride", "1",
         "--num-agents", "4",
         "--activation-id", "1",
