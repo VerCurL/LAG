@@ -232,6 +232,31 @@ def build_train_subset_dataset(dataset, train_mini_batches, epoch, seed):
     return Subset(dataset, selected), cycle_index + 1, effective_batches, len(selected)
 
 
+def build_epoch_subset_dataset(dataset, split_mini_batches, epoch, seed, seed_offset=0):
+    total_chunks = len(dataset)
+    if total_chunks == 0:
+        raise ValueError("Empty chunk dataset.")
+
+    if split_mini_batches <= 1 or total_chunks == 1:
+        return dataset, 1, 1, total_chunks
+
+    effective_batches = min(int(split_mini_batches), total_chunks)
+    cycle_index = (epoch - 1) % effective_batches
+    cycle_round = (epoch - 1) // effective_batches
+
+    rng = random.Random(seed + seed_offset + cycle_round * 9973)
+    indices = list(range(total_chunks))
+    rng.shuffle(indices)
+    split_indices = np.array_split(np.asarray(indices, dtype=np.int64), effective_batches)
+    selected = split_indices[cycle_index].tolist()
+    if not selected:
+        raise RuntimeError(
+            f"Empty split mini-batch detected: total_chunks={total_chunks}, "
+            f"split_mini_batches={split_mini_batches}, effective_batches={effective_batches}, epoch={epoch}"
+        )
+    return Subset(dataset, selected), cycle_index + 1, effective_batches, len(selected)
+
+
 def prepare_episode_batch(obs, actions, threat_targets, attack_targets, seq_len, time_offset, device):
     seq_len = int(seq_len)
     time_offset = int(time_offset)
@@ -477,15 +502,7 @@ def main(args):
     }
 
     loaders = {
-        "val": DataLoader(
-            datasets["val"],
-            batch_size=all_args.batch_size,
-            shuffle=False,
-            num_workers=all_args.num_workers,
-            pin_memory=(device.type == "cuda"),
-            collate_fn=episode_collate_fn,
-        ),
-        "test": DataLoader(
+        "test_full": DataLoader(
             datasets["test"],
             batch_size=all_args.batch_size,
             shuffle=False,
@@ -541,10 +558,25 @@ def main(args):
             epoch,
             all_args.seed,
         )
+        val_subset, val_mini_batch_index, val_effective_mini_batches, val_chunks_used = build_epoch_subset_dataset(
+            datasets["val"],
+            all_args.train_mini_batches,
+            epoch,
+            all_args.seed,
+            seed_offset=100000,
+        )
         train_loader = DataLoader(
             train_subset,
             batch_size=all_args.batch_size,
             shuffle=True,
+            num_workers=all_args.num_workers,
+            pin_memory=(device.type == "cuda"),
+            collate_fn=episode_collate_fn,
+        )
+        val_loader = DataLoader(
+            val_subset,
+            batch_size=all_args.batch_size,
+            shuffle=False,
             num_workers=all_args.num_workers,
             pin_memory=(device.type == "cuda"),
             collate_fn=episode_collate_fn,
@@ -557,7 +589,7 @@ def main(args):
             device=device,
             max_grad_norm=all_args.max_grad_norm,
         )
-        val_metrics = evaluate(model=model, data_loader=loaders["val"], device=device)
+        val_metrics = evaluate(model=model, data_loader=val_loader, device=device)
         elapsed = time.time() - start_time
 
         row = {
@@ -570,11 +602,14 @@ def main(args):
             "val_attack_loss": f"{val_metrics['attack_loss']:.8f}",
             "mini_batch_index": mini_batch_index,
             "mini_batch_total": effective_mini_batches,
+            "val_mini_batch_index": val_mini_batch_index,
+            "val_mini_batch_total": val_effective_mini_batches,
             "train_valid_steps": train_metrics["valid_steps"],
             "val_valid_steps": val_metrics["valid_steps"],
             "train_chunks_used": train_chunks_used,
             "train_chunks_total": len(datasets["train"]),
-            "val_chunks": len(datasets["val"]),
+            "val_chunks_used": val_chunks_used,
+            "val_chunks_total": len(datasets["val"]),
             "time_sec": f"{elapsed:.4f}",
         }
         append_csv_row(log_path, row, write_header=(epoch == 1))
@@ -584,6 +619,8 @@ def main(args):
                 f"epoch {epoch:03d} | "
                 f"mini-batch {mini_batch_index:02d}/{effective_mini_batches:02d} "
                 f"(chunks={train_chunks_used}/{len(datasets['train'])}) | "
+                f"val-batch {val_mini_batch_index:02d}/{val_effective_mini_batches:02d} "
+                f"(chunks={val_chunks_used}/{len(datasets['val'])}) | "
                 f"train loss={train_metrics['loss']:.6f} "
                 f"(threat={train_metrics['threat_loss']:.6f}, attack={train_metrics['attack_loss']:.6f}) | "
                 f"val loss={val_metrics['loss']:.6f} "
@@ -605,7 +642,7 @@ def main(args):
         model.load_state_dict(checkpoint["model_state_dict"])
         logging.info(f"loaded best checkpoint for final test: {normalize_path(best_ckpt_path)}")
 
-    test_metrics = evaluate(model=model, data_loader=loaders["test"], device=device)
+    test_metrics = evaluate(model=model, data_loader=loaders["test_full"], device=device)
     with open(test_metrics_path, "w", encoding="utf-8") as f:
         json.dump(test_metrics, f, indent=2, ensure_ascii=False)
 
@@ -634,8 +671,8 @@ if __name__ == "__main__":
         "--save-interval", "10",
         "--log-interval", "1",
         "--chunk-length", "50",
-        "--chunk-stride", "10",
-        "--train-mini-batches", "5",
+        "--chunk-stride", "35",
+        "--train-mini-batches", "10",
         "--sample-stride", "1",
         "--num-agents", "4",
         "--activation-id", "1",
