@@ -27,6 +27,7 @@ class EpisodeSharedBuffer:
         self.actions = actions
         self.masks = masks
 
+
 def as_snapshot_list(snapshots_array):
     snapshots = []
     for item in snapshots_array:
@@ -84,6 +85,61 @@ def load_raw_episode(npz_path):
     return obs, actions, masks, snapshots, metadata
 
 
+def discounted_k_window_features(values, k_step, gamma):
+    """
+    values: [L, ...]
+    return: [L, ...]
+
+    Uses the same K-step discounted-window normalized average style as
+    FieldCalculator._discounted_k_window, but for vector features.
+    """
+    length = int(values.shape[0])
+    out = np.zeros_like(values, dtype=np.float32)
+    gamma_k = float(gamma) ** int(k_step)
+
+    nums = np.zeros((length + 1,) + values.shape[1:], dtype=np.float32)
+    dens = np.zeros(length + 1, dtype=np.float32)
+
+    for t in range(length - 1, -1, -1):
+        num = values[t].astype(np.float32, copy=False) + float(gamma) * nums[t + 1]
+        den = 1.0 + float(gamma) * dens[t + 1]
+
+        drop_idx = t + int(k_step)
+        if drop_idx < length:
+            num -= gamma_k * values[drop_idx].astype(np.float32, copy=False)
+            den -= gamma_k
+
+        nums[t] = num
+        dens[t] = den
+        out[t] = num / (den + 1e-6)
+
+    return out
+
+
+def build_temporal_targets(obs, actions, masks_for_field, field_calculator):
+    """
+    obs: [T, N, obs_dim]
+    actions: [T, N, act_dim]
+    masks_for_field: [T, N, 1]
+
+    returns:
+        temporal_targets: [T, N, obs_dim + act_dim]
+    """
+    time_steps = obs.shape[0]
+    temporal_source = np.concatenate((obs, actions), axis=-1).astype(np.float32, copy=False)
+    temporal_targets = np.zeros_like(temporal_source, dtype=np.float32)
+
+    masks_env = masks_for_field.reshape(time_steps, 1, masks_for_field.shape[1], masks_for_field.shape[2])
+    for start, end in field_calculator._episode_segments(time_steps, masks_env, env_i=0):
+        temporal_targets[start:end] = discounted_k_window_features(
+            temporal_source[start:end],
+            k_step=field_calculator.k_step,
+            gamma=field_calculator.gamma,
+        )
+
+    return temporal_targets
+
+
 def build_targets_for_episode(obs, actions, masks, snapshots, field_calculator):
     time_steps, num_agents = actions.shape[:2]
 
@@ -101,18 +157,25 @@ def build_targets_for_episode(obs, actions, masks, snapshots, field_calculator):
         snapshots=[snapshots],
         shared_buffer=shared_buffer,
     )
+    temporal_targets = build_temporal_targets(
+        obs=obs,
+        actions=actions,
+        masks_for_field=masks_for_field,
+        field_calculator=field_calculator,
+    )
 
     return (
         obs.astype(np.float32, copy=False),
         actions.astype(np.float32, copy=False),
         threat_targets.reshape(time_steps, 1).astype(np.float32, copy=False),
         attack_targets.reshape(time_steps, 1).astype(np.float32, copy=False),
+        temporal_targets.astype(np.float32, copy=False),
     )
 
 
 def load_and_process_episode(npz_path, field_calculator):
     obs, actions, masks, snapshots, metadata = load_raw_episode(npz_path)
-    obs, actions, threat_targets, attack_targets = build_targets_for_episode(
+    obs, actions, threat_targets, attack_targets, temporal_targets = build_targets_for_episode(
         obs=obs,
         actions=actions,
         masks=masks,
@@ -129,6 +192,7 @@ def load_and_process_episode(npz_path, field_calculator):
         "actions": actions,
         "threat_targets": threat_targets,
         "attack_targets": attack_targets,
+        "temporal_targets": temporal_targets,
         "episode_length": obs.shape[0],
         "meta": metadata,
     }
@@ -227,6 +291,7 @@ def combine_episode_items(items):
     actions = np.concatenate([item["actions"] for item in items], axis=0).astype(np.float32, copy=False)
     threat_targets = np.concatenate([item["threat_targets"] for item in items], axis=0).astype(np.float32, copy=False)
     attack_targets = np.concatenate([item["attack_targets"] for item in items], axis=0).astype(np.float32, copy=False)
+    temporal_targets = np.concatenate([item["temporal_targets"] for item in items], axis=0).astype(np.float32, copy=False)
 
     metadata = {
         "episode_lengths": np.asarray([item["episode_length"] for item in items], dtype=np.int32),
@@ -248,6 +313,7 @@ def combine_episode_items(items):
         "actions": actions,
         "threat_targets": threat_targets,
         "attack_targets": attack_targets,
+        "temporal_targets": temporal_targets,
         **metadata,
     }
 
@@ -389,7 +455,7 @@ def main(args):
 if __name__ == "__main__":
     default_args = [
         "--raw-dir", "datasets/aerotaf/4v4_shoot_mappo_pool_stage1/raw",
-        "--output-dir", "datasets/aerotaf/4v4_shoot_mappo_pool_stage1/processed_stage1_K20",
+        "--output-dir", "datasets/aerotaf/4v4_shoot_mappo_pool_stage1/processed_stage1_K20_field_temporal",
         "--split-seed", "1",
         "--test-pair-ratio", "0.15",
         "--val-seed-ratio", "0.2",
