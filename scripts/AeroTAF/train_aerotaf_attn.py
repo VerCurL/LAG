@@ -11,6 +11,8 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+
 try:
     import gymnasium as gym
     import numpy as np
@@ -19,8 +21,8 @@ try:
     import torch.nn.functional as F
     from torch.utils.data import DataLoader, Dataset, Subset
 except ModuleNotFoundError as exc:
-    print(f"Error: missing dependency: {exc}")
-    print("Please activate the same Python environment used by this project, then run this script again.")
+    logging.info(f"Error: missing dependency: {exc}")
+    logging.info("Please activate the same Python environment used by this project, then run this script again.")
     sys.exit(1)
 
 from algorithms.utils.AeroTAF_ATTN import AeroTAFATTNBase
@@ -62,6 +64,76 @@ class PPOAeroTAFATTN(nn.Module):
         obs = torch.as_tensor(obs, **self.tpdv)
         actions = torch.as_tensor(actions, **self.tpdv)
         return self.AeroTAF(obs, actions, seq_len=seq_len, time_offset=time_offset)
+
+
+THREAT_HEAD_PATTERN = "threat_output_module"
+ATTACK_HEAD_PATTERN = "attack_output_module"
+
+
+def is_threat_head_param_name(name):
+    return THREAT_HEAD_PATTERN in name
+
+
+def is_attack_head_param_name(name):
+    return ATTACK_HEAD_PATTERN in name
+
+
+def split_parameter_groups(model):
+    backbone_params = []
+    threat_head_params = []
+    attack_head_params = []
+
+    for name, param in model.named_parameters():
+        if is_threat_head_param_name(name):
+            threat_head_params.append(param)
+        elif is_attack_head_param_name(name):
+            attack_head_params.append(param)
+        else:
+            backbone_params.append(param)
+
+    return backbone_params, threat_head_params, attack_head_params
+
+
+def assign_grads(params, grads):
+    for param, grad in zip(params, grads):
+        param.grad = None if grad is None else grad.detach()
+
+
+def zero_param_grads(params):
+    for param in params:
+        param.grad = None
+
+
+def clip_param_grads(params, max_grad_norm):
+    if max_grad_norm is None or max_grad_norm <= 0 or not params:
+        return
+    torch.nn.utils.clip_grad_norm_(params, max_grad_norm)
+
+
+def build_split_optimizers(model, args):
+    backbone_params, threat_head_params, attack_head_params = split_parameter_groups(model)
+    optimizers = {}
+
+    if backbone_params:
+        optimizers["backbone"] = torch.optim.Adam(
+            backbone_params,
+            lr=args.backbone_lr,
+            weight_decay=args.weight_decay,
+        )
+    if threat_head_params:
+        optimizers["threat_head"] = torch.optim.Adam(
+            threat_head_params,
+            lr=args.threat_head_lr,
+            weight_decay=args.weight_decay,
+        )
+    if attack_head_params:
+        optimizers["attack_head"] = torch.optim.Adam(
+            attack_head_params,
+            lr=args.attack_head_lr,
+            weight_decay=args.weight_decay,
+        )
+
+    return optimizers, backbone_params, threat_head_params, attack_head_params
 
 
 class ProcessedSplitStore:
@@ -180,12 +252,13 @@ class AeroTAFATTNChunkDataset(Dataset):
     def __getitem__(self, index):
         episode_index, start, end = self.chunks[index]
         episode = self.store.episode(episode_index)
+        temporal_targets = episode["temporal_targets"]
         return (
             episode["obs"][start:end],
             episode["actions"][start:end],
             episode["threat_targets"][start:end],
             episode["attack_targets"][start:end],
-            episode["temporal_targets"][start:end],
+            temporal_targets[start:end] if temporal_targets is not None else None,
             end - start,
             start,
         )
@@ -221,54 +294,41 @@ def build_device(args):
     return torch.device("cpu")
 
 
-def build_train_subset_dataset(dataset, train_mini_batches, epoch, seed):
-    total_chunks = len(dataset)
-    if total_chunks == 0:
-        raise ValueError("Empty training chunk dataset.")
-
-    if train_mini_batches <= 1 or total_chunks == 1:
-        return dataset, 1, 1, total_chunks
-
-    effective_batches = min(int(train_mini_batches), total_chunks)
-    cycle_index = (epoch - 1) % effective_batches
-    cycle_round = (epoch - 1) // effective_batches
-
-    rng = random.Random(seed + cycle_round * 9973)
-    indices = list(range(total_chunks))
-    rng.shuffle(indices)
-    split_indices = np.array_split(np.asarray(indices, dtype=np.int64), effective_batches)
-    selected = split_indices[cycle_index].tolist()
-    if not selected:
-        raise RuntimeError(
-            f"Empty train mini-batch split detected: total_chunks={total_chunks}, "
-            f"train_mini_batches={train_mini_batches}, effective_batches={effective_batches}, epoch={epoch}"
-        )
-    return Subset(dataset, selected), cycle_index + 1, effective_batches, len(selected)
-
-
-def build_epoch_subset_dataset(dataset, split_mini_batches, epoch, seed, seed_offset=0):
+def build_epoch_minibatch_subsets(dataset, mini_batches, epoch, seed):
     total_chunks = len(dataset)
     if total_chunks == 0:
         raise ValueError("Empty chunk dataset.")
 
-    if split_mini_batches <= 1 or total_chunks == 1:
-        return dataset, 1, 1, total_chunks
+    if mini_batches <= 1 or total_chunks == 1:
+        return [dataset]
 
-    effective_batches = min(int(split_mini_batches), total_chunks)
-    cycle_index = (epoch - 1) % effective_batches
-    cycle_round = (epoch - 1) // effective_batches
-
-    rng = random.Random(seed + seed_offset + cycle_round * 9973)
+    effective_batches = min(int(mini_batches), total_chunks)
+    rng = random.Random(seed + epoch * 9973)
     indices = list(range(total_chunks))
     rng.shuffle(indices)
     split_indices = np.array_split(np.asarray(indices, dtype=np.int64), effective_batches)
-    selected = split_indices[cycle_index].tolist()
-    if not selected:
-        raise RuntimeError(
-            f"Empty split mini-batch detected: total_chunks={total_chunks}, "
-            f"split_mini_batches={split_mini_batches}, effective_batches={effective_batches}, epoch={epoch}"
-        )
-    return Subset(dataset, selected), cycle_index + 1, effective_batches, len(selected)
+    return [Subset(dataset, split.tolist()) for split in split_indices if len(split) > 0]
+
+
+def build_loader(dataset, batch_size, shuffle, num_workers, device):
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        pin_memory=(device.type == "cuda"),
+        collate_fn=episode_collate_fn,
+        drop_last=False,
+    )
+
+
+def compute_r_value(sse, target_sum, target_square_sum, count):
+    if count <= 0:
+        return 0.0
+    sst = target_square_sum - target_sum * target_sum / count
+    if sst <= 1e-12:
+        return 0.0
+    return 1.0 - sse / sst
 
 
 def prepare_episode_batch(obs, actions, threat_targets, attack_targets, temporal_targets, seq_len, time_offset, device):
@@ -293,13 +353,33 @@ def prepare_episode_batch(obs, actions, threat_targets, attack_targets, temporal
     return obs, actions, threat_targets, attack_targets, temporal_targets, seq_len, time_offset
 
 
-def evaluate(model, data_loader, device, threat_loss_weight, attack_loss_weight, temporal_loss_weight, use_temporal_loss):
+def evaluate(
+    model,
+    data_loader,
+    device,
+    threat_loss_weight,
+    attack_loss_weight,
+    temporal_loss_weight,
+    use_temporal_loss,
+    return_stats=False,
+):
     model.eval()
     total_loss = 0.0
     total_threat_loss = 0.0
     total_attack_loss = 0.0
     total_temporal_loss = 0.0
+    total_raw_threat_loss = 0.0
+    total_raw_attack_loss = 0.0
+    total_raw_temporal_loss = 0.0
     total_steps = 0
+    threat_sse = 0.0
+    attack_sse = 0.0
+    threat_sum = 0.0
+    attack_sum = 0.0
+    threat_square_sum = 0.0
+    attack_square_sum = 0.0
+    threat_count = 0
+    attack_count = 0
 
     with torch.no_grad():
         for obs, actions, threat_targets, attack_targets, temporal_targets, seq_len, time_offset in data_loader:
@@ -327,24 +407,104 @@ def evaluate(model, data_loader, device, threat_loss_weight, attack_loss_weight,
                 + temporal_loss_weight * temporal_loss
             )
 
+            threat_error = threat_pred - threat_targets
+            attack_error = attack_pred - attack_targets
+            threat_sse += torch.sum(threat_error * threat_error).item()
+            attack_sse += torch.sum(attack_error * attack_error).item()
+            threat_sum += torch.sum(threat_targets).item()
+            attack_sum += torch.sum(attack_targets).item()
+            threat_square_sum += torch.sum(threat_targets * threat_targets).item()
+            attack_square_sum += torch.sum(attack_targets * attack_targets).item()
+            threat_count += threat_targets.numel()
+            attack_count += attack_targets.numel()
+
             total_loss += loss.item() * seq_len
-            total_threat_loss += threat_loss.item() * seq_len
-            total_attack_loss += attack_loss.item() * seq_len
-            total_temporal_loss += temporal_loss.item() * seq_len
+            total_threat_loss += threat_loss_weight * threat_loss.item() * seq_len
+            total_attack_loss += attack_loss_weight * attack_loss.item() * seq_len
+            total_temporal_loss += temporal_loss_weight * temporal_loss.item() * seq_len
+            total_raw_threat_loss += threat_loss.item() * seq_len
+            total_raw_attack_loss += attack_loss.item() * seq_len
+            total_raw_temporal_loss += temporal_loss.item() * seq_len
             total_steps += seq_len
 
-    return {
+    metrics = {
         "loss": total_loss / max(total_steps, 1),
         "threat_loss": total_threat_loss / max(total_steps, 1),
         "attack_loss": total_attack_loss / max(total_steps, 1),
         "temporal_loss": total_temporal_loss / max(total_steps, 1),
+        "raw_threat_loss": total_raw_threat_loss / max(total_steps, 1),
+        "raw_attack_loss": total_raw_attack_loss / max(total_steps, 1),
+        "raw_temporal_loss": total_raw_temporal_loss / max(total_steps, 1),
         "valid_steps": int(total_steps),
+        "threat_r": compute_r_value(threat_sse, threat_sum, threat_square_sum, threat_count),
+        "attack_r": compute_r_value(attack_sse, attack_sum, attack_square_sum, attack_count),
     }
+    if return_stats:
+        metrics.update(
+            {
+                "samples": int(total_steps),
+                "threat_sse": float(threat_sse),
+                "attack_sse": float(attack_sse),
+                "threat_sum": float(threat_sum),
+                "attack_sum": float(attack_sum),
+                "threat_square_sum": float(threat_square_sum),
+                "attack_square_sum": float(attack_square_sum),
+                "threat_count": int(threat_count),
+                "attack_count": int(attack_count),
+            }
+        )
+    return metrics
 
 
-def train_one_epoch(
+def merge_eval_metrics(metrics_list):
+    total_samples = sum(item["samples"] for item in metrics_list)
+    if total_samples <= 0:
+        return {
+            "loss": 0.0,
+            "threat_loss": 0.0,
+            "attack_loss": 0.0,
+            "temporal_loss": 0.0,
+            "raw_threat_loss": 0.0,
+            "raw_attack_loss": 0.0,
+            "raw_temporal_loss": 0.0,
+            "valid_steps": 0,
+            "threat_r": 0.0,
+            "attack_r": 0.0,
+            "samples": 0,
+            "mini_batch_count": 0,
+        }
+
+    threat_sse = sum(item["threat_sse"] for item in metrics_list)
+    attack_sse = sum(item["attack_sse"] for item in metrics_list)
+    threat_sum = sum(item["threat_sum"] for item in metrics_list)
+    attack_sum = sum(item["attack_sum"] for item in metrics_list)
+    threat_square_sum = sum(item["threat_square_sum"] for item in metrics_list)
+    attack_square_sum = sum(item["attack_square_sum"] for item in metrics_list)
+    threat_count = sum(item["threat_count"] for item in metrics_list)
+    attack_count = sum(item["attack_count"] for item in metrics_list)
+
+    merged = {
+        "loss": sum(item["loss"] * item["samples"] for item in metrics_list) / total_samples,
+        "threat_loss": sum(item["threat_loss"] * item["samples"] for item in metrics_list) / total_samples,
+        "attack_loss": sum(item["attack_loss"] * item["samples"] for item in metrics_list) / total_samples,
+        "temporal_loss": sum(item["temporal_loss"] * item["samples"] for item in metrics_list) / total_samples,
+        "raw_threat_loss": sum(item["raw_threat_loss"] * item["samples"] for item in metrics_list) / total_samples,
+        "raw_attack_loss": sum(item["raw_attack_loss"] * item["samples"] for item in metrics_list) / total_samples,
+        "raw_temporal_loss": sum(item["raw_temporal_loss"] * item["samples"] for item in metrics_list) / total_samples,
+        "valid_steps": int(total_samples),
+        "threat_r": compute_r_value(threat_sse, threat_sum, threat_square_sum, threat_count),
+        "attack_r": compute_r_value(attack_sse, attack_sum, attack_square_sum, attack_count),
+        "samples": int(total_samples),
+        "mini_batch_count": len(metrics_list),
+    }
+    return merged
+
+
+def train_one_round(
     model,
     optimizer,
+    optimizers,
+    train_mode,
     data_loader,
     device,
     max_grad_norm,
@@ -352,12 +512,18 @@ def train_one_epoch(
     attack_loss_weight,
     temporal_loss_weight,
     use_temporal_loss,
+    backbone_params=None,
+    threat_head_params=None,
+    attack_head_params=None,
 ):
     model.train()
     total_loss = 0.0
     total_threat_loss = 0.0
     total_attack_loss = 0.0
     total_temporal_loss = 0.0
+    total_raw_threat_loss = 0.0
+    total_raw_attack_loss = 0.0
+    total_raw_temporal_loss = 0.0
     total_steps = 0
 
     for obs, actions, threat_targets, attack_targets, temporal_targets, seq_len, time_offset in data_loader:
@@ -385,16 +551,69 @@ def train_one_epoch(
             + temporal_loss_weight * temporal_loss
         )
 
-        optimizer.zero_grad()
-        loss.backward()
-        if max_grad_norm is not None and max_grad_norm > 0:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
-        optimizer.step()
+        if train_mode in ("joint", "heads_only"):
+            optimizer.zero_grad()
+            loss.backward()
+            if max_grad_norm is not None and max_grad_norm > 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+            optimizer.step()
+        else:
+            for opt in optimizers.values():
+                opt.zero_grad()
+            zero_param_grads(backbone_params)
+            zero_param_grads(threat_head_params)
+            zero_param_grads(attack_head_params)
+
+            need_backbone = use_temporal_loss and temporal_loss_weight > 0.0 and len(backbone_params) > 0
+            need_threat = threat_loss_weight > 0.0 and len(threat_head_params) > 0
+            need_attack = attack_loss_weight > 0.0 and len(attack_head_params) > 0
+
+            if need_backbone:
+                retain_graph = need_threat or need_attack
+                backbone_grads = torch.autograd.grad(
+                    temporal_loss_weight * temporal_loss,
+                    backbone_params,
+                    retain_graph=retain_graph,
+                    allow_unused=False,
+                )
+                assign_grads(backbone_params, backbone_grads)
+
+            if need_threat:
+                retain_graph = need_attack
+                threat_grads = torch.autograd.grad(
+                    threat_loss_weight * threat_loss,
+                    threat_head_params,
+                    retain_graph=retain_graph,
+                    allow_unused=False,
+                )
+                assign_grads(threat_head_params, threat_grads)
+
+            if need_attack:
+                attack_grads = torch.autograd.grad(
+                    attack_loss_weight * attack_loss,
+                    attack_head_params,
+                    retain_graph=False,
+                    allow_unused=False,
+                )
+                assign_grads(attack_head_params, attack_grads)
+
+            if need_backbone:
+                clip_param_grads(backbone_params, max_grad_norm)
+                optimizers["backbone"].step()
+            if need_threat:
+                clip_param_grads(threat_head_params, max_grad_norm)
+                optimizers["threat_head"].step()
+            if need_attack:
+                clip_param_grads(attack_head_params, max_grad_norm)
+                optimizers["attack_head"].step()
 
         total_loss += loss.item() * seq_len
         total_threat_loss += threat_loss_weight * threat_loss.item() * seq_len
         total_attack_loss += attack_loss_weight * attack_loss.item() * seq_len
         total_temporal_loss += temporal_loss_weight * temporal_loss.item() * seq_len
+        total_raw_threat_loss += threat_loss.item() * seq_len
+        total_raw_attack_loss += attack_loss.item() * seq_len
+        total_raw_temporal_loss += temporal_loss.item() * seq_len
         total_steps += seq_len
 
     return {
@@ -402,7 +621,11 @@ def train_one_epoch(
         "threat_loss": total_threat_loss / max(total_steps, 1),
         "attack_loss": total_attack_loss / max(total_steps, 1),
         "temporal_loss": total_temporal_loss / max(total_steps, 1),
+        "raw_threat_loss": total_raw_threat_loss / max(total_steps, 1),
+        "raw_attack_loss": total_raw_attack_loss / max(total_steps, 1),
+        "raw_temporal_loss": total_raw_temporal_loss / max(total_steps, 1),
         "valid_steps": int(total_steps),
+        "samples": int(total_steps),
     }
 
 
@@ -419,12 +642,12 @@ def append_csv_row(path, row, write_header=False):
         f.write(line + "\n")
 
 
-def save_checkpoint(path, model, optimizer, epoch, best_val_loss, args):
+def save_checkpoint(path, model, optimizer_state, epoch, best_val_loss, args):
     path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
         {
             "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
+            "optimizer_state_dict": optimizer_state,
             "epoch": epoch,
             "best_val_loss": best_val_loss,
             "args": vars(args),
@@ -438,6 +661,39 @@ def build_run_dir(args):
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     run_name = f"run-{timestamp}-seed{args.seed}"
     return save_root / args.experiment_name / run_name
+
+
+def format_round_log(
+    epoch,
+    epochs,
+    mini_batch_index,
+    mini_batch_count,
+    global_round,
+    total_rounds,
+    val_metrics,
+    train_metrics,
+    elapsed,
+    train_mode,
+):
+    return (
+        f"\n"
+        f"[Epoch {epoch:03d}/{epochs:03d} | Round {global_round:04d}/{total_rounds:04d} | "
+        f"Mini-batch {mini_batch_index:02d}/{mini_batch_count:02d} | Mode {train_mode}]\n"
+        f"  Val-before-train : loss={val_metrics['loss']:.6f} | threat={val_metrics['threat_loss']:.6f} | "
+        f"attack={val_metrics['attack_loss']:.6f} | temporal={val_metrics['temporal_loss']:.6f} | "
+        f"threat_R={val_metrics['threat_r']:.4f} | attack_R={val_metrics['attack_r']:.4f} | "
+        f"samples={val_metrics['samples']}\n"
+        f"  Train            : loss={train_metrics['loss']:.6f} | threat={train_metrics['threat_loss']:.6f} | "
+        f"attack={train_metrics['attack_loss']:.6f} | temporal={train_metrics['temporal_loss']:.6f} | "
+        f"samples={train_metrics['samples']}\n"
+        f"  Time             : {elapsed:.2f}s"
+    )
+
+
+def collect_optimizer_state(train_mode, optimizer, optimizers):
+    if train_mode == "split":
+        return {name: opt.state_dict() for name, opt in optimizers.items()}
+    return optimizer.state_dict()
 
 
 def dump_config(path, args, dataset_paths, stores, datasets=None):
@@ -460,7 +716,7 @@ def dump_config(path, args, dataset_paths, stores, datasets=None):
         payload["chunk_summary"] = {
             "chunk_length": int(args.chunk_length),
             "chunk_stride": int(args.chunk_stride),
-            "train_mini_batches": int(args.train_mini_batches),
+            "mini_batches": int(args.mini_batches),
             "train_chunks": int(len(datasets["train"])),
             "val_chunks": int(len(datasets["val"])),
             "test_chunks": int(len(datasets["test"])),
@@ -487,10 +743,11 @@ def get_parser():
     parser.add_argument("--weight-decay", type=float, default=0.0, help="Adam weight decay.")
     parser.add_argument("--max-grad-norm", type=float, default=2.0, help="Gradient clipping max norm.")
     parser.add_argument(
-        "--use-temporal-loss",
-        type=int,
-        default=1,
-        help="Whether to use temporal loss. 1 enables it, 0 disables it.",
+        "--train-mode",
+        type=str,
+        default="joint",
+        choices=("heads_only", "joint", "split"),
+        help="Training mode: heads_only uses threat/attack only; joint trains temporal+threat+attack together; split updates backbone by temporal loss and heads by their own losses.",
     )
     parser.add_argument("--threat-loss-weight", type=float, default=1.0, help="Weight for threat regression loss.")
     parser.add_argument("--attack-loss-weight", type=float, default=1.0, help="Weight for attack regression loss.")
@@ -501,10 +758,10 @@ def get_parser():
     parser.add_argument("--chunk-length", type=int, default=32, help="Sliding-window chunk length on the time axis.")
     parser.add_argument("--chunk-stride", type=int, default=8, help="Sliding-window stride on the time axis.")
     parser.add_argument(
-        "--train-mini-batches",
+        "--mini-batches",
         type=int,
         default=1,
-        help="Split all train chunks into this many partitions and train one partition per epoch. 1 uses all train chunks each epoch.",
+        help="Split train/val chunks into this many partitions and run one val-train pair per partition in each epoch.",
     )
     parser.add_argument(
         "--sample-stride",
@@ -526,7 +783,8 @@ def get_parser():
 def main(args):
     parser = get_parser()
     all_args = parser.parse_args(args)
-    use_temporal_loss = bool(int(all_args.use_temporal_loss))
+    train_mode = all_args.train_mode
+    use_temporal_loss = train_mode != "heads_only"
 
     if all_args.batch_size != 1:
         raise ValueError("Current sliding-window ATTN training supports batch_size=1 only.")
@@ -567,11 +825,18 @@ def main(args):
     obs_space, act_space = build_spaces(stores["train"])
     model_args = AeroTAFATTNArgs(all_args)
     model = PPOAeroTAFATTN(model_args, obs_space, act_space, device=device)
-    optimizer = torch.optim.Adam(
-        model.parameters(),
-        lr=all_args.lr,
-        weight_decay=all_args.weight_decay,
-    )
+
+    if train_mode == "split":
+        optimizers, backbone_params, threat_head_params, attack_head_params = build_split_optimizers(model, all_args)
+        optimizer = None
+    else:
+        optimizer = torch.optim.Adam(
+            model.parameters(),
+            lr=all_args.lr,
+            weight_decay=all_args.weight_decay,
+        )
+        optimizers = {}
+        backbone_params = threat_head_params = attack_head_params = None
 
     datasets = {
         "train": AeroTAFATTNChunkDataset(stores["train"], all_args.chunk_length, all_args.chunk_stride),
@@ -579,16 +844,13 @@ def main(args):
         "test": AeroTAFATTNChunkDataset(stores["test"], all_args.chunk_length, all_args.chunk_stride),
     }
 
-    loaders = {
-        "test_full": DataLoader(
-            datasets["test"],
-            batch_size=all_args.batch_size,
-            shuffle=False,
-            num_workers=all_args.num_workers,
-            pin_memory=(device.type == "cuda"),
-            collate_fn=episode_collate_fn,
-        ),
-    }
+    test_loader = build_loader(
+        datasets["test"],
+        batch_size=all_args.batch_size,
+        shuffle=False,
+        num_workers=all_args.num_workers,
+        device=device,
+    )
 
     run_dir = build_run_dir(all_args)
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -598,6 +860,9 @@ def main(args):
     config_path = run_dir / "config.json"
     test_metrics_path = run_dir / "test_metrics.json"
     dump_config(config_path, all_args, dataset_paths, stores, datasets)
+
+    effective_mini_batches = max(1, min(all_args.mini_batches, len(datasets["train"]), len(datasets["val"])))
+    total_rounds = all_args.epochs * effective_mini_batches
 
     logging.info(f"device: {device}")
     logging.info(f"dataset dir: {normalize_path(dataset_dir)}")
@@ -613,13 +878,18 @@ def main(args):
         f"(sliding window with overlap={max(all_args.chunk_length - all_args.chunk_stride, 0)})"
     )
     logging.info(
-        f"loss weights: threat={all_args.threat_loss_weight}, "
-        f"attack={all_args.attack_loss_weight}, temporal={all_args.temporal_loss_weight} "
-        f"(use_temporal_loss={int(use_temporal_loss)})"
+        f"train mode: {train_mode} | use_temporal_loss={int(use_temporal_loss)} | "
+        f"mini-batches per epoch={effective_mini_batches} | total paired rounds={total_rounds}"
     )
     logging.info(
-        f"train mini-batches per full train-chunk cycle: {max(1, min(all_args.train_mini_batches, len(datasets['train'])))}"
+        f"loss weights: threat={all_args.threat_loss_weight}, attack={all_args.attack_loss_weight}, "
+        f"temporal={all_args.temporal_loss_weight}"
     )
+    if train_mode == "split":
+        logging.info(
+            f"parameter groups: backbone={len(backbone_params)}, threat_head={len(threat_head_params)}, "
+            f"attack_head={len(attack_head_params)}"
+        )
     logging.info(
         f"train episodes: {len(stores['train'])}, steps: {stores['train'].kept_step_count}, chunks: {len(datasets['train'])}"
     )
@@ -629,110 +899,168 @@ def main(args):
     logging.info(
         f"test episodes: {len(stores['test'])}, steps: {stores['test'].kept_step_count}, chunks: {len(datasets['test'])}"
     )
+    logging.info("round order: validate one val subset -> train one train subset")
 
     best_val_loss = float("inf")
 
     for epoch in range(1, all_args.epochs + 1):
-        start_time = time.time()
+        train_subsets = build_epoch_minibatch_subsets(datasets["train"], effective_mini_batches, epoch, all_args.seed)
+        val_subsets = build_epoch_minibatch_subsets(datasets["val"], effective_mini_batches, epoch, all_args.seed + 100000)
 
-        train_subset, mini_batch_index, effective_mini_batches, train_chunks_used = build_train_subset_dataset(
-            datasets["train"],
-            all_args.train_mini_batches,
-            epoch,
-            all_args.seed,
-        )
-        val_subset, val_mini_batch_index, val_effective_mini_batches, val_chunks_used = build_epoch_subset_dataset(
-            datasets["val"],
-            all_args.train_mini_batches,
-            epoch,
-            all_args.seed,
-            seed_offset=100000,
-        )
-        train_loader = DataLoader(
-            train_subset,
-            batch_size=all_args.batch_size,
-            shuffle=True,
-            num_workers=all_args.num_workers,
-            pin_memory=(device.type == "cuda"),
-            collate_fn=episode_collate_fn,
-        )
-        val_loader = DataLoader(
-            val_subset,
-            batch_size=all_args.batch_size,
-            shuffle=False,
-            num_workers=all_args.num_workers,
-            pin_memory=(device.type == "cuda"),
-            collate_fn=episode_collate_fn,
-        )
+        for mini_batch_index, (val_subset, train_subset) in enumerate(zip(val_subsets, train_subsets), start=1):
+            global_round = (epoch - 1) * effective_mini_batches + mini_batch_index
+            round_start = time.time()
 
-        train_metrics = train_one_epoch(
-            model=model,
-            optimizer=optimizer,
-            data_loader=train_loader,
-            device=device,
-            max_grad_norm=all_args.max_grad_norm,
-            threat_loss_weight=all_args.threat_loss_weight,
-            attack_loss_weight=all_args.attack_loss_weight,
-            temporal_loss_weight=all_args.temporal_loss_weight,
-            use_temporal_loss=use_temporal_loss,
-        )
-        val_metrics = evaluate(
-            model=model,
-            data_loader=val_loader,
-            device=device,
-            threat_loss_weight=all_args.threat_loss_weight,
-            attack_loss_weight=all_args.attack_loss_weight,
-            temporal_loss_weight=all_args.temporal_loss_weight,
-            use_temporal_loss=use_temporal_loss,
-        )
-        elapsed = time.time() - start_time
-
-        row = {
-            "epoch": epoch,
-            "train_loss": f"{train_metrics['loss']:.8f}",
-            "train_threat_loss": f"{train_metrics['threat_loss']:.8f}",
-            "train_attack_loss": f"{train_metrics['attack_loss']:.8f}",
-            "train_temporal_loss": f"{train_metrics['temporal_loss']:.8f}",
-            "val_loss": f"{val_metrics['loss']:.8f}",
-            "val_threat_loss": f"{val_metrics['threat_loss']:.8f}",
-            "val_attack_loss": f"{val_metrics['attack_loss']:.8f}",
-            "val_temporal_loss": f"{val_metrics['temporal_loss']:.8f}",
-            "mini_batch_index": mini_batch_index,
-            "mini_batch_total": effective_mini_batches,
-            "val_mini_batch_index": val_mini_batch_index,
-            "val_mini_batch_total": val_effective_mini_batches,
-            "train_valid_steps": train_metrics["valid_steps"],
-            "val_valid_steps": val_metrics["valid_steps"],
-            "train_chunks_used": train_chunks_used,
-            "train_chunks_total": len(datasets["train"]),
-            "val_chunks_used": val_chunks_used,
-            "val_chunks_total": len(datasets["val"]),
-            "time_sec": f"{elapsed:.4f}",
-        }
-        append_csv_row(log_path, row, write_header=(epoch == 1))
-
-        if epoch % all_args.log_interval == 0 or epoch == 1 or epoch == all_args.epochs:
-            logging.info(
-                f"epoch {epoch:03d} | "
-                f"mini-batch {mini_batch_index:02d}/{effective_mini_batches:02d} "
-                f"(chunks={train_chunks_used}/{len(datasets['train'])}) | "
-                f"val-batch {val_mini_batch_index:02d}/{val_effective_mini_batches:02d} "
-                f"(chunks={val_chunks_used}/{len(datasets['val'])}) | "
-                f"train loss={train_metrics['loss']:.6f} "
-                f"(threat={train_metrics['threat_loss']:.6f}, attack={train_metrics['attack_loss']:.6f}, temporal={train_metrics['temporal_loss']:.6f}) | "
-                f"val loss={val_metrics['loss']:.6f} "
-                f"(threat={val_metrics['threat_loss']:.6f}, attack={val_metrics['attack_loss']:.6f}, temporal={val_metrics['temporal_loss']:.6f}) | "
-                f"time={elapsed:.2f}s"
+            val_loader = build_loader(
+                val_subset,
+                batch_size=all_args.batch_size,
+                shuffle=False,
+                num_workers=all_args.num_workers,
+                device=device,
+            )
+            val_metrics = evaluate(
+                model=model,
+                data_loader=val_loader,
+                device=device,
+                threat_loss_weight=all_args.threat_loss_weight,
+                attack_loss_weight=all_args.attack_loss_weight,
+                temporal_loss_weight=all_args.temporal_loss_weight,
+                use_temporal_loss=use_temporal_loss,
+                return_stats=True,
             )
 
-        if val_metrics["loss"] < best_val_loss:
-            best_val_loss = val_metrics["loss"]
-            save_checkpoint(best_ckpt_path, model, optimizer, epoch, best_val_loss, all_args)
-            logging.info(f"best checkpoint updated: {normalize_path(best_ckpt_path)}")
+            if val_metrics["loss"] < best_val_loss:
+                best_val_loss = val_metrics["loss"]
+                save_checkpoint(
+                    best_ckpt_path,
+                    model,
+                    collect_optimizer_state(train_mode, optimizer, optimizers),
+                    global_round - 1,
+                    best_val_loss,
+                    all_args,
+                )
+                logging.info(f"best checkpoint updated at round {global_round}: {normalize_path(best_ckpt_path)}")
 
-        if epoch % all_args.save_interval == 0 or epoch == all_args.epochs:
-            save_checkpoint(latest_ckpt_path, model, optimizer, epoch, best_val_loss, all_args)
-            logging.info(f"latest checkpoint saved: {normalize_path(latest_ckpt_path)}")
+            train_loader = build_loader(
+                train_subset,
+                batch_size=all_args.batch_size,
+                shuffle=True,
+                num_workers=all_args.num_workers,
+                device=device,
+            )
+            train_metrics = train_one_round(
+                model=model,
+                optimizer=optimizer,
+                optimizers=optimizers,
+                train_mode=train_mode,
+                data_loader=train_loader,
+                device=device,
+                max_grad_norm=all_args.max_grad_norm,
+                threat_loss_weight=all_args.threat_loss_weight,
+                attack_loss_weight=all_args.attack_loss_weight,
+                temporal_loss_weight=all_args.temporal_loss_weight,
+                use_temporal_loss=use_temporal_loss,
+                backbone_params=backbone_params,
+                threat_head_params=threat_head_params,
+                attack_head_params=attack_head_params,
+            )
+            elapsed = time.time() - round_start
+
+            row = {
+                "epoch": epoch,
+                "mini_batch_index": mini_batch_index,
+                "mini_batch_total": effective_mini_batches,
+                "global_round": global_round,
+                "total_rounds": total_rounds,
+                "train_mode": train_mode,
+                "val_before_train_loss": f"{val_metrics['loss']:.8f}",
+                "val_before_train_threat_loss": f"{val_metrics['threat_loss']:.8f}",
+                "val_before_train_attack_loss": f"{val_metrics['attack_loss']:.8f}",
+                "val_before_train_temporal_loss": f"{val_metrics['temporal_loss']:.8f}",
+                "val_before_train_raw_threat_loss": f"{val_metrics['raw_threat_loss']:.8f}",
+                "val_before_train_raw_attack_loss": f"{val_metrics['raw_attack_loss']:.8f}",
+                "val_before_train_raw_temporal_loss": f"{val_metrics['raw_temporal_loss']:.8f}",
+                "val_before_train_threat_r": f"{val_metrics['threat_r']:.8f}",
+                "val_before_train_attack_r": f"{val_metrics['attack_r']:.8f}",
+                "val_samples": val_metrics["samples"],
+                "train_loss": f"{train_metrics['loss']:.8f}",
+                "train_threat_loss": f"{train_metrics['threat_loss']:.8f}",
+                "train_attack_loss": f"{train_metrics['attack_loss']:.8f}",
+                "train_temporal_loss": f"{train_metrics['temporal_loss']:.8f}",
+                "train_raw_threat_loss": f"{train_metrics['raw_threat_loss']:.8f}",
+                "train_raw_attack_loss": f"{train_metrics['raw_attack_loss']:.8f}",
+                "train_raw_temporal_loss": f"{train_metrics['raw_temporal_loss']:.8f}",
+                "train_samples": train_metrics["samples"],
+                "time_sec": f"{elapsed:.4f}",
+            }
+            append_csv_row(log_path, row, write_header=(global_round == 1))
+
+            if (
+                epoch % all_args.log_interval == 0
+                or epoch == 1
+                or epoch == all_args.epochs
+                or mini_batch_index == 1
+            ):
+                logging.info(
+                    format_round_log(
+                        epoch=epoch,
+                        epochs=all_args.epochs,
+                        mini_batch_index=mini_batch_index,
+                        mini_batch_count=effective_mini_batches,
+                        global_round=global_round,
+                        total_rounds=total_rounds,
+                        val_metrics=val_metrics,
+                        train_metrics=train_metrics,
+                        elapsed=elapsed,
+                        train_mode=train_mode,
+                    )
+                )
+
+            if global_round % all_args.save_interval == 0 or global_round == total_rounds:
+                save_checkpoint(
+                    latest_ckpt_path,
+                    model,
+                    collect_optimizer_state(train_mode, optimizer, optimizers),
+                    global_round,
+                    best_val_loss,
+                    all_args,
+                )
+                logging.info(f"latest checkpoint saved: {normalize_path(latest_ckpt_path)}")
+
+    final_val_loader = build_loader(
+        datasets["val"],
+        batch_size=all_args.batch_size,
+        shuffle=False,
+        num_workers=all_args.num_workers,
+        device=device,
+    )
+    final_val_metrics = evaluate(
+        model=model,
+        data_loader=final_val_loader,
+        device=device,
+        threat_loss_weight=all_args.threat_loss_weight,
+        attack_loss_weight=all_args.attack_loss_weight,
+        temporal_loss_weight=all_args.temporal_loss_weight,
+        use_temporal_loss=use_temporal_loss,
+        return_stats=True,
+    )
+    if final_val_metrics["loss"] < best_val_loss:
+        best_val_loss = final_val_metrics["loss"]
+        save_checkpoint(
+            best_ckpt_path,
+            model,
+            collect_optimizer_state(train_mode, optimizer, optimizers),
+            total_rounds,
+            best_val_loss,
+            all_args,
+        )
+        logging.info(f"best checkpoint updated after final val: {normalize_path(best_ckpt_path)}")
+
+    logging.info(
+        f"final val loss={final_val_metrics['loss']:.6f} | threat={final_val_metrics['threat_loss']:.6f} | "
+        f"attack={final_val_metrics['attack_loss']:.6f} | temporal={final_val_metrics['temporal_loss']:.6f} | "
+        f"threat_R={final_val_metrics['threat_r']:.4f} | attack_R={final_val_metrics['attack_r']:.4f}"
+    )
 
     if best_ckpt_path.exists():
         checkpoint = torch.load(best_ckpt_path, map_location=device)
@@ -741,26 +1069,27 @@ def main(args):
 
     test_metrics = evaluate(
         model=model,
-        data_loader=loaders["test_full"],
+        data_loader=test_loader,
         device=device,
         threat_loss_weight=all_args.threat_loss_weight,
         attack_loss_weight=all_args.attack_loss_weight,
         temporal_loss_weight=all_args.temporal_loss_weight,
         use_temporal_loss=use_temporal_loss,
+        return_stats=True,
     )
     with open(test_metrics_path, "w", encoding="utf-8") as f:
         json.dump(test_metrics, f, indent=2, ensure_ascii=False)
 
     logging.info(
-        f"test loss={test_metrics['loss']:.6f} "
-        f"(threat={test_metrics['threat_loss']:.6f}, attack={test_metrics['attack_loss']:.6f}, temporal={test_metrics['temporal_loss']:.6f})"
+        f"test loss={test_metrics['loss']:.6f} | threat={test_metrics['threat_loss']:.6f} | "
+        f"attack={test_metrics['attack_loss']:.6f} | temporal={test_metrics['temporal_loss']:.6f} | "
+        f"threat_R={test_metrics['threat_r']:.4f} | attack_R={test_metrics['attack_r']:.4f}"
     )
     logging.info(f"test metrics saved: {normalize_path(test_metrics_path)}")
     logging.info("Done.")
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
     default_args = [
         "--dataset-dir", "datasets/aerotaf/4v4_shoot_mappo_pool_stage1/processed_stage1_K20_field_temporal",
         "--experiment-name", "AeroTAF-ATTN-Stage1-K20-SlidingWindow",
@@ -768,11 +1097,12 @@ if __name__ == "__main__":
         "--seed", "1",
         "--n-training-threads", "1",
         "--batch-size", "1",
-        "--epochs", "50",
-        "--lr", "1e-4",
+        "--epochs", "10",
+        "--mini-batches", "10",
+        "--lr", "3e-5",
         "--weight-decay", "1e-4",
         "--max-grad-norm", "2.0",
-        "--use-temporal-loss", "1",
+        "--train-mode", "joint",
         "--threat-loss-weight", "1.0",
         "--attack-loss-weight", "8.0",
         "--temporal-loss-weight", "0.5",
@@ -781,7 +1111,6 @@ if __name__ == "__main__":
         "--log-interval", "1",
         "--chunk-length", "50",
         "--chunk-stride", "30",
-        "--train-mini-batches", "10",
         "--sample-stride", "1",
         "--num-agents", "4",
         "--activation-id", "1",
@@ -794,4 +1123,5 @@ if __name__ == "__main__":
         # "--cuda",
         # "--cuda-device-id", "0",
     ]
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main(sys.argv[1:] if len(sys.argv) > 1 else default_args)
