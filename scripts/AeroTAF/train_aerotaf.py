@@ -773,7 +773,7 @@ def main(args):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     default_args = [
-        "--dataset-dir", "datasets/aerotaf/4v4_shoot_mappo_pool_stage1/processed_stage1_K20",
+        "--dataset-dir", "datasets/aerotaf/4v4_shoot_mappo_pool_stage1/processed_stage1_K20_field_temporal",
         "--experiment-name", "AeroTAF-Stage1-K20-Baseline",
         "--save-root", "scripts/results/AeroTAF",
         "--seed", "1",

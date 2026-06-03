@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import argparse
 import json
+import logging
 import random
 import sys
 import time
@@ -11,11 +12,13 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+
 try:
     import numpy as np
 except ModuleNotFoundError as exc:
-    print(f"Error: missing dependency: {exc}")
-    print("Please activate the same Python environment used by this project, then run this script again.")
+    logging.info(f"Error: missing dependency: {exc}")
+    logging.info("Please activate the same Python environment used by this project, then run this script again.")
     sys.exit(1)
 
 from envs.JSBSim.situation.field import FieldCalculator
@@ -371,21 +374,21 @@ def main(args):
     episode_items = []
     failed_files = []
 
-    print(f"Raw dir: {raw_dir}")
-    print(f"Output dir: {output_dir}")
-    print(f"Raw files: {len(raw_files)}")
+    logging.info(f"Raw dir: {raw_dir}")
+    logging.info(f"Output dir: {output_dir}")
+    logging.info(f"Raw files: {len(raw_files)}")
 
     for index, npz_path in enumerate(raw_files, start=1):
         try:
             item = load_and_process_episode(npz_path, field_calculator)
             episode_items.append(item)
-            print(
+            logging.info(
                 f"[{index}/{len(raw_files)}] ok: {npz_path.name}, "
                 f"T={item['obs'].shape[0]}, pair_type={item['meta']['pair_type']}, seed={item['meta']['random_seed']}"
             )
         except Exception as exc:
             failed_files.append({"source_file": normalize_path(npz_path), "error": repr(exc)})
-            print(f"[{index}/{len(raw_files)}] failed: {npz_path.name}, error={repr(exc)}")
+            logging.info(f"[{index}/{len(raw_files)}] failed: {npz_path.name}, error={repr(exc)}")
 
     if not episode_items:
         raise RuntimeError("No valid raw episodes were processed.")
@@ -441,21 +444,21 @@ def main(args):
     with open(output_dir / "stage1_split_manifest.json", "w", encoding="utf-8") as f:
         json.dump(split_manifest, f, indent=2, ensure_ascii=False)
 
-    print("")
-    print("Stage-1 split summary:")
-    print(split_result["split_info"])
-    print(f"Saved: {output_dir / 'train.npz'}")
-    print(f"Saved: {output_dir / 'val_id.npz'}")
-    print(f"Saved: {output_dir / 'test_pair_ood.npz'}")
-    print(f"Saved: {output_dir / 'val.npz'}")
-    print(f"Saved: {output_dir / 'test.npz'}")
-    print(f"Saved manifest: {output_dir / 'stage1_split_manifest.json'}")
+    logging.info("")
+    logging.info("Stage-1 split summary:")
+    logging.info(split_result["split_info"])
+    logging.info(f"Saved: {output_dir / 'train.npz'}")
+    logging.info(f"Saved: {output_dir / 'val_id.npz'}")
+    logging.info(f"Saved: {output_dir / 'test_pair_ood.npz'}")
+    logging.info(f"Saved: {output_dir / 'val.npz'}")
+    logging.info(f"Saved: {output_dir / 'test.npz'}")
+    logging.info(f"Saved manifest: {output_dir / 'stage1_split_manifest.json'}")
 
 
 if __name__ == "__main__":
     default_args = [
         "--raw-dir", "datasets/aerotaf/4v4_shoot_mappo_pool_stage1/raw",
-        "--output-dir", "datasets/aerotaf/4v4_shoot_mappo_pool_stage1/processed_stage1_K20_field_temporal",
+        "--output-dir", "datasets/aerotaf/4v4_shoot_mappo_pool_stage1/processed_stage1_K20",
         "--split-seed", "1",
         "--test-pair-ratio", "0.15",
         "--val-seed-ratio", "0.2",
