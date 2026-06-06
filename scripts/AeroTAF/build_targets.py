@@ -24,7 +24,7 @@ except ModuleNotFoundError as exc:
 from envs.JSBSim.situation.field import FieldCalculator
 from scripts.AeroTAF.collector.path_utils import canonicalize_task_key, normalize_path, resolve_project_path
 from scripts.AeroTAF.data.annotation import annotate_splits, fit_annotation_thresholds
-from scripts.AeroTAF.data.schema import AnnotationConfig, BUCKET_NAMES, EVENT_NAMES, bucket_summary
+from scripts.AeroTAF.data.schema import AnnotationConfig, EVENT_NAMES, SAMPLE_LABEL_NAMES, multi_hot_summary
 from scripts.AeroTAF.data.split import split_stage1_episodes
 
 
@@ -191,7 +191,7 @@ def combine_episode_items(items):
     threat_targets = np.concatenate([item["threat_targets"] for item in items], axis=0).astype(np.float32, copy=False)
     attack_targets = np.concatenate([item["attack_targets"] for item in items], axis=0).astype(np.float32, copy=False)
     temporal_targets = np.concatenate([item["temporal_targets"] for item in items], axis=0).astype(np.float32, copy=False)
-    sample_bucket = np.concatenate([item["sample_bucket"] for item in items], axis=0).astype(np.int16, copy=False)
+    sample_multi_hot = np.concatenate([item["sample_multi_hot"] for item in items], axis=0).astype(np.float32, copy=False)
     sample_priority = np.concatenate([item["sample_priority"] for item in items], axis=0).astype(np.float32, copy=False)
     sample_weight = np.concatenate([item["sample_weight"] for item in items], axis=0).astype(np.float32, copy=False)
     event_flags = np.concatenate([item["event_flags"] for item in items], axis=0).astype(np.float32, copy=False)
@@ -219,13 +219,13 @@ def combine_episode_items(items):
         "threat_targets": threat_targets,
         "attack_targets": attack_targets,
         "temporal_targets": temporal_targets,
-        "sample_bucket": sample_bucket,
+        "sample_multi_hot": sample_multi_hot,
+        "sample_label_names": np.asarray(SAMPLE_LABEL_NAMES, dtype=object),
         "sample_priority": sample_priority,
         "sample_weight": sample_weight,
         "event_flags": event_flags,
         "event_mask": event_mask,
         "event_names": np.asarray(EVENT_NAMES, dtype=object),
-        "bucket_names": np.asarray([BUCKET_NAMES[i] for i in sorted(BUCKET_NAMES)], dtype=object),
         "field_delta_features": field_delta_features,
         "field_delta_feature_names": np.asarray(
             ["delta_threat", "delta_attack", "future_delta_threat", "future_delta_attack", "action_delta"],
@@ -269,15 +269,15 @@ def build_pair_summary(items):
 
 def build_annotation_summary(items):
     if not items:
-        return {"bucket_counts": {}, "event_counts": {}, "sample_count": 0}
-    sample_bucket = np.concatenate([item["sample_bucket"] for item in items], axis=0)
+        return {"label_counts": {}, "event_counts": {}, "sample_count": 0}
+    sample_multi_hot = np.concatenate([item["sample_multi_hot"] for item in items], axis=0)
     event_flags = np.concatenate([item["event_flags"] for item in items], axis=0)
     priority = np.concatenate([item["sample_priority"].reshape(-1) for item in items], axis=0)
     weight = np.concatenate([item["sample_weight"].reshape(-1) for item in items], axis=0)
     return {
-        "bucket_counts": bucket_summary(sample_bucket),
+        "label_counts": multi_hot_summary(sample_multi_hot),
         "event_counts": {name: int(event_flags[:, idx].sum()) for idx, name in enumerate(EVENT_NAMES)},
-        "sample_count": int(sample_bucket.shape[0]),
+        "sample_count": int(sample_multi_hot.shape[0]),
         "priority_mean": float(np.mean(priority)),
         "weight_mean": float(np.mean(weight)),
     }
@@ -482,7 +482,7 @@ def main(args):
         "target_annotation": {
             "config": annotation_config.to_dict(),
             "thresholds": thresholds,
-            "bucket_names": BUCKET_NAMES,
+            "sample_label_names": SAMPLE_LABEL_NAMES,
             "event_names": EVENT_NAMES,
             "summary": annotation_summary,
         },

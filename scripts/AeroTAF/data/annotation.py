@@ -15,15 +15,15 @@ from envs.JSBSim.situation.field import (
     M_SUCCESS,
 )
 from scripts.AeroTAF.data.schema import (
-    BUCKET_ACTION_CHANGE,
-    BUCKET_BACKGROUND,
-    BUCKET_EVENT,
-    BUCKET_HIGH_ATTACK,
-    BUCKET_HIGH_CHANGE,
-    BUCKET_HIGH_THREAT,
     EVENT_NAMES,
+    LABEL_ACTION_CHANGE,
+    LABEL_EVENT,
+    LABEL_HIGH_ATTACK,
+    LABEL_HIGH_CHANGE,
+    LABEL_HIGH_THREAT,
+    SAMPLE_LABEL_NAMES,
     AnnotationConfig,
-    bucket_summary,
+    multi_hot_summary,
 )
 
 
@@ -297,12 +297,12 @@ def annotate_episode(item, thresholds, config: AnnotationConfig):
     )
     action_change = action_delta >= float(thresholds["action_change_threshold"])
 
-    sample_bucket = np.full(threat.shape[0], BUCKET_BACKGROUND, dtype=np.int16)
-    sample_bucket[action_change] = BUCKET_ACTION_CHANGE
-    sample_bucket[high_attack] = BUCKET_HIGH_ATTACK
-    sample_bucket[high_threat] = BUCKET_HIGH_THREAT
-    sample_bucket[high_change] = BUCKET_HIGH_CHANGE
-    sample_bucket[event_mask] = BUCKET_EVENT
+    sample_multi_hot = np.zeros((threat.shape[0], len(SAMPLE_LABEL_NAMES)), dtype=np.float32)
+    sample_multi_hot[action_change, LABEL_ACTION_CHANGE] = 1.0
+    sample_multi_hot[high_attack, LABEL_HIGH_ATTACK] = 1.0
+    sample_multi_hot[high_threat, LABEL_HIGH_THREAT] = 1.0
+    sample_multi_hot[high_change, LABEL_HIGH_CHANGE] = 1.0
+    sample_multi_hot[event_mask, LABEL_EVENT] = 1.0
 
     priority = np.full(threat.shape[0], float(config.priority_base), dtype=np.float32)
     priority += high_threat.astype(np.float32) * float(config.priority_high_threat_bonus)
@@ -317,14 +317,15 @@ def annotate_episode(item, thresholds, config: AnnotationConfig):
 
     item["event_flags"] = event_flags.astype(np.float32, copy=False)
     item["event_mask"] = event_mask.astype(np.float32).reshape(-1, 1)
-    item["sample_bucket"] = sample_bucket
+    item["sample_multi_hot"] = sample_multi_hot.astype(np.float32, copy=False)
+    item["sample_label_names"] = np.asarray(SAMPLE_LABEL_NAMES, dtype=object)
     item["sample_priority"] = priority.reshape(-1, 1)
     item["sample_weight"] = sample_weight.reshape(-1, 1)
     item["field_delta_features"] = np.stack(
         (delta_threat, delta_attack, future_delta_threat, future_delta_attack, action_delta),
         axis=-1,
     ).astype(np.float32, copy=False)
-    item["annotation_summary"] = bucket_summary(sample_bucket)
+    item["annotation_summary"] = multi_hot_summary(sample_multi_hot)
     return item
 
 def annotate_splits(split_result, thresholds, config: AnnotationConfig):

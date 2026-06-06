@@ -1,21 +1,19 @@
 from dataclasses import asdict, dataclass
 
 
-BUCKET_BACKGROUND = 0
-BUCKET_ACTION_CHANGE = 1
-BUCKET_HIGH_ATTACK = 2
-BUCKET_HIGH_THREAT = 3
-BUCKET_HIGH_CHANGE = 4
-BUCKET_EVENT = 5
+LABEL_ACTION_CHANGE = 0
+LABEL_HIGH_ATTACK = 1
+LABEL_HIGH_THREAT = 2
+LABEL_HIGH_CHANGE = 3
+LABEL_EVENT = 4
 
-BUCKET_NAMES = {
-    BUCKET_BACKGROUND: "background",
-    BUCKET_ACTION_CHANGE: "action_change",
-    BUCKET_HIGH_ATTACK: "high_attack",
-    BUCKET_HIGH_THREAT: "high_threat",
-    BUCKET_HIGH_CHANGE: "high_change",
-    BUCKET_EVENT: "event",
-}
+SAMPLE_LABEL_NAMES = [
+    "action_change",
+    "high_attack",
+    "high_threat",
+    "high_change",
+    "event",
+]
 
 EVENT_NAMES = [
     "incoming_missile",
@@ -68,8 +66,15 @@ class AnnotationConfig:
         return asdict(self)
 
 
-def bucket_summary(sample_bucket):
+def multi_hot_summary(sample_multi_hot):
     summary = {}
-    for bucket_id, name in BUCKET_NAMES.items():
-        summary[name] = int((sample_bucket == bucket_id).sum())
+    if sample_multi_hot.size == 0:
+        for name in SAMPLE_LABEL_NAMES:
+            summary[name] = 0
+        summary["background"] = 0
+        return summary
+
+    for idx, name in enumerate(SAMPLE_LABEL_NAMES):
+        summary[name] = int(sample_multi_hot[:, idx].sum())
+    summary["background"] = int((sample_multi_hot.sum(axis=1) <= 0.5).sum())
     return summary
