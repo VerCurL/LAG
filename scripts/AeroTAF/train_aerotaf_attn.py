@@ -1158,7 +1158,7 @@ if __name__ == "__main__":
         "--seed", "1",
         "--n-training-threads", "1",
         "--epochs", "20",
-        "--mini-windows", "1000",
+        "--mini-windows", "10",
         "--lr-temporal", "3e-5",
         "--lr-threat", "1e-4",
         "--lr-attack", "1e-4",
