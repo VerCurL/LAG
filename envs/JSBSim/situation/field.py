@@ -190,28 +190,45 @@ class FieldCalculator:
         ego = aircraft[ego_idx]
         AO_mat, TA_mat, R_mat = geom
 
-        # ⭐如果我机阵亡，不产生攻击场
+        # ⭐如果我机阵亡，不产生进攻场
         if ego[A_ALIVE] <= 0.5:
             return 0.0
 
-        enemies = [
+        # 初始敌机集合：不管当前是否存活，只按队伍归属统计
+        all_enemies = [
             j for j, row in enumerate(aircraft)
-            if row[A_TEAM] != ego[A_TEAM] and row[A_ALIVE] > 0.5
+            if row[A_TEAM] != ego[A_TEAM]
         ]
 
-        n_enemy = len(enemies)
-        if n_enemy == 0:
+        n_enemy_total = len(all_enemies)
+        if n_enemy_total == 0:
+            return 0.0
+
+        # 当前仍存活的敌机集合
+        alive_enemies = [
+            j for j in all_enemies
+            if aircraft[j, A_ALIVE] > 0.5
+        ]
+
+        n_enemy_alive = len(alive_enemies)
+
+        # 战果进度分：敌方少一架，基础进攻分至少增加 1 / 初始敌机数
+        progress_score = (n_enemy_total - n_enemy_alive) / n_enemy_total
+        progress_score = float(np.clip(progress_score, 0.0, 1.0))
+
+        # 敌方全灭，进攻场达到最大
+        if n_enemy_alive == 0:
             return 1.0
 
         c_nez = 0
         c_attack = 0
 
-        # 如果我机有剩余导弹，才会有能力产生攻击场
+        # 如果我机有剩余导弹，才计算当前对存活敌机的攻击包线 / NEZ 覆盖
         if ego[A_LEFT_MISSILES] > 0:
-            for j in enemies:
+            for j in alive_enemies:
                 enm = aircraft[j]
 
-                # 直接从预计算矩阵中读取 AO / TA / R
+                # 直接从预计算矩阵中读取 AO / R
                 AO = float(AO_mat[ego_idx, j])
                 R = float(R_mat[ego_idx, j])
                 closing = float(
@@ -221,25 +238,42 @@ class FieldCalculator:
                     )
                 )
 
-                # 1. 是否敌机进入我机的攻击区
+                # 敌机是否进入我机攻击区
                 c_attack += int(
                     self.r_min <= R <= self.r_attack
                     and AO <= self.theta_attack
                 )
 
-                # 2. 是否敌机进入我机的不可逃逸区
+                # 敌机是否进入我机不可逃逸区
                 c_nez += int(
                     R <= self.r_nez
                     and AO <= self.theta_nez
                     and closing > 0.0
                 )
 
-        hit_score = min(self.hit_count(snapshot, prev_snapshot, ego_idx) / n_enemy, 1.0)
-        missile_score = self.outgoing_missile_score(snapshot, ego_idx)
-        nez_score = min(c_nez / n_enemy, 1.0)
-        attack_score = min(c_attack / n_enemy, 1.0)
+        # hit_score 建议按初始敌机数归一化，而不是当前存活敌机数
+        hit_score = min(self.hit_count(snapshot, prev_snapshot, ego_idx) / n_enemy_total, 1.0)
 
-        return float(np.clip(0.35 * hit_score + 0.3 * missile_score + 0.2 * nez_score + 0.15 * attack_score, 0.0, 1.0))
+        # missile / NEZ / attack 仍然表达当前瞬时攻击能力
+        missile_score = self.outgoing_missile_score(snapshot, ego_idx)
+        nez_score = min(c_nez / n_enemy_alive, 1.0)
+        attack_score = min(c_attack / n_enemy_alive, 1.0)
+
+        dynamic_score = float(
+            np.clip(
+                0.35 * hit_score
+                + 0.3 * missile_score
+                + 0.2 * nez_score
+                + 0.15 * attack_score,
+                0.0,
+                1.0,
+            )
+        )
+
+        # 最终进攻场 = 已取得战果基础分 + 剩余空间内的瞬时进攻能力
+        final_score = progress_score + (1.0 - progress_score) * dynamic_score
+
+        return float(np.clip(final_score, 0.0, 1.0))
 
     def hit_count(self, snapshot, prev_snapshot, ego_idx):
         missiles = snapshot["missiles"]
