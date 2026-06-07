@@ -887,6 +887,7 @@ def main(argv):
     run_dir.mkdir(parents=True, exist_ok=True)
     config_path = run_dir / "config.json"
     train_log_path = run_dir / "train_log.csv"
+    epoch_log_path = run_dir / "epoch_log.csv"
     summary_path = run_dir / "summary_metrics.json"
     dump_config(config_path, args, dataset_paths, stores, datasets)
 
@@ -1000,6 +1001,7 @@ def main(argv):
             val_key_mini_metrics.append(val_key_metrics)
             mini_scores.append(mini_score)
 
+            is_best = mini_score < best_score
             if mini_score < best_score:
                 best_score = mini_score
                 best_epoch = epoch
@@ -1019,6 +1021,46 @@ def main(argv):
                     f"| temporal={saved['temporal'].name} threat={saved['threat'].name} attack={saved['attack'].name}"
                 )
 
+            mini_elapsed = time.time() - mini_start
+            mini_counts = mini_type_counts[mini_index - 1]
+            mini_row = {
+                "epoch": epoch,
+                "mini_index": mini_index,
+                "mini_total": len(mini_datasets),
+                "train_windows": int(mini_sample_counts[mini_index - 1]),
+                "val_natural_windows": int(val_natural_counts[mini_index - 1]),
+                "val_key_windows": int(val_key_counts[mini_index - 1]),
+                "train_event_windows": int(mini_counts.get("event", 0)),
+                "train_high_change_windows": int(mini_counts.get("high_change", 0)),
+                "train_high_field_windows": int(mini_counts.get("high_field", 0)),
+                "train_background_windows": int(mini_counts.get("background", 0)),
+                "train_loss": f"{mini_metrics['loss']:.8f}",
+                "train_temporal_loss": f"{mini_metrics['temporal_loss']:.8f}",
+                "train_threat_loss": f"{mini_metrics['threat_loss']:.8f}",
+                "train_attack_loss": f"{mini_metrics['attack_loss']:.8f}",
+                "val_natural_loss": f"{val_natural_metrics['loss']:.8f}",
+                "val_natural_temporal_loss": f"{val_natural_metrics['temporal_loss']:.8f}",
+                "val_natural_threat_loss": f"{val_natural_metrics['threat_loss']:.8f}",
+                "val_natural_attack_loss": f"{val_natural_metrics['attack_loss']:.8f}",
+                "val_key_loss": f"{val_key_metrics['loss']:.8f}",
+                "val_key_temporal_loss": f"{val_key_metrics['temporal_loss']:.8f}",
+                "val_key_threat_loss": f"{val_key_metrics['threat_loss']:.8f}",
+                "val_key_attack_loss": f"{val_key_metrics['attack_loss']:.8f}",
+                "val_key_threat_r": f"{val_key_metrics['threat_r']:.8f}",
+                "val_key_attack_r": f"{val_key_metrics['attack_r']:.8f}",
+                "score": f"{mini_score:.8f}",
+                "is_best": int(is_best),
+                "best_score": f"{best_score:.8f}",
+                "best_epoch": int(best_epoch),
+                "best_mini": int(best_mini),
+                "time_sec": f"{mini_elapsed:.4f}",
+            }
+            append_csv_row(
+                train_log_path,
+                mini_row,
+                write_header=(epoch == 1 and mini_index == 1),
+            )
+
             logging.info(
                 f"  [mini {mini_index:03d}/{len(mini_datasets):03d}] "
                 f"loss={mini_metrics['loss']:.4f} "
@@ -1030,8 +1072,8 @@ def main(argv):
                 f"| score={mini_score:.4f} "
                 f"| windows={mini_sample_counts[mini_index - 1]} "
                 f"| val=({val_natural_counts[mini_index - 1]}/{val_key_counts[mini_index - 1]}) "
-                f"| {format_type_counts(mini_type_counts[mini_index - 1])} "
-                f"| {time.time() - mini_start:.1f}s"
+                f"| {format_type_counts(mini_counts)} "
+                f"| {mini_elapsed:.1f}s"
             )
 
         train_metrics = merge_train_metrics(train_mini_metrics)
@@ -1042,7 +1084,7 @@ def main(argv):
         epoch_type_counts = sum_type_counts(mini_type_counts)
         elapsed = time.time() - epoch_start
 
-        row = {
+        epoch_row = {
             "epoch": epoch,
             "mini_windows": len(mini_sample_counts),
             "train_windows": sampled_count,
@@ -1071,7 +1113,7 @@ def main(argv):
             "best_mini": int(best_mini),
             "time_sec": f"{elapsed:.4f}",
         }
-        append_csv_row(train_log_path, row, write_header=(epoch == 1))
+        append_csv_row(epoch_log_path, epoch_row, write_header=(epoch == 1))
 
         saved = save_component_checkpoints(
             run_dir,
@@ -1157,8 +1199,8 @@ if __name__ == "__main__":
         "--save-root", "scripts/results/AeroTAF_ATTN",
         "--seed", "1",
         "--n-training-threads", "1",
-        "--epochs", "20",
-        "--mini-windows", "10",
+        "--epochs", "10",
+        "--mini-windows", "100",
         "--lr-temporal", "3e-5",
         "--lr-threat", "1e-4",
         "--lr-attack", "1e-4",
@@ -1172,10 +1214,10 @@ if __name__ == "__main__":
         "--chunk-length", "50",
         "--key-stride", "5",
         "--background-stride", "50",
-        "--train-ratio-event", "0.50",
-        "--train-ratio-high-change", "0.20",
-        "--train-ratio-high-field", "0.20",
-        "--train-ratio-background", "0.10",
+        "--train-ratio-event", "0.604",
+        "--train-ratio-high-change", "0.054",
+        "--train-ratio-high-field", "0.34",
+        "--train-ratio-background", "0.002",
         "--val-natural-score-weight", "0.40",
         "--val-key-score-weight", "0.60",
         "--num-agents", "4",
