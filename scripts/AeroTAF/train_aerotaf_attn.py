@@ -695,7 +695,7 @@ def main(args):
 
 if __name__ == "__main__":
     default_args = [
-        "--dataset-dir", "datasets/aerotaf/4v4_shoot_mappo_pool_stage1/processed_windows_K20_L50_S30",
+        "--dataset-dir", "datasets/aerotaf/4v4_shoot_mappo_pool_stage1/processed_stage1_K20_L50_S30",
         "--experiment-name", "AeroTAF-ATTN-Windows-K20-L50-S30",
         "--save-root", "scripts/results/AeroTAF_ATTN",
         "--seed", "1",
