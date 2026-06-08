@@ -34,7 +34,8 @@ class AeroTAFATTNLayer(nn.Module):
         activation_id,
         KQ_hidden_size: str,
         V_hidden_size: str,
-        output_hidden_size: str,
+        attn_output_hidden_size: str,
+        field_output_hidden_size: str,
     ):
         super(AeroTAFATTNLayer, self).__init__()
         self.agent_num = agent_num
@@ -43,7 +44,8 @@ class AeroTAFATTNLayer(nn.Module):
 
         self._KQ_hidden_size = [KQ_input_dim] + list(map(int, KQ_hidden_size.split(" ")))
         self._V_hidden_size = [V_input_dim] + list(map(int, V_hidden_size.split(" ")))
-        self._output_hidden_size = [V_input_dim] + list(map(int, output_hidden_size.split(" "))) + [1]
+        self._attn_output_hidden_size = [V_input_dim] + list(map(int, attn_output_hidden_size.split(" "))) + [V_input_dim]
+        self._field_output_hidden_size = [V_input_dim] + list(map(int, field_output_hidden_size.split(" "))) + [1]
 
         self._time_kq_dim = self._KQ_hidden_size[-1]
         self._time_v_dim = self._V_hidden_size[-1]
@@ -64,19 +66,19 @@ class AeroTAFATTNLayer(nn.Module):
         self.time_attn_norm = nn.LayerNorm(V_input_dim)
         self.time_ffn_module = MLPLayer(
             V_input_dim,
-            output_hidden_size + " " + str(V_input_dim),
+            attn_output_hidden_size + " " + str(V_input_dim),
             activation_id,
         )
         self.time_ffn_norm = nn.LayerNorm(V_input_dim)
 
         self.threat_output_module = MLPLayer(
             V_input_dim,
-            output_hidden_size + " " + str(self._output_hidden_size[-1]),
+            field_output_hidden_size + " " + str(self._field_output_hidden_size[-1]),
             activation_id,
         )
         self.attack_output_module = MLPLayer(
             V_input_dim,
-            output_hidden_size + " " + str(self._output_hidden_size[-1]),
+            field_output_hidden_size + " " + str(self._field_output_hidden_size[-1]),
             activation_id,
         )
 
@@ -351,7 +353,7 @@ class AeroTAFATTNLayer(nn.Module):
 
     @property
     def output_size(self):
-        return self._output_hidden_size[-1]
+        return self._field_output_hidden_size[-1]
 
     def get_info(self):
         return self.record_info
@@ -367,7 +369,8 @@ class AeroTAFATTNBase(nn.Module):
         time_head_num: int,
         KQ_hidden_size: str = "",
         V_hidden_size: str = "",
-        output_hidden_size: str = "",
+        attn_output_hidden_size: str = "",
+        field_output_hidden_size: str = "",
         activation_id=1,
         use_feature_normalization=False,
     ):
@@ -391,7 +394,8 @@ class AeroTAFATTNBase(nn.Module):
             activation_id=activation_id,
             KQ_hidden_size=KQ_hidden_size,
             V_hidden_size=V_hidden_size,
-            output_hidden_size=output_hidden_size,
+            attn_output_hidden_size=attn_output_hidden_size,
+            field_output_hidden_size=field_output_hidden_size,
         )
 
     def forward(self, s, a, seq_len=None, time_offset=0):
