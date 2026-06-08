@@ -221,11 +221,46 @@ def build_optimizers(model, args):
     return optimizer, {}, backbone_params, threat_head_params, attack_head_params
 
 
-def build_loader(dataset, args, device, shuffle):
+class WindowPartitionBatchSampler:
+    def __init__(self, dataset_size, num_batches, seed=1, epoch=0, shuffle=True):
+        self.dataset_size = int(dataset_size)
+        self.num_batches = max(1, min(int(num_batches), self.dataset_size))
+        self.seed = int(seed)
+        self.epoch = int(epoch)
+        self.shuffle = bool(shuffle)
+
+    def __len__(self):
+        return self.num_batches
+
+    def __iter__(self):
+        indices = list(range(self.dataset_size))
+        if self.shuffle:
+            random.Random(self.seed + self.epoch * 9973).shuffle(indices)
+        for part in np.array_split(np.asarray(indices, dtype=np.int64), self.num_batches):
+            if len(part) > 0:
+                yield part.tolist()
+
+
+def build_train_loader(dataset, args, device, epoch):
     return DataLoader(
         dataset,
-        batch_size=args.batch_size,
-        shuffle=shuffle,
+        batch_sampler=WindowPartitionBatchSampler(
+            dataset_size=len(dataset),
+            num_batches=args.effective_mini_epoch,
+            seed=args.seed,
+            epoch=epoch,
+            shuffle=True,
+        ),
+        num_workers=args.num_workers,
+        pin_memory=(device.type == "cuda"),
+    )
+
+
+def build_eval_loader(dataset, args, device):
+    return DataLoader(
+        dataset,
+        batch_size=args.eval_batch_size,
+        shuffle=False,
         num_workers=args.num_workers,
         pin_memory=(device.type == "cuda"),
         drop_last=False,
@@ -252,7 +287,7 @@ def prepare_batch(batch, device):
         temporal_targets = temporal_targets.reshape(batch_size * seq_len * num_agents, -1)
     else:
         temporal_targets = None
-    return obs, actions, threat_targets, attack_targets, temporal_targets, int(seq_len), int(batch_size * seq_len)
+    return obs, actions, threat_targets, attack_targets, temporal_targets, int(seq_len), int(batch_size), int(batch_size * seq_len)
 
 
 def weighted_loss(outputs, args, use_temporal_loss):
@@ -271,7 +306,7 @@ def weighted_loss(outputs, args, use_temporal_loss):
 
 
 def forward_losses(model, batch, device, args, use_temporal_loss):
-    obs, actions, threat_targets, attack_targets, temporal_targets, seq_len, step_count = prepare_batch(batch, device)
+    obs, actions, threat_targets, attack_targets, temporal_targets, seq_len, window_count, step_count = prepare_batch(batch, device)
     temporal_pred, threat_pred, attack_pred = model(obs, actions, seq_len=seq_len, time_offset=0)
     outputs = {
         "temporal_pred": temporal_pred,
@@ -280,6 +315,7 @@ def forward_losses(model, batch, device, args, use_temporal_loss):
         "temporal_targets": temporal_targets,
         "threat_targets": threat_targets,
         "attack_targets": attack_targets,
+        "window_count": window_count,
         "step_count": step_count,
     }
     loss, threat_loss, attack_loss, temporal_loss = weighted_loss(outputs, args, use_temporal_loss)
@@ -292,6 +328,20 @@ def forward_losses(model, batch, device, args, use_temporal_loss):
         }
     )
     return outputs
+
+
+def metrics_from_outputs(outputs, args):
+    return {
+        "loss": float(outputs["loss"].item()),
+        "threat_loss": float(args.threat_loss_weight * outputs["threat_loss"].item()),
+        "attack_loss": float(args.attack_loss_weight * outputs["attack_loss"].item()),
+        "temporal_loss": float(args.temporal_loss_weight * outputs["temporal_loss"].item()),
+        "raw_threat_loss": float(outputs["threat_loss"].item()),
+        "raw_attack_loss": float(outputs["attack_loss"].item()),
+        "raw_temporal_loss": float(outputs["temporal_loss"].item()),
+        "windows": int(outputs["window_count"]),
+        "steps": int(outputs["step_count"]),
+    }
 
 
 def compute_r_value(sse, target_sum, target_square_sum, count):
@@ -378,12 +428,43 @@ def new_totals():
     }
 
 
-def train_one_epoch(model, loader, device, args, optimizer, optimizers, parameter_groups, use_temporal_loss):
+def log_update(epoch, epochs, update_index, update_total, metrics, elapsed):
+    logging.info(
+        f"  [E{epoch:03d}/{epochs:03d} U{update_index:03d}/{update_total:03d}] "
+        f"loss={metrics['loss']:.5f} "
+        f"| raw(th/a/t)=({metrics['raw_threat_loss']:.5f}/"
+        f"{metrics['raw_attack_loss']:.5f}/"
+        f"{metrics['raw_temporal_loss']:.5f}) "
+        f"| weighted(th/a/t)=({metrics['threat_loss']:.5f}/"
+        f"{metrics['attack_loss']:.5f}/"
+        f"{metrics['temporal_loss']:.5f}) "
+        f"| windows={metrics['windows']} steps={metrics['steps']} "
+        f"| {elapsed:.2f}s"
+    )
+
+
+def train_one_epoch(
+    model,
+    loader,
+    device,
+    args,
+    optimizer,
+    optimizers,
+    parameter_groups,
+    use_temporal_loss,
+    epoch,
+    update_log_path,
+    write_update_header,
+):
     model.train()
     totals = new_totals()
+    update_count = 0
+    update_total = len(loader)
     backbone_params, threat_head_params, attack_head_params = parameter_groups
 
     for batch in loader:
+        update_start = time.time()
+        update_count += 1
         outputs = forward_losses(model, batch, device, args, use_temporal_loss)
 
         if args.train_mode == "split":
@@ -437,8 +518,32 @@ def train_one_epoch(model, loader, device, args, optimizer, optimizers, paramete
             optimizer.step()
 
         update_totals(totals, outputs, args)
+        update_metrics = metrics_from_outputs(outputs, args)
+        update_elapsed = time.time() - update_start
+        log_update(epoch, args.epochs, update_count, update_total, update_metrics, update_elapsed)
+        append_csv_row(
+            update_log_path,
+            {
+                "epoch": epoch,
+                "update": update_count,
+                "update_total": update_total,
+                "windows": update_metrics["windows"],
+                "steps": update_metrics["steps"],
+                "loss": f"{update_metrics['loss']:.8f}",
+                "raw_threat_loss": f"{update_metrics['raw_threat_loss']:.8f}",
+                "raw_attack_loss": f"{update_metrics['raw_attack_loss']:.8f}",
+                "raw_temporal_loss": f"{update_metrics['raw_temporal_loss']:.8f}",
+                "threat_loss": f"{update_metrics['threat_loss']:.8f}",
+                "attack_loss": f"{update_metrics['attack_loss']:.8f}",
+                "temporal_loss": f"{update_metrics['temporal_loss']:.8f}",
+                "time_sec": f"{update_elapsed:.4f}",
+            },
+            write_header=(write_update_header and update_count == 1),
+        )
 
-    return finalize_metrics(totals)
+    metrics = finalize_metrics(totals)
+    metrics["updates"] = int(update_count)
+    return metrics
 
 
 def evaluate(model, loader, device, args, use_temporal_loss):
@@ -509,6 +614,7 @@ def log_epoch(epoch, args, train_metrics, val_metrics, elapsed):
         f"[E{epoch:03d}/{args.epochs:03d}] "
         f"train={train_metrics['loss']:.5f} "
         f"| val={val_metrics['loss']:.5f} "
+        f"| updates={train_metrics.get('updates', 0)} "
         f"| raw(th/a/t)=({val_metrics['raw_threat_loss']:.5f}/"
         f"{val_metrics['raw_attack_loss']:.5f}/"
         f"{val_metrics['raw_temporal_loss']:.5f}) "
@@ -529,7 +635,7 @@ def get_parser():
     parser.add_argument("--cuda", action="store_true", default=False, help="Use CUDA if available.")
     parser.add_argument("--cuda-device-id", type=int, default=0, help="CUDA device id.")
     parser.add_argument("--n-training-threads", type=int, default=1, help="Torch training thread count.")
-    parser.add_argument("--batch-size", type=int, default=8, help="Number of prebuilt windows per training step.")
+    parser.add_argument("--mini-epoch", type=int, default=10, help="Number of parameter updates per epoch; each update uses roughly train_windows / mini_epoch windows.")
     parser.add_argument("--epochs", type=int, default=50, help="Training epochs.")
     parser.add_argument("--lr", type=float, default=3e-4, help="Learning rate.")
     parser.add_argument("--weight-decay", type=float, default=0.0, help="Adam weight decay.")
@@ -584,21 +690,24 @@ def main(args):
         "val": AeroTAFWindowStore(dataset_paths["val"], use_temporal_loss=use_temporal_loss),
         "test": AeroTAFWindowStore(dataset_paths["test"], use_temporal_loss=use_temporal_loss),
     }
+    all_args.effective_mini_epoch = max(1, min(int(all_args.mini_epoch), len(datasets["train"])))
+    all_args.eval_batch_size = max(1, int(np.ceil(len(datasets["train"]) / all_args.effective_mini_epoch)))
+
     obs_space, act_space = build_spaces(datasets["train"])
     model = PPOAeroTAFATTN(AeroTAFATTNArgs(all_args), obs_space, act_space, device=device)
     optimizer, optimizers, backbone_params, threat_head_params, attack_head_params = build_optimizers(model, all_args)
 
     loaders = {
-        "train": build_loader(datasets["train"], all_args, device, shuffle=True),
-        "val": build_loader(datasets["val"], all_args, device, shuffle=False),
-        "test": build_loader(datasets["test"], all_args, device, shuffle=False),
+        "val": build_eval_loader(datasets["val"], all_args, device),
+        "test": build_eval_loader(datasets["test"], all_args, device),
     }
 
     run_dir = build_run_dir(all_args)
     run_dir.mkdir(parents=True, exist_ok=True)
     best_ckpt_path = run_dir / "AeroTAF_ATTN_best.pt"
     latest_ckpt_path = run_dir / "AeroTAF_ATTN_latest.pt"
-    log_path = run_dir / "train_log.csv"
+    update_log_path = run_dir / "update_log.csv"
+    epoch_log_path = run_dir / "epoch_log.csv"
     config_path = run_dir / "config.json"
     test_metrics_path = run_dir / "test_metrics.json"
     dump_config(config_path, all_args, dataset_paths, datasets)
@@ -614,7 +723,8 @@ def main(args):
         f"| length={datasets['train'].window_length}"
     )
     logging.info(
-        f"train mode : {all_args.train_mode} | batch={all_args.batch_size} | epochs={all_args.epochs} | lr={all_args.lr:.2e}"
+        f"train mode : {all_args.train_mode} | mini_epoch={all_args.effective_mini_epoch} "
+        f"| windows/update~{all_args.eval_batch_size} | epochs={all_args.epochs} | lr={all_args.lr:.2e}"
     )
     logging.info(
         f"loss w     : threat={all_args.threat_loss_weight} attack={all_args.attack_loss_weight} temporal={all_args.temporal_loss_weight}"
@@ -625,20 +735,36 @@ def main(args):
         )
     logging.info("-" * 72)
 
+    initial_val_start = time.time()
     best_val_loss = float("inf")
     parameter_groups = (backbone_params, threat_head_params, attack_head_params)
+    initial_val_metrics = evaluate(model, loaders["val"], device, all_args, use_temporal_loss)
+    best_val_loss = initial_val_metrics["loss"]
+    save_checkpoint(best_ckpt_path, model, all_args, optimizer, optimizers, 0, best_val_loss)
+    logging.info(
+        f"[INIT] val={initial_val_metrics['loss']:.6f} "
+        f"| raw(th/a/t)=({initial_val_metrics['raw_threat_loss']:.6f}/"
+        f"{initial_val_metrics['raw_attack_loss']:.6f}/"
+        f"{initial_val_metrics['raw_temporal_loss']:.6f}) "
+        f"| R(th/a)=({initial_val_metrics['threat_r']:.4f}/{initial_val_metrics['attack_r']:.4f}) "
+        f"| {time.time() - initial_val_start:.1f}s"
+    )
 
     for epoch in range(1, all_args.epochs + 1):
         start_time = time.time()
+        train_loader = build_train_loader(datasets["train"], all_args, device, epoch)
         train_metrics = train_one_epoch(
             model=model,
-            loader=loaders["train"],
+            loader=train_loader,
             device=device,
             args=all_args,
             optimizer=optimizer,
             optimizers=optimizers,
             parameter_groups=parameter_groups,
             use_temporal_loss=use_temporal_loss,
+            epoch=epoch,
+            update_log_path=update_log_path,
+            write_update_header=(epoch == 1),
         )
         val_metrics = evaluate(model, loaders["val"], device, all_args, use_temporal_loss)
         elapsed = time.time() - start_time
@@ -658,16 +784,15 @@ def main(args):
             "train_raw_threat_loss": f"{train_metrics['raw_threat_loss']:.8f}",
             "train_raw_attack_loss": f"{train_metrics['raw_attack_loss']:.8f}",
             "train_raw_temporal_loss": f"{train_metrics['raw_temporal_loss']:.8f}",
+            "train_updates": int(train_metrics.get("updates", 0)),
             "val_loss": f"{val_metrics['loss']:.8f}",
             "val_raw_threat_loss": f"{val_metrics['raw_threat_loss']:.8f}",
             "val_raw_attack_loss": f"{val_metrics['raw_attack_loss']:.8f}",
             "val_raw_temporal_loss": f"{val_metrics['raw_temporal_loss']:.8f}",
-            "val_threat_r": f"{val_metrics['threat_r']:.8f}",
-            "val_attack_r": f"{val_metrics['attack_r']:.8f}",
             "best_val_loss": f"{best_val_loss:.8f}",
             "time_sec": f"{elapsed:.4f}",
         }
-        append_csv_row(log_path, row, write_header=(epoch == 1))
+        append_csv_row(epoch_log_path, row, write_header=(epoch == 1))
 
         if epoch % all_args.log_interval == 0 or epoch == 1 or epoch == all_args.epochs:
             log_epoch(epoch, all_args, train_metrics, val_metrics, elapsed)
@@ -700,8 +825,8 @@ if __name__ == "__main__":
         "--save-root", "scripts/results/AeroTAF_ATTN",
         "--seed", "1",
         "--n-training-threads", "1",
-        "--batch-size", "8",
-        "--epochs", "10",
+        "--mini-epoch", "10",
+        "--epochs", "50",
         "--lr", "3e-5",
         "--weight-decay", "1e-4",
         "--max-grad-norm", "2.0",
