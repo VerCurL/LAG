@@ -37,12 +37,15 @@ from scripts.AeroTAF.data.schema import (
 from scripts.AeroTAF.data.split import SPLIT_NAMES, split_indices_by_category
 
 
-STEP_DATA_KEYS = [
+WINDOW_SOURCE_KEYS = [
     "obs",
     "actions",
     "threat_targets",
     "attack_targets",
     "temporal_targets",
+]
+
+POINT_DATA_KEYS = [
     "instant_threat_fields",
     "instant_attack_fields",
     "label_threat_fields",
@@ -72,7 +75,18 @@ STEP_TRACE_KEYS = [
     "random_seeds_per_step",
 ]
 
-STEP_KEYS = STEP_DATA_KEYS + STEP_TRACE_KEYS
+WINDOW_TRACE_KEYS = [
+    "window_masks",
+    "window_lengths",
+    "window_time_indices",
+    "window_global_step_indices",
+    "window_start_time_indices",
+    "window_end_time_indices",
+    "window_start_global_step_indices",
+    "window_end_global_step_indices",
+]
+
+SPLIT_ROW_KEYS = WINDOW_SOURCE_KEYS + POINT_DATA_KEYS + STEP_TRACE_KEYS + WINDOW_TRACE_KEYS
 
 
 def as_snapshot_list(snapshots_array):
@@ -333,9 +347,68 @@ def combine_split_items(items):
     return dataset
 
 
-def subset_step_dataset(full_dataset, indices):
+def build_history_windows(full_dataset, indices, time_windows):
     indices = np.asarray(indices, dtype=np.int64).reshape(-1)
-    subset = {key: full_dataset[key][indices] for key in STEP_KEYS}
+    time_windows = int(time_windows)
+    if time_windows <= 0:
+        raise ValueError(f"time_windows must be positive, got {time_windows}")
+
+    count = int(indices.shape[0])
+    current_time_indices = full_dataset["time_indices"][indices].astype(np.int32, copy=False)
+    window_lengths = np.minimum(time_windows, current_time_indices + 1).astype(np.int32, copy=False)
+    start_indices = indices - window_lengths.astype(np.int64) + 1
+    dst_starts = time_windows - window_lengths
+
+    history = {}
+    for key in WINDOW_SOURCE_KEYS:
+        source = full_dataset[key]
+        window_shape = (count, time_windows) + source.shape[1:]
+        out = np.zeros(window_shape, dtype=source.dtype)
+        for row, (src_start, src_end, length, dst_start) in enumerate(
+            zip(start_indices, indices + 1, window_lengths, dst_starts)
+        ):
+            if length <= 0:
+                continue
+            out[row, int(dst_start):time_windows] = source[int(src_start):int(src_end)]
+        history[key] = out
+
+    window_masks = np.zeros((count, time_windows, 1), dtype=np.float32)
+    window_time_indices = np.full((count, time_windows), -1, dtype=np.int32)
+    window_global_step_indices = np.full((count, time_windows), -1, dtype=np.int64)
+    global_indices = full_dataset["global_step_indices"]
+    all_time_indices = full_dataset["time_indices"]
+
+    for row, (src_start, src_end, length, dst_start) in enumerate(
+        zip(start_indices, indices + 1, window_lengths, dst_starts)
+    ):
+        if length <= 0:
+            continue
+        dst_slice = slice(int(dst_start), time_windows)
+        src_slice = slice(int(src_start), int(src_end))
+        window_masks[row, dst_slice, 0] = 1.0
+        window_time_indices[row, dst_slice] = all_time_indices[src_slice]
+        window_global_step_indices[row, dst_slice] = global_indices[src_slice]
+
+    history.update(
+        {
+            "window_masks": window_masks,
+            "window_lengths": window_lengths,
+            "window_time_indices": window_time_indices,
+            "window_global_step_indices": window_global_step_indices,
+            "window_start_time_indices": all_time_indices[start_indices].astype(np.int32, copy=False),
+            "window_end_time_indices": all_time_indices[indices].astype(np.int32, copy=False),
+            "window_start_global_step_indices": global_indices[start_indices].astype(np.int64, copy=False),
+            "window_end_global_step_indices": global_indices[indices].astype(np.int64, copy=False),
+        }
+    )
+    return history
+
+
+def subset_step_dataset(full_dataset, indices, time_windows):
+    indices = np.asarray(indices, dtype=np.int64).reshape(-1)
+    subset = build_history_windows(full_dataset, indices, time_windows)
+    for key in POINT_DATA_KEYS + STEP_TRACE_KEYS:
+        subset[key] = full_dataset[key][indices]
     subset.update(
         {
             "sample_category_names": full_dataset["sample_category_names"],
@@ -344,7 +417,31 @@ def subset_step_dataset(full_dataset, indices):
             "field_delta_feature_names": full_dataset["field_delta_feature_names"],
             "episode_lengths": np.ones(indices.shape[0], dtype=np.int32),
             "point_level_split": np.asarray(True),
+            "time_windows": np.asarray(int(time_windows), dtype=np.int32),
+            "window_alignment": np.asarray("right_aligned", dtype=object),
+            "window_padding": np.asarray("left_zero", dtype=object),
             "parent_step_count": np.asarray(int(full_dataset["sample_category"].shape[0]), dtype=np.int64),
+            "selected_step_count": np.asarray(int(indices.shape[0]), dtype=np.int64),
+        }
+    )
+    return subset
+
+
+def subset_rows(dataset, indices):
+    indices = np.asarray(indices, dtype=np.int64).reshape(-1)
+    subset = {key: dataset[key][indices] for key in SPLIT_ROW_KEYS if key in dataset}
+    subset.update(
+        {
+            "sample_category_names": dataset["sample_category_names"],
+            "condition_names": dataset["condition_names"],
+            "event_names": dataset["event_names"],
+            "field_delta_feature_names": dataset["field_delta_feature_names"],
+            "episode_lengths": np.ones(indices.shape[0], dtype=np.int32),
+            "point_level_split": np.asarray(True),
+            "time_windows": dataset["time_windows"],
+            "window_alignment": dataset["window_alignment"],
+            "window_padding": dataset["window_padding"],
+            "parent_step_count": np.asarray(int(dataset["sample_category"].shape[0]), dtype=np.int64),
             "selected_step_count": np.asarray(int(indices.shape[0]), dtype=np.int64),
         }
     )
@@ -353,7 +450,7 @@ def subset_step_dataset(full_dataset, indices):
 
 def pack_category_dataset(full_dataset, category_id):
     mask = full_dataset["sample_category"] == int(category_id)
-    category_dataset = subset_step_dataset(full_dataset, np.flatnonzero(mask))
+    category_dataset = subset_rows(full_dataset, np.flatnonzero(mask))
     category_dataset.update(
         {
             "category_name": np.asarray(CATEGORY_NAMES[int(category_id)], dtype=object),
@@ -361,7 +458,6 @@ def pack_category_dataset(full_dataset, category_id):
         }
     )
     return category_dataset
-
 
 def category_summary(dataset):
     categories = dataset["sample_category"].reshape(-1)
@@ -408,6 +504,7 @@ def get_parser():
     parser.add_argument("--train-ratio", type=float, default=0.8, help="Point ratio assigned to train within each category.")
     parser.add_argument("--val-ratio", type=float, default=0.1, help="Point ratio assigned to val within each category.")
     parser.add_argument("--test-ratio", type=float, default=0.1, help="Point ratio assigned to test within each category.")
+    parser.add_argument("--time-windows", type=int, default=50, help="Maximum history window length ending at each selected point.")
 
     parser.add_argument("--field-k-step", type=int, default=20, help="Future horizon K for AeroTAF target calculation.")
     parser.add_argument("--field-gamma", type=float, default=0.95, help="Discount gamma for K-step target calculation.")
@@ -429,6 +526,8 @@ def get_parser():
 def main(args):
     parser = get_parser()
     all_args = parser.parse_args(args)
+    if all_args.time_windows <= 0:
+        raise ValueError(f"time_windows must be positive, got {all_args.time_windows}")
 
     raw_dir = resolve_project_path(all_args.raw_dir)
     if not raw_dir.exists():
@@ -437,7 +536,7 @@ def main(args):
     output_dir = (
         resolve_project_path(all_args.output_dir)
         if all_args.output_dir
-        else raw_dir.parent / f"processed_detail_point_k_target_K{all_args.field_k_step}"
+        else raw_dir.parent / f"processed_detail_point_k_target_K{all_args.field_k_step}_W{all_args.time_windows}"
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -475,6 +574,7 @@ def main(args):
     logging.info(f"output dir   : {normalize_path(output_dir)}")
     logging.info(f"raw files    : {len(raw_files)}")
     logging.info("field source : k-step target")
+    logging.info(f"time windows : {all_args.time_windows}")
     logging.info("-" * 72)
 
     for index, npz_path in enumerate(raw_files, start=1):
@@ -533,7 +633,7 @@ def main(args):
     category_outputs = {}
     split_step_counts = {}
     for split_name in SPLIT_NAMES:
-        dataset = subset_step_dataset(all_dataset, split_indices[split_name])
+        dataset = subset_step_dataset(all_dataset, split_indices[split_name], all_args.time_windows)
         split_step_counts[split_name] = int(dataset["sample_category"].shape[0])
         full_path = output_dir / f"{split_name}.npz"
         save_dataset(full_path, dataset)
@@ -542,7 +642,7 @@ def main(args):
         category_outputs[split_name] = {"all": f"{split_name}.npz"}
         logging.info(
             f"[split:{split_name}] saved points: {normalize_path(full_path)} "
-            f"| steps={dataset['sample_category'].shape[0]} | categories={split_summaries[split_name]['category_counts']}"
+            f"| windows={dataset['sample_category'].shape[0]} | length={all_args.time_windows} | categories={split_summaries[split_name]['category_counts']}"
         )
 
         for category_id, category_name in enumerate(CATEGORY_NAMES):
@@ -556,7 +656,7 @@ def main(args):
             )
     manifest = {
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "split_mode": "all_episodes_then_category_wise_random_point_split",
+        "split_mode": "all_episodes_then_category_wise_random_point_split_with_history_windows",
         "raw_dir": normalize_path(raw_dir),
         "output_dir": normalize_path(output_dir),
         "file_pattern": all_args.file_pattern,
@@ -564,6 +664,9 @@ def main(args):
         "num_processed_files": len(episode_items),
         "num_failed_files": len(failed_files),
         "num_raw_steps": int(total_steps),
+        "time_windows": int(all_args.time_windows),
+        "window_alignment": "right_aligned",
+        "window_padding": "left_zero",
         "field_k_step": all_args.field_k_step,
         "field_gamma": all_args.field_gamma,
         "field_params": {
@@ -620,14 +723,15 @@ def main(args):
 if __name__ == "__main__":
     default_args = [
         "--raw-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/stage1/raw",
-        "--output-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/stage1/processed_detail_point_k_target_K50",
+        "--output-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/stage1/processed_detail_point_k_target_K100_W50",
         "--file-pattern", "episode_*.npz",
         "--split-seed", "1",
         "--train-ratio", "0.8",
         "--val-ratio", "0.1",
         "--test-ratio", "0.1",
-        "--field-k-step", "50",
-        "--field-gamma", "0.95",
+        "--time-windows", "100",
+        "--field-k-step", "100",
+        "--field-gamma", "0.96",
         "--ego-team", "0.0",
         "--r-min", "4000.0",
         "--r-attack", "14000.0",
