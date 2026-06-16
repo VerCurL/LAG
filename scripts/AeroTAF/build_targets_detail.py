@@ -282,50 +282,21 @@ def combine_split_items(items):
     return dataset
 
 
-def subset_step_dataset(full_dataset, indices):
-    indices = np.asarray(indices, dtype=np.int64).reshape(-1)
-    subset = {key: full_dataset[key][indices] for key in POINT_ROW_KEYS}
-    subset.update(
-        {
-            "sample_category_names": full_dataset["sample_category_names"],
-            "condition_names": full_dataset["condition_names"],
-            "event_names": full_dataset["event_names"],
-            "field_delta_feature_names": full_dataset["field_delta_feature_names"],
-            "source_files": full_dataset["source_files"],
-            "episode_lengths": full_dataset["episode_lengths"],
-            "episode_ids": full_dataset["episode_ids"],
-            "pair_keys": full_dataset["pair_keys"],
-            "pair_types": full_dataset["pair_types"],
-            "pair_type_per_episode": full_dataset["pair_type_per_episode"],
-            "ego_model_paths": full_dataset["ego_model_paths"],
-            "enm_model_paths": full_dataset["enm_model_paths"],
-            "ego_levels": full_dataset["ego_levels"],
-            "enm_levels": full_dataset["enm_levels"],
-            "ego_styles": full_dataset["ego_styles"],
-            "enm_styles": full_dataset["enm_styles"],
-            "scenario_ids": full_dataset["scenario_ids"],
-            "scenario_buckets": full_dataset["scenario_buckets"],
-            "scenario_bucket_per_episode": full_dataset["scenario_bucket_per_episode"],
-            "random_seeds": full_dataset["random_seeds"],
-            "point_level_split": np.asarray(True),
-            "index_only": np.asarray(True),
-            "parent_step_count": np.asarray(int(full_dataset["sample_category"].shape[0]), dtype=np.int64),
-            "selected_step_count": np.asarray(int(indices.shape[0]), dtype=np.int64),
-        }
-    )
-    return subset
-
-
-def pack_category_dataset(full_dataset, category_id):
-    mask = full_dataset["sample_category"] == int(category_id)
-    category_dataset = subset_step_dataset(full_dataset, np.flatnonzero(mask))
-    category_dataset.update(
-        {
-            "category_name": np.asarray(CATEGORY_NAMES[int(category_id)], dtype=object),
-            "category_id": np.asarray(int(category_id), dtype=np.int16),
-        }
-    )
-    return category_dataset
+def build_split_index_dataset(split_name, all_target_indices, parent_step_count):
+    all_target_indices = np.asarray(all_target_indices, dtype=np.int64).reshape(-1)
+    return {
+        "split_name": np.asarray(str(split_name), dtype=object),
+        "all_target_file": np.asarray("all_target.npz", dtype=object),
+        "all_target_indices": all_target_indices,
+        "sample_category_names": np.asarray(CATEGORY_NAMES, dtype=object),
+        "condition_names": np.asarray(CONDITION_NAMES, dtype=object),
+        "event_names": np.asarray(EVENT_NAMES, dtype=object),
+        "field_delta_feature_names": np.asarray(FIELD_DELTA_FEATURE_NAMES, dtype=object),
+        "point_level_split": np.asarray(True),
+        "index_only": np.asarray(True),
+        "parent_step_count": np.asarray(int(parent_step_count), dtype=np.int64),
+        "selected_step_count": np.asarray(int(all_target_indices.shape[0]), dtype=np.int64),
+    }
 
 
 def category_summary(dataset):
@@ -347,6 +318,29 @@ def category_summary(dataset):
             for idx, name in enumerate(EVENT_NAMES)
         },
     }
+
+
+def category_summary_for_indices(full_dataset, indices):
+    indices = np.asarray(indices, dtype=np.int64).reshape(-1)
+    categories = full_dataset["sample_category"][indices].reshape(-1)
+    condition_multi_hot = full_dataset["condition_multi_hot"][indices]
+    event_flags = full_dataset["event_flags"][indices]
+    return {
+        "steps": int(indices.shape[0]),
+        "category_counts": {
+            name: int(np.sum(categories == idx))
+            for idx, name in enumerate(CATEGORY_NAMES)
+        },
+        "condition_counts": {
+            name: int(condition_multi_hot[:, idx].sum())
+            for idx, name in enumerate(CONDITION_NAMES)
+        },
+        "event_counts": {
+            name: int(event_flags[:, idx].sum())
+            for idx, name in enumerate(EVENT_NAMES)
+        },
+    }
+
 
 def save_dataset(path, dataset):
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -440,7 +434,7 @@ def main(args):
     logging.info(f"output dir   : {normalize_path(output_dir)}")
     logging.info(f"raw files    : {len(raw_files)}")
     logging.info("field source : k-step target")
-    logging.info("storage mode : point index only")
+    logging.info("storage mode : all_target table + split indices")
     logging.info("-" * 72)
 
     for index, npz_path in enumerate(raw_files, start=1):
@@ -472,8 +466,11 @@ def main(args):
     logging.info("[stage] pack all annotated points ...")
     all_dataset = combine_split_items(annotated_items)
     all_summary = category_summary(all_dataset)
+    all_target_path = output_dir / "all_target.npz"
+    save_dataset(all_target_path, all_dataset)
     logging.info(
-        f"[all] steps={all_summary['steps']} categories={all_summary['category_counts']}"
+        f"[all_target] saved: {normalize_path(all_target_path)} "
+        f"| steps={all_summary['steps']} | categories={all_summary['category_counts']}"
     )
 
     logging.info("[stage] category-wise random point split ...")
@@ -494,32 +491,24 @@ def main(args):
     for category_name in CATEGORY_NAMES:
         logging.info(f"  - {category_name:11s}: {category_split_counts[category_name]}")
 
-    logging.info("[stage] pack and save split datasets ...")
+    logging.info("[stage] save shuffled split index datasets ...")
     split_summaries = {}
-    category_outputs = {}
     split_step_counts = {}
+    split_outputs = {}
+    parent_step_count = int(all_dataset["sample_category"].shape[0])
     for split_name in SPLIT_NAMES:
-        dataset = subset_step_dataset(all_dataset, split_indices[split_name])
-        split_step_counts[split_name] = int(dataset["sample_category"].shape[0])
-        full_path = output_dir / f"{split_name}.npz"
-        save_dataset(full_path, dataset)
+        indices = np.asarray(split_indices[split_name], dtype=np.int64).reshape(-1)
+        dataset = build_split_index_dataset(split_name, indices, parent_step_count)
+        split_step_counts[split_name] = int(indices.shape[0])
+        split_path = output_dir / f"{split_name}.npz"
+        save_dataset(split_path, dataset)
 
-        split_summaries[split_name] = category_summary(dataset)
-        category_outputs[split_name] = {"all": f"{split_name}.npz"}
+        split_summaries[split_name] = category_summary_for_indices(all_dataset, indices)
+        split_outputs[split_name] = f"{split_name}.npz"
         logging.info(
-            f"[split:{split_name}] saved points: {normalize_path(full_path)} "
-            f"| points={dataset['sample_category'].shape[0]} | categories={split_summaries[split_name]['category_counts']}"
+            f"[split:{split_name}] saved indices: {normalize_path(split_path)} "
+            f"| points={indices.shape[0]} | categories={split_summaries[split_name]['category_counts']}"
         )
-
-        for category_id, category_name in enumerate(CATEGORY_NAMES):
-            category_dataset = pack_category_dataset(dataset, category_id)
-            category_path = output_dir / f"{split_name}_{category_name}.npz"
-            save_dataset(category_path, category_dataset)
-            category_outputs[split_name][category_name] = f"{split_name}_{category_name}.npz"
-            logging.info(
-                f"  - {category_name:11s}: {int(category_dataset['selected_step_count'])} -> "
-                f"{normalize_path(category_path)}"
-            )
     manifest = {
         "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "split_mode": "all_episodes_then_category_wise_random_point_index_split",
@@ -533,10 +522,13 @@ def main(args):
         "field_k_step": all_args.field_k_step,
         "field_gamma": all_args.field_gamma,
         "index_schema": {
-            "raw_file": "source_files[raw_file_indices[i]]",
-            "time_step": "time_indices[i]",
-            "episode_id": "episode_ids_per_step[i]",
-            "category": "sample_category_names[sample_category[i]]",
+            "all_target_file": "all_target.npz stores every processed time point and its target/label/raw mapping.",
+            "split_files": "train.npz, val.npz and test.npz store shuffled all_target_indices only.",
+            "all_target_row": "row = split['all_target_indices'][i]",
+            "raw_file": "all_target['source_files'][all_target['raw_file_indices'][row]]",
+            "time_step": "all_target['time_indices'][row]",
+            "episode_id": "all_target['episode_ids_per_step'][row]",
+            "category": "all_target['sample_category_names'][all_target['sample_category'][row]]",
             "raw_slice_hint": "load raw_file, then slice max(0, time_step-history+1):time_step+1",
         },
         "field_params": {
@@ -576,7 +568,11 @@ def main(args):
         "category_split_counts": category_split_counts,
         "all_summary": all_summary,
         "split_summaries": split_summaries,
-        "outputs": category_outputs,
+        "outputs": {
+            "all_target": "all_target.npz",
+            "splits": split_outputs,
+            "manifest": "detail_split_manifest.json",
+        },
         "failed_files": failed_files,
     }
     manifest_path = output_dir / "detail_split_manifest.json"
@@ -607,8 +603,8 @@ if __name__ == "__main__":
         "--r-nez", "10000.0",
         "--theta-attack-deg", "60.0",
         "--theta-nez-deg", "30.0",
-        "--high-threat-floor", "0.20",
-        "--high-attack-floor", "0.15",
+        "--high-threat-floor", "0.75",
+        "--high-attack-floor", "0.75",
         "--high-field-percentile", "80.0",
         "--delta-floor", "0.005",
         "--delta-percentile", "75.0",
