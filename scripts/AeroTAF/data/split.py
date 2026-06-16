@@ -1,78 +1,68 @@
-import random
-from collections import defaultdict
+import numpy as np
 
 
-def choose_test_pair_keys(pair_groups, test_pair_ratio, split_seed):
-    pair_type_to_keys = defaultdict(list)
-    for pair_key, episodes in pair_groups.items():
-        pair_type = episodes[0]["meta"].get("pair_type", "unknown")
-        pair_type_to_keys[pair_type].append(pair_key)
-
-    rng = random.Random(split_seed)
-    test_pair_keys = set()
-    for _, keys in pair_type_to_keys.items():
-        keys = sorted(keys)
-        rng.shuffle(keys)
-        if len(keys) <= 1:
-            continue
-        count = int(round(len(keys) * float(test_pair_ratio)))
-        count = max(1, count)
-        count = min(count, len(keys) - 1)
-        test_pair_keys.update(keys[:count])
-    return test_pair_keys
+SPLIT_NAMES = ("train", "val", "test")
 
 
-def split_stage1_episodes(episode_items, split_seed, test_pair_ratio, val_seed_ratio):
-    pair_groups = defaultdict(list)
-    for item in episode_items:
-        pair_groups[item["meta"]["pair_key"]].append(item)
+def normalize_split_ratios(train_ratio, val_ratio, test_ratio):
+    ratios = np.asarray([train_ratio, val_ratio, test_ratio], dtype=np.float64)
+    if np.any(~np.isfinite(ratios)) or np.any(ratios < 0.0):
+        raise ValueError(f"Invalid split ratios: {ratios.tolist()}")
+    total = float(ratios.sum())
+    if total <= 0.0:
+        raise ValueError("At least one split ratio must be positive.")
+    return ratios / total
 
-    for pair_key in pair_groups:
-        pair_groups[pair_key] = sorted(
-            pair_groups[pair_key],
-            key=lambda item: (
-                item["meta"].get("random_seed", -1),
-                item["meta"].get("episode_id", -1),
-                item["meta"].get("source_file", ""),
-            ),
-        )
 
-    test_pair_keys = choose_test_pair_keys(pair_groups, test_pair_ratio, split_seed)
-    train_items = []
-    val_id_items = []
-    test_pair_ood_items = []
-    rng = random.Random(split_seed + 999)
+def _largest_remainder_counts(size, ratios):
+    size = int(size)
+    if size <= 0:
+        return np.zeros(len(ratios), dtype=np.int64)
 
-    for pair_key, items in pair_groups.items():
-        if pair_key in test_pair_keys:
-            test_pair_ood_items.extend(items)
-            continue
+    raw = ratios * size
+    counts = np.floor(raw).astype(np.int64)
+    remainder = size - int(counts.sum())
+    if remainder > 0:
+        order = np.argsort(-(raw - counts))
+        counts[order[:remainder]] += 1
+    return counts
 
-        pair_items = list(items)
-        rng.shuffle(pair_items)
-        val_count = int(round(len(pair_items) * float(val_seed_ratio)))
-        if len(pair_items) >= 2:
-            val_count = max(1, val_count)
-            val_count = min(val_count, len(pair_items) - 1)
+
+def split_indices_by_category(categories, category_names, train_ratio, val_ratio, test_ratio, seed):
+    categories = np.asarray(categories).reshape(-1)
+    ratios = normalize_split_ratios(train_ratio, val_ratio, test_ratio)
+    rng = np.random.default_rng(int(seed))
+
+    split_indices = {name: [] for name in SPLIT_NAMES}
+    category_split_counts = {}
+
+    for category_id, category_name in enumerate(category_names):
+        indices = np.flatnonzero(categories == int(category_id)).astype(np.int64, copy=False)
+        rng.shuffle(indices)
+        counts = _largest_remainder_counts(indices.shape[0], ratios)
+
+        train_end = int(counts[0])
+        val_end = train_end + int(counts[1])
+        parts = {
+            "train": indices[:train_end],
+            "val": indices[train_end:val_end],
+            "test": indices[val_end:],
+        }
+        for split_name, split_part in parts.items():
+            split_indices[split_name].append(split_part)
+
+        category_split_counts[str(category_name)] = {
+            split_name: int(parts[split_name].shape[0])
+            for split_name in SPLIT_NAMES
+        }
+        category_split_counts[str(category_name)]["total"] = int(indices.shape[0])
+
+    for split_name in SPLIT_NAMES:
+        if split_indices[split_name]:
+            merged = np.concatenate(split_indices[split_name], axis=0).astype(np.int64, copy=False)
+            rng.shuffle(merged)
         else:
-            val_count = 0
+            merged = np.asarray([], dtype=np.int64)
+        split_indices[split_name] = merged
 
-        val_id_items.extend(pair_items[:val_count])
-        train_items.extend(pair_items[val_count:])
-
-    split_info = {
-        "num_pairs_total": len(pair_groups),
-        "num_pairs_train_seen": len(pair_groups) - len(test_pair_keys),
-        "num_pairs_test_pair_ood": len(test_pair_keys),
-        "num_episodes_train": len(train_items),
-        "num_episodes_val_id": len(val_id_items),
-        "num_episodes_test_pair_ood": len(test_pair_ood_items),
-    }
-    return {
-        "train": train_items,
-        "val_id": val_id_items,
-        "test_pair_ood": test_pair_ood_items,
-        "split_info": split_info,
-        "test_pair_keys": sorted(test_pair_keys),
-    }
-
+    return split_indices, category_split_counts, {name: float(value) for name, value in zip(SPLIT_NAMES, ratios)}

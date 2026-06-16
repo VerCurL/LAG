@@ -1,2 +1,1 @@
-"""Shared data utilities for AeroTAF target annotation and training."""
-
+"""Shared data utilities for AeroTAF exact-point detail annotation."""

@@ -1,33 +1,26 @@
-import math
-
 import numpy as np
 
 from envs.JSBSim.situation.field import (
-    A_ALIVE,
     A_LEFT_MISSILES,
-    A_POS,
     A_SHOTDOWN,
     A_TEAM,
     A_THREAT_MISSILE_EXIST,
-    A_VEL,
-    M_ALIVE,
     M_PARENT,
     M_SUCCESS,
 )
 from scripts.AeroTAF.data.schema import (
+    CATEGORY_EVENT,
+    CATEGORY_HIGH_CHANGE,
+    CATEGORY_HIGH_FIELD,
+    CATEGORY_NAMES,
+    CATEGORY_STABLE,
+    CONDITION_NAMES,
+    DetailAnnotationConfig,
     EVENT_NAMES,
-    LABEL_ACTION_CHANGE,
-    LABEL_EVENT,
-    LABEL_HIGH_ATTACK,
-    LABEL_HIGH_CHANGE,
-    LABEL_HIGH_THREAT,
-    SAMPLE_LABEL_NAMES,
-    AnnotationConfig,
-    multi_hot_summary,
 )
 
 
-def _safe_percentile(values, percentile, default=0.0):
+def safe_percentile(values, percentile, default=0.0):
     values = np.asarray(values, dtype=np.float32).reshape(-1)
     values = values[np.isfinite(values)]
     if values.size == 0:
@@ -35,101 +28,60 @@ def _safe_percentile(values, percentile, default=0.0):
     return float(np.percentile(values, percentile))
 
 
-def _episode_deltas(values, future_steps):
+def episode_delta(values):
     values = np.asarray(values, dtype=np.float32).reshape(-1)
-    length = values.shape[0]
-    delta = np.zeros(length, dtype=np.float32)
-    future_delta = np.zeros(length, dtype=np.float32)
-    if length <= 1:
-        return delta, future_delta
-
-    delta[1:] = np.abs(values[1:] - values[:-1])
-    for t in range(length):
-        future_t = min(t + int(future_steps), length - 1)
-        future_delta[t] = abs(float(values[future_t]) - float(values[t]))
-    return delta, future_delta
+    delta = np.zeros(values.shape[0], dtype=np.float32)
+    if values.shape[0] > 1:
+        delta[1:] = np.abs(values[1:] - values[:-1])
+    return delta
 
 
-def _episode_action_delta(actions):
-    actions = np.asarray(actions, dtype=np.float32)
-    length = actions.shape[0]
-    out = np.zeros(length, dtype=np.float32)
-    if length <= 1:
-        return out
-    diff = actions[1:] - actions[:-1]
-    out[1:] = np.linalg.norm(diff, axis=-1).mean(axis=-1)
-    return out
+def get_label_fields(item):
+    return item["threat_targets"].reshape(-1), item["attack_targets"].reshape(-1)
 
 
-def collect_threshold_stats(episode_items, config: AnnotationConfig):
-    future_steps = max(1, min(10, int(config.field_k_step) // 2))
+def collect_threshold_stats(items, config: DetailAnnotationConfig):
     stats = {
         "threat": [],
         "attack": [],
         "delta_threat": [],
         "delta_attack": [],
-        "future_delta_threat": [],
-        "future_delta_attack": [],
-        "action_delta": [],
     }
 
-    for item in episode_items:
-        threat = item["threat_targets"].reshape(-1)
-        attack = item["attack_targets"].reshape(-1)
-        delta_threat, future_delta_threat = _episode_deltas(threat, future_steps)
-        delta_attack, future_delta_attack = _episode_deltas(attack, future_steps)
-        action_delta = _episode_action_delta(item["actions"])
-
+    for item in items:
+        threat, attack = get_label_fields(item)
         stats["threat"].append(threat)
         stats["attack"].append(attack)
-        stats["delta_threat"].append(delta_threat)
-        stats["delta_attack"].append(delta_attack)
-        stats["future_delta_threat"].append(future_delta_threat)
-        stats["future_delta_attack"].append(future_delta_attack)
-        stats["action_delta"].append(action_delta)
+        stats["delta_threat"].append(episode_delta(threat))
+        stats["delta_attack"].append(episode_delta(attack))
 
-    return {key: np.concatenate(value, axis=0) if value else np.asarray([], dtype=np.float32) for key, value in stats.items()}
+    return {
+        key: np.concatenate(value, axis=0).astype(np.float32, copy=False) if value else np.asarray([], dtype=np.float32)
+        for key, value in stats.items()
+    }
 
 
-def fit_annotation_thresholds(train_episode_items, config: AnnotationConfig):
-    stats = collect_threshold_stats(train_episode_items, config)
-    thresholds = {
+def fit_detail_thresholds(train_items, config: DetailAnnotationConfig):
+    stats = collect_threshold_stats(train_items, config)
+    return {
+        "label_field_source": "k_step_target",
         "high_threat_threshold": max(
             float(config.high_threat_floor),
-            _safe_percentile(stats["threat"], config.high_field_percentile, config.high_threat_floor),
+            safe_percentile(stats["threat"], config.high_field_percentile, config.high_threat_floor),
         ),
         "high_attack_threshold": max(
             float(config.high_attack_floor),
-            _safe_percentile(stats["attack"], config.high_field_percentile, config.high_attack_floor),
-        ),
-        "very_high_threat_threshold": max(
-            float(config.very_high_threat_floor),
-            _safe_percentile(stats["threat"], config.very_high_field_percentile, config.very_high_threat_floor),
-        ),
-        "very_high_attack_threshold": max(
-            float(config.very_high_attack_floor),
-            _safe_percentile(stats["attack"], config.very_high_field_percentile, config.very_high_attack_floor),
+            safe_percentile(stats["attack"], config.high_field_percentile, config.high_attack_floor),
         ),
         "delta_threat_threshold": max(
             float(config.delta_floor),
-            _safe_percentile(stats["delta_threat"], config.delta_percentile, config.delta_floor),
+            safe_percentile(stats["delta_threat"], config.delta_percentile, config.delta_floor),
         ),
         "delta_attack_threshold": max(
             float(config.delta_floor),
-            _safe_percentile(stats["delta_attack"], config.delta_percentile, config.delta_floor),
+            safe_percentile(stats["delta_attack"], config.delta_percentile, config.delta_floor),
         ),
-        "future_delta_threat_threshold": max(
-            float(config.future_delta_floor),
-            _safe_percentile(stats["future_delta_threat"], config.future_delta_percentile, config.future_delta_floor),
-        ),
-        "future_delta_attack_threshold": max(
-            float(config.future_delta_floor),
-            _safe_percentile(stats["future_delta_attack"], config.future_delta_percentile, config.future_delta_floor),
-        ),
-        "action_change_threshold": _safe_percentile(stats["action_delta"], config.action_change_percentile, 0.0),
     }
-    thresholds["future_delta_steps"] = max(1, min(10, int(config.field_k_step) // 2))
-    return thresholds
 
 
 def _team_indices(aircraft, ego_team):
@@ -138,71 +90,7 @@ def _team_indices(aircraft, ego_team):
     return ego_indices, enemy_indices
 
 
-def _angle_between(vec_a, vec_b):
-    norm = np.linalg.norm(vec_a) * np.linalg.norm(vec_b)
-    if norm <= 1e-8:
-        return math.pi
-    return float(np.arccos(np.clip(np.dot(vec_a, vec_b) / norm, -1.0, 1.0)))
-
-
-def _closing_speed(own, target):
-    rel = target[A_POS] - own[A_POS]
-    dist = np.linalg.norm(rel)
-    if dist <= 1e-8:
-        return 0.0
-    return float(np.dot(own[A_VEL] - target[A_VEL], rel / dist))
-
-
-def _compute_geometry_events(snapshot, ego_team, config: AnnotationConfig):
-    aircraft = snapshot["aircraft"]
-    ego_indices, enemy_indices = _team_indices(aircraft, ego_team)
-    theta_attack = np.deg2rad(float(config.theta_attack_deg))
-    theta_nez = np.deg2rad(float(config.theta_nez_deg))
-
-    attack_zone = False
-    nez_zone = False
-    close_range = False
-    very_close_range = False
-
-    for ego_idx in ego_indices:
-        ego = aircraft[ego_idx]
-        if ego[A_ALIVE] <= 0.5:
-            continue
-        for enemy_idx in enemy_indices:
-            enemy = aircraft[enemy_idx]
-            if enemy[A_ALIVE] <= 0.5:
-                continue
-
-            rel_ego_to_enemy = enemy[A_POS] - ego[A_POS]
-            distance = float(np.linalg.norm(rel_ego_to_enemy))
-            if distance <= config.r_attack:
-                close_range = True
-            if distance <= config.r_nez:
-                very_close_range = True
-
-            ego_ao = _angle_between(ego[A_VEL], rel_ego_to_enemy)
-            enemy_ao = _angle_between(enemy[A_VEL], -rel_ego_to_enemy)
-            ego_closing = _closing_speed(ego, enemy)
-            enemy_closing = _closing_speed(enemy, ego)
-
-            if (
-                config.r_attack >= distance >= 0.0
-                and ((ego[A_LEFT_MISSILES] > 0 and ego_ao <= theta_attack)
-                     or (enemy[A_LEFT_MISSILES] > 0 and enemy_ao <= theta_attack))
-            ):
-                attack_zone = True
-
-            if (
-                distance <= config.r_nez
-                and ((ego[A_LEFT_MISSILES] > 0 and ego_ao <= theta_nez and ego_closing > 0.0)
-                     or (enemy[A_LEFT_MISSILES] > 0 and enemy_ao <= theta_nez and enemy_closing > 0.0))
-            ):
-                nez_zone = True
-
-    return attack_zone, nez_zone, close_range, very_close_range
-
-
-def build_event_flags(snapshots, ego_team, config: AnnotationConfig):
+def build_event_flags(snapshots, ego_team):
     length = len(snapshots)
     event_index = {name: idx for idx, name in enumerate(EVENT_NAMES)}
     flags = np.zeros((length, len(EVENT_NAMES)), dtype=np.float32)
@@ -210,28 +98,29 @@ def build_event_flags(snapshots, ego_team, config: AnnotationConfig):
     prev_aircraft = None
     prev_missiles = None
     prev_ego_left_missiles = None
+    prev_incoming_missile = False
 
     for t, snapshot in enumerate(snapshots):
         aircraft = snapshot["aircraft"]
         missiles = snapshot["missiles"]
         ego_indices, enemy_indices = _team_indices(aircraft, ego_team)
 
-        if np.any(aircraft[ego_indices, A_THREAT_MISSILE_EXIST] > 0.5):
+        incoming_missile = bool(
+            ego_indices.size > 0 and np.any(aircraft[ego_indices, A_THREAT_MISSILE_EXIST] > 0.5)
+        )
+        if incoming_missile and not prev_incoming_missile:
             flags[t, event_index["incoming_missile"]] = 1.0
 
-        if missiles.size > 0:
+        if missiles.size > 0 and ego_indices.size > 0:
             parent = missiles[:, M_PARENT].astype(int)
-            alive = missiles[:, M_ALIVE] > 0.5
             success = missiles[:, M_SUCCESS] > 0.5
             ego_parent = np.isin(parent, ego_indices)
-            if np.any(ego_parent & alive & (~success)):
-                flags[t, event_index["outgoing_missile"]] = 1.0
             if np.any(ego_parent & success):
                 if prev_missiles is None:
                     flags[t, event_index["hit_success"]] = 1.0
                 else:
-                    n = min(len(missiles), len(prev_missiles))
                     prev_success = np.zeros(len(missiles), dtype=bool)
+                    n = min(len(missiles), len(prev_missiles))
                     prev_success[:n] = prev_missiles[:n, M_SUCCESS] > 0.5
                     if np.any(ego_parent & success & (~prev_success)):
                         flags[t, event_index["hit_success"]] = 1.0
@@ -251,85 +140,56 @@ def build_event_flags(snapshots, ego_team, config: AnnotationConfig):
             if np.any(enemy_shotdown_now & (~enemy_shotdown_prev)):
                 flags[t, event_index["enemy_shotdown"]] = 1.0
 
-        attack_zone, nez_zone, close_range, very_close_range = _compute_geometry_events(snapshot, ego_team, config)
-        flags[t, event_index["attack_zone_enter"]] = float(attack_zone)
-        flags[t, event_index["nez_enter"]] = float(nez_zone)
-        flags[t, event_index["close_range"]] = float(close_range)
-        flags[t, event_index["very_close_range"]] = float(very_close_range)
-
         prev_aircraft = aircraft
         prev_missiles = missiles
         prev_ego_left_missiles = ego_left_missiles.copy()
+        prev_incoming_missile = incoming_missile
 
     return flags
 
 
-def expand_event_neighborhood(event_flags, pre_steps, post_steps):
-    length = event_flags.shape[0]
-    raw_event = np.any(event_flags > 0.5, axis=1)
-    expanded = np.zeros(length, dtype=bool)
-    event_indices = np.where(raw_event)[0]
-    for idx in event_indices:
-        start = max(0, int(idx) - int(pre_steps))
-        end = min(length, int(idx) + int(post_steps) + 1)
-        expanded[start:end] = True
-    return expanded
+def annotate_episode_detail(item, thresholds, config: DetailAnnotationConfig):
+    threat, attack = get_label_fields(item)
+    delta_threat = episode_delta(threat)
+    delta_attack = episode_delta(attack)
 
-
-def annotate_episode(item, thresholds, config: AnnotationConfig):
-    threat = item["threat_targets"].reshape(-1)
-    attack = item["attack_targets"].reshape(-1)
-    future_steps = int(thresholds.get("future_delta_steps", max(1, min(10, int(config.field_k_step) // 2))))
-
-    delta_threat, future_delta_threat = _episode_deltas(threat, future_steps)
-    delta_attack, future_delta_attack = _episode_deltas(attack, future_steps)
-    action_delta = _episode_action_delta(item["actions"])
-    event_flags = build_event_flags(item.get("snapshots", []), float(config.ego_team), config)
-    event_mask = expand_event_neighborhood(event_flags, config.event_pre_steps, config.event_post_steps)
+    event_flags = build_event_flags(item.get("snapshots", []), float(config.ego_team))
+    if event_flags.shape[0] != threat.shape[0]:
+        raise ValueError(f"event length {event_flags.shape[0]} != field length {threat.shape[0]}")
+    event_point = np.any(event_flags > 0.5, axis=1)
 
     high_threat = threat >= float(thresholds["high_threat_threshold"])
     high_attack = attack >= float(thresholds["high_attack_threshold"])
+    high_field = high_threat | high_attack
     high_change = (
         (delta_threat >= float(thresholds["delta_threat_threshold"]))
         | (delta_attack >= float(thresholds["delta_attack_threshold"]))
-        | (future_delta_threat >= float(thresholds["future_delta_threat_threshold"]))
-        | (future_delta_attack >= float(thresholds["future_delta_attack_threshold"]))
     )
-    action_change = action_delta >= float(thresholds["action_change_threshold"])
 
-    sample_multi_hot = np.zeros((threat.shape[0], len(SAMPLE_LABEL_NAMES)), dtype=np.float32)
-    sample_multi_hot[action_change, LABEL_ACTION_CHANGE] = 1.0
-    sample_multi_hot[high_attack, LABEL_HIGH_ATTACK] = 1.0
-    sample_multi_hot[high_threat, LABEL_HIGH_THREAT] = 1.0
-    sample_multi_hot[high_change, LABEL_HIGH_CHANGE] = 1.0
-    sample_multi_hot[event_mask, LABEL_EVENT] = 1.0
-
-    priority = np.full(threat.shape[0], float(config.priority_base), dtype=np.float32)
-    priority += high_threat.astype(np.float32) * float(config.priority_high_threat_bonus)
-    priority += high_attack.astype(np.float32) * float(config.priority_high_attack_bonus)
-    priority += high_change.astype(np.float32) * float(config.priority_high_change_bonus)
-    priority += event_mask.astype(np.float32) * float(config.priority_event_bonus)
-    priority += action_change.astype(np.float32) * float(config.priority_action_change_bonus)
-    priority = np.clip(priority, float(config.priority_min), float(config.priority_max)).astype(np.float32)
-
-    sample_weight = 1.0 + float(config.weight_from_priority_scale) * (priority - 1.0)
-    sample_weight = np.clip(sample_weight, float(config.weight_min), float(config.weight_max)).astype(np.float32)
-
-    item["event_flags"] = event_flags.astype(np.float32, copy=False)
-    item["event_mask"] = event_mask.astype(np.float32).reshape(-1, 1)
-    item["sample_multi_hot"] = sample_multi_hot.astype(np.float32, copy=False)
-    item["sample_label_names"] = np.asarray(SAMPLE_LABEL_NAMES, dtype=object)
-    item["sample_priority"] = priority.reshape(-1, 1)
-    item["sample_weight"] = sample_weight.reshape(-1, 1)
-    item["field_delta_features"] = np.stack(
-        (delta_threat, delta_attack, future_delta_threat, future_delta_attack, action_delta),
+    condition_multi_hot = np.stack(
+        (
+            event_point.astype(np.float32),
+            high_field.astype(np.float32),
+            high_change.astype(np.float32),
+        ),
         axis=-1,
     ).astype(np.float32, copy=False)
-    item["annotation_summary"] = multi_hot_summary(sample_multi_hot)
+
+    sample_category = np.full(threat.shape[0], CATEGORY_STABLE, dtype=np.int16)
+    sample_category[high_field] = CATEGORY_HIGH_FIELD
+    sample_category[high_change] = CATEGORY_HIGH_CHANGE
+    sample_category[event_point] = CATEGORY_EVENT
+
+    item["label_threat_fields"] = threat.reshape(-1, 1).astype(np.float32, copy=False)
+    item["label_attack_fields"] = attack.reshape(-1, 1).astype(np.float32, copy=False)
+    item["event_flags"] = event_flags.astype(np.float32, copy=False)
+    item["condition_multi_hot"] = condition_multi_hot
+    item["condition_names"] = np.asarray(CONDITION_NAMES, dtype=object)
+    item["sample_category"] = sample_category
+    item["sample_category_names"] = np.asarray(CATEGORY_NAMES, dtype=object)
+    item["field_delta_features"] = np.stack((delta_threat, delta_attack), axis=-1).astype(np.float32, copy=False)
     return item
 
-def annotate_splits(split_result, thresholds, config: AnnotationConfig):
-    annotated = {}
-    for split_name in ("train", "val_id", "test_pair_ood"):
-        annotated[split_name] = [annotate_episode(item, thresholds, config) for item in split_result[split_name]]
-    return annotated
+
+def annotate_split_items(split_items, thresholds, config: DetailAnnotationConfig):
+    return [annotate_episode_detail(item, thresholds, config) for item in split_items]
