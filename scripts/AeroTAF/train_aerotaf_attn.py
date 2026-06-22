@@ -415,33 +415,50 @@ def finalize_metrics(totals):
 
 
 def forward_losses(model, batch, device, args):
+    grouped = {}
+    for sample in batch:
+        obs_seq = sample[0]
+        seq_len = int(obs_seq.shape[0])
+        grouped.setdefault(seq_len, []).append(sample)
+
     threat_preds = []
     attack_preds = []
     threat_targets = []
     attack_targets = []
 
-    for obs_seq, action_seq, threat_target, attack_target, time_offset in batch:
-        obs_seq = torch.as_tensor(obs_seq, dtype=torch.float32, device=device)
-        action_seq = torch.as_tensor(action_seq, dtype=torch.float32, device=device)
-        seq_len = int(obs_seq.shape[0])
-        obs_flat = obs_seq.reshape(seq_len * obs_seq.shape[1], -1)
-        action_flat = action_seq.reshape(seq_len * action_seq.shape[1], -1)
+    for seq_len, samples in grouped.items():
+        obs_group = np.stack([sample[0] for sample in samples], axis=0)
+        action_group = np.stack([sample[1] for sample in samples], axis=0)
+        threat_target_group = np.stack([sample[2] for sample in samples], axis=0)
+        attack_target_group = np.stack([sample[3] for sample in samples], axis=0)
+
+        obs_group = torch.as_tensor(obs_group, dtype=torch.float32, device=device)
+        action_group = torch.as_tensor(action_group, dtype=torch.float32, device=device)
+        threat_target_group = torch.as_tensor(threat_target_group, dtype=torch.float32, device=device).reshape(len(samples), -1)
+        attack_target_group = torch.as_tensor(attack_target_group, dtype=torch.float32, device=device).reshape(len(samples), -1)
+
+        batch_size, _, num_agents = obs_group.shape[:3]
+        obs_flat = obs_group.reshape(batch_size * seq_len * num_agents, -1)
+        action_flat = action_group.reshape(batch_size * seq_len * num_agents, -1)
 
         threat_output, attack_output = model(
             obs_flat,
             action_flat,
             seq_len=seq_len,
-            time_offset=int(time_offset),
+            time_offset=0,
         )
-        threat_preds.append(threat_output[-1])
-        attack_preds.append(attack_output[-1])
-        threat_targets.append(torch.as_tensor(threat_target, dtype=torch.float32, device=device).reshape(-1))
-        attack_targets.append(torch.as_tensor(attack_target, dtype=torch.float32, device=device).reshape(-1))
+        threat_output = threat_output.view(batch_size, seq_len, -1)
+        attack_output = attack_output.view(batch_size, seq_len, -1)
 
-    threat_pred = torch.stack(threat_preds, dim=0).reshape(len(batch), -1)
-    attack_pred = torch.stack(attack_preds, dim=0).reshape(len(batch), -1)
-    threat_targets = torch.stack(threat_targets, dim=0).reshape(len(batch), -1)
-    attack_targets = torch.stack(attack_targets, dim=0).reshape(len(batch), -1)
+        threat_preds.append(threat_output[:, -1])
+        attack_preds.append(attack_output[:, -1])
+        threat_targets.append(threat_target_group)
+        attack_targets.append(attack_target_group)
+
+    threat_pred = torch.cat(threat_preds, dim=0).reshape(len(batch), -1)
+    attack_pred = torch.cat(attack_preds, dim=0).reshape(len(batch), -1)
+    threat_targets = torch.cat(threat_targets, dim=0).reshape(len(batch), -1)
+    attack_targets = torch.cat(attack_targets, dim=0).reshape(len(batch), -1)
 
     raw_threat_loss = F.mse_loss(threat_pred, threat_targets)
     raw_attack_loss = F.mse_loss(attack_pred, attack_targets)
