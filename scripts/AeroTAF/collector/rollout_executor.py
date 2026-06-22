@@ -6,6 +6,7 @@ import numpy as np
 import torch
 
 from envs.JSBSim.envs import MultipleCombatEnv
+from envs.JSBSim.situation.extractor import SituationExtractor
 from algorithms.mappo.ppo_actor import PPOActor as MAPPOActor
 from .path_utils import canonicalize_task_key, normalize_path, resolve_project_path
 
@@ -113,9 +114,11 @@ def run_episode_task(task):
         env = MultipleCombatEnv(
             config_name=task["scenario_name"],
             policy_type=task["policy_type"],
-            algorithm="mappoCFC",
+            algorithm="mappo",
             fix_position=task["fix_position"],
         )
+        if env.situation_extractor is None:
+            env.situation_extractor = SituationExtractor()
         env.seed(seed)
 
         ego_actor = make_actor(env, task["ego_model_path"], device)
@@ -136,15 +139,12 @@ def run_episode_task(task):
         action_list = []
         mask_list = [masks.copy()]
         snapshot_list = []
-        reward_list = []
         done_list = []
 
-        ego_reward_total = 0.0
-        enm_reward_total = 0.0
         ego_flight_sums = {}
         ego_flight_counts = {}
-        ego_reward_breakdown_sums = {}
-        ego_reward_breakdown_counts = {}
+        enm_flight_sums = {}
+        enm_flight_counts = {}
 
         step = 0
         while True:
@@ -171,34 +171,27 @@ def run_episode_task(task):
             obs_list.append(ego_obs.astype(np.float32, copy=True))
             action_list.append(ego_actions.astype(np.float32, copy=True))
 
-            next_obs, _, rewards, dones, info = env.step(actions)
+            next_obs, _, _, dones, info = env.step(actions)
 
             snapshot = info.get("AeroTAF_snapshot")
             if snapshot is None:
                 raise RuntimeError(
-                    "AeroTAF_snapshot is missing. Make sure env is created with algorithm='mappoCFC'."
+                    "AeroTAF_snapshot is missing. SituationExtractor must be attached during collection."
                 )
 
             snapshot_list.append(snapshot)
-            reward_list.append(rewards[:num_ego_agents].astype(np.float32, copy=True))
             done_list.append(dones[:num_ego_agents].astype(np.float32, copy=True))
 
-            ego_reward_step = float(np.mean(rewards[:num_ego_agents]))
-            enm_reward_step = float(np.mean(rewards[num_ego_agents:]))
-            ego_reward_total += ego_reward_step
-            enm_reward_total += enm_reward_step
-
-            reward_breakdown = info.get("reward_breakdown", {})
             flight_metrics = info.get("flight_metrics", {})
 
             ego_team_ids = list(env.ego_ids)
             enm_team_ids = list(env.enm_ids)
 
-            ego_reward_metrics = _mean_team_metric(reward_breakdown, ego_team_ids)
             ego_flight_metrics = _mean_team_metric(flight_metrics, ego_team_ids)
+            enm_flight_metrics = _mean_team_metric(flight_metrics, enm_team_ids)
 
-            _append_metrics(ego_reward_breakdown_sums, ego_reward_breakdown_counts, ego_reward_metrics)
             _append_metrics(ego_flight_sums, ego_flight_counts, ego_flight_metrics)
+            _append_metrics(enm_flight_sums, enm_flight_counts, enm_flight_metrics)
 
             step += 1
             done_env = bool(np.all(dones))
@@ -217,19 +210,16 @@ def run_episode_task(task):
 
         ego_alive_count = sum(1 for agent_id in env.ego_ids if env.agents[agent_id].is_alive)
         enm_alive_count = sum(1 for agent_id in env.enm_ids if env.agents[agent_id].is_alive)
+        ego_loss_count = len(env.ego_ids) - ego_alive_count
+        enm_loss_count = len(env.enm_ids) - enm_alive_count
 
         if ego_alive_count > enm_alive_count:
             winner = "ego"
         elif ego_alive_count < enm_alive_count:
             winner = "enm"
-        elif ego_reward_total > enm_reward_total:
-            winner = "ego"
-        elif ego_reward_total < enm_reward_total:
-            winner = "enm"
         else:
             winner = "draw"
 
-        reward_margin = ego_reward_total - enm_reward_total
         alive_margin = ego_alive_count - enm_alive_count
 
         result = {
@@ -240,12 +230,13 @@ def run_episode_task(task):
             "seed": seed,
             "steps": step,
             "winner": winner,
-            "reward_margin": float(reward_margin),
             "alive_margin": int(alive_margin),
             "ego_alive_count": int(ego_alive_count),
             "enm_alive_count": int(enm_alive_count),
-            "ego_total_reward": float(ego_reward_total),
-            "enm_total_reward": float(enm_reward_total),
+            "ego_loss_count": int(ego_loss_count),
+            "enm_loss_count": int(enm_loss_count),
+            "ego_survival_rate": float(ego_alive_count / max(len(env.ego_ids), 1)),
+            "enm_survival_rate": float(enm_alive_count / max(len(env.enm_ids), 1)),
             "ego_model_path": normalize_path(task["ego_model_path"]),
             "enm_model_path": normalize_path(task["enm_model_path"]),
             "scenario_id": task["scenario_id"],
@@ -259,21 +250,7 @@ def run_episode_task(task):
             "enm_stage_hint": task["enm_stage_hint"],
         }
         result.update(_flatten_summary_metrics(ego_flight_sums, ego_flight_counts, "ego"))
-        result.update(_flatten_summary_metrics(ego_reward_breakdown_sums, ego_reward_breakdown_counts, "ego_reward"))
-
-        result["ego_speed_mps_mean"] = result.pop("ego_speed_mps_mean", result.get("ego_speed_mps_mean", 0.0))
-        result["ego_nearest_enemy_distance_m_mean"] = result.pop(
-            "ego_nearest_enemy_distance_m_mean",
-            result.get("ego_nearest_enemy_distance_m_mean", 0.0),
-        )
-        result["ego_attack_window_reward_mean"] = result.pop(
-            "ego_reward_FKR_4v4_AttackWindowReward_mean",
-            result.get("ego_reward_FKR_4v4_AttackWindowReward_mean", 0.0),
-        )
-        result["ego_missile_avoid_reward_mean"] = result.pop(
-            "ego_reward_FKR_4v4_MissileAvoidReward_mean",
-            result.get("ego_reward_FKR_4v4_MissileAvoidReward_mean", 0.0),
-        )
+        result.update(_flatten_summary_metrics(enm_flight_sums, enm_flight_counts, "enm"))
 
         if task["save_raw"]:
             out_dir = resolve_project_path(task["out_dir"])
@@ -284,7 +261,6 @@ def run_episode_task(task):
                 obs=np.asarray(obs_list, dtype=np.float32),
                 actions=np.asarray(action_list, dtype=np.float32),
                 masks=np.asarray(mask_list, dtype=np.float32),
-                rewards=np.asarray(reward_list, dtype=np.float32),
                 dones=np.asarray(done_list, dtype=np.float32),
                 snapshots=np.asarray(snapshot_list, dtype=object),
                 episode_id=np.asarray(episode_id, dtype=np.int32),
