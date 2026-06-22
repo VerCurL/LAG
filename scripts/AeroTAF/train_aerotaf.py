@@ -6,6 +6,7 @@ import logging
 import random
 import sys
 import time
+from collections import OrderedDict
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -28,6 +29,7 @@ except ModuleNotFoundError as exc:
 
 from algorithms.utils.AeroTAF import AeroTAFBase
 from scripts.AeroTAF.collector.path_utils import normalize_path, resolve_project_path
+from scripts.AeroTAF.data.schema import CATEGORY_NAMES, CATEGORY_STABLE
 
 
 class AeroTAFArgs:
@@ -65,53 +67,188 @@ class PPOAeroTAF(nn.Module):
         return self.AeroTAF(obs, actions)
 
 
+class RawEpisodeCache:
+    def __init__(self, max_items=4):
+        self.max_items = max(1, int(max_items))
+        self.cache = OrderedDict()
+
+    def get(self, raw_path):
+        key = str(raw_path)
+        if key in self.cache:
+            self.cache.move_to_end(key)
+            return self.cache[key]
+        with np.load(raw_path, allow_pickle=True) as data:
+            missing = [key for key in ("obs", "actions") if key not in data.files]
+            if missing:
+                raise KeyError(f"{raw_path} missing keys: {missing}")
+            obs = data["obs"].astype(np.float32, copy=False)
+            actions = data["actions"].astype(np.float32, copy=False)
+        self.cache[key] = (obs, actions)
+        if len(self.cache) > self.max_items:
+            self.cache.popitem(last=False)
+        return self.cache[key]
+
+
+def object_array_to_strings(values):
+    return np.asarray([str(v) for v in np.asarray(values, dtype=object).reshape(-1)], dtype=object)
+
+
+def np_scalar_to_string(value):
+    if isinstance(value, np.ndarray):
+        if value.ndim == 0:
+            return str(value.item())
+        if value.size == 1:
+            return str(value.reshape(-1)[0].item())
+    return str(value)
+
+
 class AeroTAFStepDataset(Dataset):
-    def __init__(self, npz_path):
+    def __init__(self, npz_path, raw_cache_size=4, parent_indices=None, name=None, shared_target=None):
         self.path = str(npz_path)
-        with np.load(npz_path, allow_pickle=True) as data:
-            required = ["obs", "actions", "threat_targets", "attack_targets"]
+        self.name = str(name) if name is not None else Path(npz_path).stem
+        self.raw_cache_size = int(raw_cache_size)
+        self.raw_cache = RawEpisodeCache(self.raw_cache_size)
+
+        if shared_target is None:
+            with np.load(npz_path, allow_pickle=True) as split_data:
+                if "all_target_indices" not in split_data.files:
+                    raise KeyError(f"{npz_path} missing all_target_indices. Rebuild with build_targets_detail.py")
+                split_indices = split_data["all_target_indices"].astype(np.int64, copy=False).reshape(-1)
+                all_target_file = np_scalar_to_string(split_data["all_target_file"]) if "all_target_file" in split_data.files else "all_target.npz"
+            all_target_path = Path(npz_path).parent / all_target_file
+            if not all_target_path.exists():
+                all_target_path = resolve_project_path(all_target_file)
+            self._load_all_target(all_target_path)
+            self.all_parent_indices = split_indices
+        else:
+            self._copy_shared_target(shared_target)
+            self.all_parent_indices = np.asarray(parent_indices, dtype=np.int64).reshape(-1)
+
+        if parent_indices is not None and shared_target is None:
+            self.all_parent_indices = np.asarray(parent_indices, dtype=np.int64).reshape(-1)
+
+        self._validate_parent_indices(self.all_parent_indices)
+        self.all_categories = self.sample_category[self.all_parent_indices]
+        self.active_parent_indices = self.all_parent_indices.copy()
+        self.categories = self.all_categories.copy()
+        self._infer_shapes()
+        self.num_windows = 1
+        self.window_length = int(len(self.active_parent_indices))
+        self.num_steps = int(len(self.active_parent_indices))
+
+    def _load_all_target(self, all_target_path):
+        self.all_target_path = Path(all_target_path)
+        if not self.all_target_path.exists():
+            raise FileNotFoundError(f"all_target file not found: {self.all_target_path}")
+        with np.load(self.all_target_path, allow_pickle=True) as data:
+            required = ["source_files", "raw_file_indices", "time_indices", "sample_category", "threat_targets", "attack_targets"]
             missing = [key for key in required if key not in data.files]
             if missing:
-                raise KeyError(f"{npz_path} missing keys: {missing}")
+                raise KeyError(f"{self.all_target_path} missing keys: {missing}")
+            self.source_files = object_array_to_strings(data["source_files"])
+            self.raw_file_indices = data["raw_file_indices"].astype(np.int64, copy=False).reshape(-1)
+            self.time_indices = data["time_indices"].astype(np.int64, copy=False).reshape(-1)
+            self.sample_category = data["sample_category"].astype(np.int64, copy=False).reshape(-1)
+            self.threat_targets = data["threat_targets"].astype(np.float32, copy=False).reshape(-1, 1)
+            self.attack_targets = data["attack_targets"].astype(np.float32, copy=False).reshape(-1, 1)
+            self.category_names = [str(x) for x in data["sample_category_names"].tolist()] if "sample_category_names" in data.files else list(CATEGORY_NAMES)
 
-            self.obs = data["obs"].astype(np.float32, copy=False)
-            self.actions = data["actions"].astype(np.float32, copy=False)
-            self.threat_targets = data["threat_targets"].astype(np.float32, copy=False)
-            self.attack_targets = data["attack_targets"].astype(np.float32, copy=False)
+    def _copy_shared_target(self, other):
+        self.all_target_path = other.all_target_path
+        self.source_files = other.source_files
+        self.raw_file_indices = other.raw_file_indices
+        self.time_indices = other.time_indices
+        self.sample_category = other.sample_category
+        self.threat_targets = other.threat_targets
+        self.attack_targets = other.attack_targets
+        self.category_names = other.category_names
 
-        if self.obs.ndim != 4:
-            raise ValueError(f"{npz_path}: obs must be [windows, time, agents, obs_dim], got {self.obs.shape}")
-        if self.actions.ndim != 4:
-            raise ValueError(f"{npz_path}: actions must be [windows, time, agents, act_dim], got {self.actions.shape}")
-        if self.threat_targets.ndim != 3:
-            raise ValueError(f"{npz_path}: threat_targets must be [windows, time, 1], got {self.threat_targets.shape}")
-        if self.attack_targets.ndim != 3:
-            raise ValueError(f"{npz_path}: attack_targets must be [windows, time, 1], got {self.attack_targets.shape}")
-        if self.actions.shape[:3] != self.obs.shape[:3]:
-            raise ValueError(f"{npz_path}: actions prefix {self.actions.shape[:3]} != obs prefix {self.obs.shape[:3]}")
-        if self.threat_targets.shape[:2] != self.obs.shape[:2]:
-            raise ValueError(f"{npz_path}: threat prefix {self.threat_targets.shape[:2]} != obs prefix {self.obs.shape[:2]}")
-        if self.attack_targets.shape[:2] != self.obs.shape[:2]:
-            raise ValueError(f"{npz_path}: attack prefix {self.attack_targets.shape[:2]} != obs prefix {self.obs.shape[:2]}")
+    def _validate_parent_indices(self, indices):
+        indices = np.asarray(indices, dtype=np.int64).reshape(-1)
+        parent_size = int(self.time_indices.shape[0])
+        if np.any(indices < 0) or np.any(indices >= parent_size):
+            bad = indices[(indices < 0) | (indices >= parent_size)][:10].tolist()
+            raise ValueError(f"{self.name}: all_target_indices out of range, examples={bad}, parent_size={parent_size}")
 
-        self.num_windows = int(self.obs.shape[0])
-        self.window_length = int(self.obs.shape[1])
-        self.num_agents = int(self.obs.shape[2])
-        self.num_steps = self.num_windows * self.window_length
+    def _resolve_raw_path(self, row):
+        raw_file_index = int(self.raw_file_indices[int(row)])
+        if raw_file_index < 0 or raw_file_index >= self.source_files.shape[0]:
+            raise IndexError(f"bad raw_file_index={raw_file_index} for all_target row={row}")
+        return resolve_project_path(self.source_files[raw_file_index])
+
+    def _infer_shapes(self):
+        if len(self.all_parent_indices) <= 0:
+            raise ValueError(f"{self.name}: empty split")
+        row = int(self.all_parent_indices[0])
+        obs, actions = self.raw_cache.get(self._resolve_raw_path(row))
+        t = int(self.time_indices[row])
+        if obs.ndim != 3 or actions.ndim != 3:
+            raise ValueError(f"raw obs/actions must be [T, agents, dim], got {obs.shape}, {actions.shape}")
+        self.num_agents = int(obs.shape[1])
+        self.obs_dim = int(obs.shape[-1])
+        self.act_dim = int(actions.shape[-1])
+        self.obs = np.empty((0, self.num_agents, self.obs_dim), dtype=np.float32)
+        self.actions = np.empty((0, self.num_agents, self.act_dim), dtype=np.float32)
+        if t < 0 or t >= obs.shape[0] or t >= actions.shape[0]:
+            raise IndexError(f"bad time_index={t} for first sample")
 
     def __len__(self):
-        return self.num_steps
+        return int(self.active_parent_indices.shape[0])
 
     def __getitem__(self, index):
-        window_index = int(index) // self.window_length
-        time_index = int(index) % self.window_length
-        return (
-            self.obs[window_index, time_index],
-            self.actions[window_index, time_index],
-            self.threat_targets[window_index, time_index],
-            self.attack_targets[window_index, time_index],
+        row = int(self.active_parent_indices[int(index)])
+        obs, actions = self.raw_cache.get(self._resolve_raw_path(row))
+        t = int(self.time_indices[row])
+        if t < 0 or t >= obs.shape[0] or t >= actions.shape[0]:
+            raise IndexError(f"bad time_index={t} for row={row}")
+        return obs[t], actions[t], self.threat_targets[row], self.attack_targets[row]
+
+    def set_epoch_sample(self, stable_sample_ratio, seed, epoch, shuffle=True):
+        rng = np.random.default_rng(int(seed) + int(epoch) * 10007)
+        key_positions = np.flatnonzero(self.all_categories != CATEGORY_STABLE)
+        stable_positions = np.flatnonzero(self.all_categories == CATEGORY_STABLE)
+        ratio = float(stable_sample_ratio)
+        if ratio >= 1.0:
+            stable_take = stable_positions
+        elif ratio <= 0.0 or stable_positions.size == 0:
+            stable_take = np.asarray([], dtype=np.int64)
+        else:
+            stable_count = int(np.ceil(stable_positions.size * ratio))
+            stable_count = max(1, min(stable_count, stable_positions.size))
+            stable_take = rng.choice(stable_positions, size=stable_count, replace=False).astype(np.int64)
+        positions = np.concatenate((key_positions, stable_take), axis=0).astype(np.int64, copy=False)
+        if shuffle and positions.size > 0:
+            rng.shuffle(positions)
+        self.active_parent_indices = self.all_parent_indices[positions]
+        self.categories = self.sample_category[self.active_parent_indices]
+        self.window_length = int(len(self.active_parent_indices))
+        self.num_steps = int(len(self.active_parent_indices))
+
+    def set_all_active(self):
+        self.active_parent_indices = self.all_parent_indices.copy()
+        self.categories = self.all_categories.copy()
+        self.window_length = int(len(self.active_parent_indices))
+        self.num_steps = int(len(self.active_parent_indices))
+
+    def subset_by_category(self, category_id, name, active=False):
+        if active:
+            parent_indices = self.active_parent_indices[
+                self.sample_category[self.active_parent_indices] == int(category_id)
+            ]
+        else:
+            positions = np.flatnonzero(self.all_categories == int(category_id))
+            parent_indices = self.all_parent_indices[positions]
+        return AeroTAFStepDataset(
+            self.path,
+            raw_cache_size=self.raw_cache_size,
+            parent_indices=parent_indices,
+            name=name,
+            shared_target=self,
         )
 
+    def category_counts(self, active=False):
+        categories = self.categories if active else self.all_categories
+        return {name: int(np.sum(categories == idx)) for idx, name in enumerate(CATEGORY_NAMES)}
 
 def set_seed(seed):
     random.seed(seed)
@@ -340,13 +477,15 @@ def dump_config(path, args, dataset_paths, datasets):
     payload = {
         "args": vars(args),
         "dataset_paths": {key: normalize_path(value) for key, value in dataset_paths.items()},
+        "all_target_path": normalize_path(datasets["train"].all_target_path),
         "dataset_summary": {
             key: {
-                "windows": int(dataset.num_windows),
-                "window_length": int(dataset.window_length),
-                "time_step_samples": int(len(dataset)),
-                "obs_shape": list(dataset.obs.shape),
-                "actions_shape": list(dataset.actions.shape),
+                "points": int(len(dataset.all_parent_indices)),
+                "active_points": int(len(dataset)),
+                "category_counts": dataset.category_counts(active=False),
+                "obs_dim": int(dataset.obs_dim),
+                "act_dim": int(dataset.act_dim),
+                "num_agents": int(dataset.num_agents),
             }
             for key, dataset in datasets.items()
         },
@@ -355,13 +494,76 @@ def dump_config(path, args, dataset_paths, datasets):
         json.dump(payload, f, indent=2, ensure_ascii=False)
 
 
+def format_counts(counts):
+    return "{" + ", ".join(f"{name}={int(counts.get(name, 0))}" for name in CATEGORY_NAMES) + "}"
+
+
+def evaluate_test_by_category(model, test_dataset, device, args):
+    results = {}
+    test_dataset.set_all_active()
+    eval_batch_size = max(1, int(np.ceil(len(test_dataset) / max(1, int(args.mini_epoch)))))
+    results["all"] = evaluate(model, build_eval_loader(test_dataset, args, device), device, args)
+
+    for category_id, category_name in enumerate(CATEGORY_NAMES):
+        positions = np.flatnonzero(test_dataset.all_categories == int(category_id))
+        if positions.size == 0:
+            results[category_name] = finalize_metrics(new_totals())
+            continue
+        category_dataset = test_dataset.subset_by_category(category_id, f"test_{category_name}")
+        category_dataset.set_all_active()
+        old_eval_batch_size = args.eval_batch_size
+        args.eval_batch_size = max(1, min(eval_batch_size, len(category_dataset)))
+        results[category_name] = evaluate(model, build_eval_loader(category_dataset, args, device), device, args)
+        args.eval_batch_size = old_eval_batch_size
+    return results
+
+
+def evaluate_raw_losses_by_category(model, dataset, device, args, active=True):
+    results = {}
+    old_eval_batch_size = args.eval_batch_size
+    try:
+        for category_id, category_name in enumerate(CATEGORY_NAMES):
+            if active:
+                category_parent_indices = dataset.active_parent_indices[
+                    dataset.sample_category[dataset.active_parent_indices] == int(category_id)
+                ]
+            else:
+                positions = np.flatnonzero(dataset.all_categories == int(category_id))
+                category_parent_indices = dataset.all_parent_indices[positions]
+
+            if category_parent_indices.size == 0:
+                results[category_name] = {
+                    "threat_loss": float("nan"),
+                    "attack_loss": float("nan"),
+                }
+                continue
+
+            category_dataset = AeroTAFStepDataset(
+                dataset.path,
+                raw_cache_size=dataset.raw_cache_size,
+                parent_indices=category_parent_indices,
+                name=f"{dataset.name}_{category_name}",
+                shared_target=dataset,
+            )
+            category_dataset.set_all_active()
+            args.eval_batch_size = max(1, min(old_eval_batch_size, len(category_dataset)))
+            metrics = evaluate(model, build_eval_loader(category_dataset, args, device), device, args)
+            results[category_name] = {
+                "threat_loss": metrics["threat_loss"],
+                "attack_loss": metrics["attack_loss"],
+            }
+    finally:
+        args.eval_batch_size = old_eval_batch_size
+    return results
+
+
 def get_parser():
-    parser = argparse.ArgumentParser(description="Train AeroTAF on window datasets by shuffling individual timesteps.")
+    parser = argparse.ArgumentParser(description="Train AeroTAF on detailed point-index datasets.")
     parser.add_argument("--dataset-dir", type=str, required=True, help="Processed dataset directory.")
     parser.add_argument("--train-file", type=str, default="train.npz", help="Training split filename.")
     parser.add_argument("--val-file", type=str, default="val.npz", help="Validation split filename.")
     parser.add_argument("--test-file", type=str, default="test.npz", help="Test split filename.")
-    parser.add_argument("--experiment-name", type=str, default="AeroTAF-Step-K20-L50-S30", help="Experiment name.")
+    parser.add_argument("--experiment-name", type=str, default="AeroTAF-Detail-Point-K100", help="Experiment name.")
     parser.add_argument("--save-root", type=str, default="scripts/results/AeroTAF", help="Checkpoint root directory.")
     parser.add_argument("--seed", type=int, default=1, help="Random seed.")
     parser.add_argument("--cuda", action="store_true", default=False, help="Use CUDA if available.")
@@ -369,6 +571,8 @@ def get_parser():
     parser.add_argument("--n-training-threads", type=int, default=1, help="Torch training thread count.")
     parser.add_argument("--mini-epoch", type=int, default=100, help="Number of parameter updates per epoch; each update uses roughly train_steps / mini_epoch shuffled timesteps.")
     parser.add_argument("--epochs", type=int, default=50, help="Training epochs.")
+    parser.add_argument("--stable-sample-ratio", type=float, default=0.05, help="Stable samples used per train/val epoch; key categories are fully used.")
+    parser.add_argument("--raw-cache-size", type=int, default=4, help="Number of raw episode npz files cached per dataset instance.")
     parser.add_argument("--lr", type=float, default=3e-4, help="Learning rate.")
     parser.add_argument("--weight-decay", type=float, default=1e-4, help="Adam weight decay.")
     parser.add_argument("--max-grad-norm", type=float, default=2.0, help="Gradient clipping max norm.")
@@ -407,21 +611,18 @@ def main(args):
             raise FileNotFoundError(f"{split_name} split not found: {dataset_paths[split_name]}")
 
     datasets = {
-        "train": AeroTAFStepDataset(dataset_paths["train"]),
-        "val": AeroTAFStepDataset(dataset_paths["val"]),
-        "test": AeroTAFStepDataset(dataset_paths["test"]),
+        "train": AeroTAFStepDataset(dataset_paths["train"], raw_cache_size=all_args.raw_cache_size),
+        "val": AeroTAFStepDataset(dataset_paths["val"], raw_cache_size=all_args.raw_cache_size),
+        "test": AeroTAFStepDataset(dataset_paths["test"], raw_cache_size=all_args.raw_cache_size),
     }
+    if datasets["train"].num_agents != all_args.num_agents:
+        raise ValueError(f"--num-agents={all_args.num_agents}, but raw data has {datasets['train'].num_agents} agents")
     all_args.effective_mini_epoch = max(1, min(int(all_args.mini_epoch), len(datasets["train"])))
     all_args.eval_batch_size = max(1, int(np.ceil(len(datasets["train"]) / all_args.effective_mini_epoch)))
 
     obs_space, act_space = build_spaces(datasets["train"])
     model = PPOAeroTAF(AeroTAFArgs(all_args), obs_space, act_space, device=device)
     optimizer = torch.optim.Adam(model.parameters(), lr=all_args.lr, weight_decay=all_args.weight_decay)
-    loaders = {
-        "val": build_eval_loader(datasets["val"], all_args, device),
-        "test": build_eval_loader(datasets["test"], all_args, device),
-    }
-
     run_dir = build_run_dir(all_args)
     run_dir.mkdir(parents=True, exist_ok=True)
     best_ckpt_path = run_dir / "AeroTAF_best.pt"
@@ -432,39 +633,47 @@ def main(args):
     dump_config(config_path, all_args, dataset_paths, datasets)
 
     logging.info("=" * 72)
-    logging.info("AeroTAF Step Training")
+    logging.info("AeroTAF Detail Point Training")
     logging.info("=" * 72)
     logging.info(f"device     : {device}")
     logging.info(f"dataset    : {normalize_path(dataset_dir)}")
+    logging.info(f"all target : {normalize_path(datasets['train'].all_target_path)}")
     logging.info(f"run dir    : {normalize_path(run_dir)}")
+    logging.info(f"dims       : agents={datasets['train'].num_agents} obs={datasets['train'].obs_dim} action={datasets['train'].act_dim}")
     logging.info(
-        f"samples    : train={len(datasets['train'])} val={len(datasets['val'])} test={len(datasets['test'])} "
-        f"| mini_epoch={all_args.effective_mini_epoch} | steps/update~{all_args.eval_batch_size}"
+        f"split rows : train={len(datasets['train'].all_parent_indices)} "
+        f"val={len(datasets['val'].all_parent_indices)} test={len(datasets['test'].all_parent_indices)} "
+        f"| stable_ratio={all_args.stable_sample_ratio}"
     )
-    logging.info(
-        f"windows    : train={datasets['train'].num_windows} val={datasets['val'].num_windows} test={datasets['test'].num_windows} "
-        f"| length={datasets['train'].window_length}"
-    )
+    logging.info(f"train cats : {format_counts(datasets['train'].category_counts(active=False))}")
+    logging.info(f"val cats   : {format_counts(datasets['val'].category_counts(active=False))}")
+    logging.info(f"test cats  : {format_counts(datasets['test'].category_counts(active=False))}")
     logging.info(
         f"loss w     : threat={all_args.threat_loss_weight} attack={all_args.attack_loss_weight} | lr={all_args.lr:.2e}"
     )
     logging.info("-" * 72)
 
     best_val_loss = float("inf")
-    initial_val = evaluate(model, loaders["val"], device, all_args)
-    best_val_loss = initial_val["loss"]
-    save_checkpoint(best_ckpt_path, model, optimizer, 0, best_val_loss, all_args)
-    logging.info(
-        f"[INIT] val={initial_val['loss']:.6f} "
-        f"| raw(th/a)=({initial_val['threat_loss']:.6f}/{initial_val['attack_loss']:.6f}) "
-        f"| R(th/a)=({initial_val['threat_r']:.4f}/{initial_val['attack_r']:.4f})"
-    )
-
     for epoch in range(1, all_args.epochs + 1):
         start_time = time.time()
+        datasets["train"].set_epoch_sample(all_args.stable_sample_ratio, all_args.seed, epoch, shuffle=True)
+        datasets["val"].set_epoch_sample(all_args.stable_sample_ratio, all_args.seed + 100000, epoch, shuffle=True)
+        all_args.effective_mini_epoch = max(1, min(int(all_args.mini_epoch), len(datasets["train"])))
+        all_args.eval_batch_size = max(1, int(np.ceil(len(datasets["train"]) / all_args.effective_mini_epoch)))
+
+        logging.info(
+            f"[E{epoch:03d}/{all_args.epochs:03d}] "
+            f"train_active={len(datasets['train'])} {format_counts(datasets['train'].category_counts(active=True))} | "
+            f"val_active={len(datasets['val'])} {format_counts(datasets['val'].category_counts(active=True))} | "
+            f"mini_epoch={all_args.effective_mini_epoch} | samples/update~{all_args.eval_batch_size}"
+        )
+
         train_loader = build_train_loader(datasets["train"], all_args, device, epoch)
         train_metrics = train_one_epoch(model, train_loader, device, all_args, optimizer)
-        val_metrics = evaluate(model, loaders["val"], device, all_args)
+        val_loader = build_eval_loader(datasets["val"], all_args, device)
+        val_metrics = evaluate(model, val_loader, device, all_args)
+        train_category_losses = evaluate_raw_losses_by_category(model, datasets["train"], device, all_args, active=True)
+        val_category_losses = evaluate_raw_losses_by_category(model, datasets["val"], device, all_args, active=True)
         elapsed = time.time() - start_time
 
         if val_metrics["loss"] < best_val_loss:
@@ -479,29 +688,37 @@ def main(args):
             epoch_log_path,
             {
                 "epoch": epoch,
-                "train_loss": f"{train_metrics['loss']:.8f}",
                 "train_raw_threat_loss": f"{train_metrics['threat_loss']:.8f}",
                 "train_raw_attack_loss": f"{train_metrics['attack_loss']:.8f}",
-                "train_updates": int(train_metrics["updates"]),
-                "val_loss": f"{val_metrics['loss']:.8f}",
+                "train_event_threat_loss": f"{train_category_losses['event']['threat_loss']:.8f}",
+                "train_event_attack_loss": f"{train_category_losses['event']['attack_loss']:.8f}",
+                "train_high_field_threat_loss": f"{train_category_losses['high_field']['threat_loss']:.8f}",
+                "train_high_field_attack_loss": f"{train_category_losses['high_field']['attack_loss']:.8f}",
+                "train_high_change_threat_loss": f"{train_category_losses['high_change']['threat_loss']:.8f}",
+                "train_high_change_attack_loss": f"{train_category_losses['high_change']['attack_loss']:.8f}",
+                "train_stable_threat_loss": f"{train_category_losses['stable']['threat_loss']:.8f}",
+                "train_stable_attack_loss": f"{train_category_losses['stable']['attack_loss']:.8f}",
                 "val_raw_threat_loss": f"{val_metrics['threat_loss']:.8f}",
                 "val_raw_attack_loss": f"{val_metrics['attack_loss']:.8f}",
-                "val_threat_r": f"{val_metrics['threat_r']:.8f}",
-                "val_attack_r": f"{val_metrics['attack_r']:.8f}",
-                "best_val_loss": f"{best_val_loss:.8f}",
-                "time_sec": f"{elapsed:.4f}",
+                "val_event_threat_loss": f"{val_category_losses['event']['threat_loss']:.8f}",
+                "val_event_attack_loss": f"{val_category_losses['event']['attack_loss']:.8f}",
+                "val_high_field_threat_loss": f"{val_category_losses['high_field']['threat_loss']:.8f}",
+                "val_high_field_attack_loss": f"{val_category_losses['high_field']['attack_loss']:.8f}",
+                "val_high_change_threat_loss": f"{val_category_losses['high_change']['threat_loss']:.8f}",
+                "val_high_change_attack_loss": f"{val_category_losses['high_change']['attack_loss']:.8f}",
+                "val_stable_threat_loss": f"{val_category_losses['stable']['threat_loss']:.8f}",
+                "val_stable_attack_loss": f"{val_category_losses['stable']['attack_loss']:.8f}",
             },
             write_header=(epoch == 1),
         )
 
         if epoch % all_args.log_interval == 0 or epoch == 1 or epoch == all_args.epochs:
             logging.info(
-                f"[E{epoch:03d}/{all_args.epochs:03d}] "
+                f"[VAL {epoch:03d}] "
                 f"train={train_metrics['loss']:.5f} "
                 f"| val={val_metrics['loss']:.5f} "
                 f"| raw_val(th/a)=({val_metrics['threat_loss']:.5f}/{val_metrics['attack_loss']:.5f}) "
                 f"| R(th/a)=({val_metrics['threat_r']:.3f}/{val_metrics['attack_r']:.3f}) "
-                f"| updates={train_metrics['updates']} "
                 f"| {elapsed:.1f}s"
             )
 
@@ -510,34 +727,39 @@ def main(args):
         model.load_state_dict(checkpoint["model_state_dict"])
         logging.info(f"loaded best checkpoint for final test: {normalize_path(best_ckpt_path)}")
 
-    test_metrics = evaluate(model, loaders["test"], device, all_args)
+    test_metrics = evaluate_test_by_category(model, datasets["test"], device, all_args)
     with open(test_metrics_path, "w", encoding="utf-8") as f:
         json.dump(test_metrics, f, indent=2, ensure_ascii=False)
 
     logging.info("-" * 72)
-    logging.info(
-        f"[TEST] loss={test_metrics['loss']:.6f} "
-        f"| raw(th/a)=({test_metrics['threat_loss']:.6f}/{test_metrics['attack_loss']:.6f}) "
-        f"| R(th/a)=({test_metrics['threat_r']:.4f}/{test_metrics['attack_r']:.4f})"
-    )
+    for name in ["all"] + list(CATEGORY_NAMES):
+        metrics = test_metrics[name]
+        logging.info(
+            f"[TEST:{name:11s}] loss={metrics['loss']:.6f} "
+            f"| raw(th/a)=({metrics['threat_loss']:.6f}/{metrics['attack_loss']:.6f}) "
+            f"| R(th/a)=({metrics['threat_r']:.4f}/{metrics['attack_r']:.4f}) "
+            f"| samples={metrics['steps']}"
+        )
     logging.info(f"test metrics saved: {normalize_path(test_metrics_path)}")
     logging.info("Done.")
 
 
 if __name__ == "__main__":
     default_args = [
-        "--dataset-dir", "datasets/aerotaf/4v4_shoot_mappo_pool_stage1/processed_stage1_K20_L50_S30",
-        "--experiment-name", "AeroTAF-Stage1-K20-L50-S30",
+        "--dataset-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/fkr-300vs500/processed_detail_index_k_target_K100",
+        "--experiment-name", "AeroTAF-Detail-Point-K100",
         "--save-root", "scripts/results/AeroTAF",
         "--seed", "1",
         "--n-training-threads", "1",
         "--mini-epoch", "10",
         "--epochs", "10",
+        "--stable-sample-ratio", "0.05",
+        "--raw-cache-size", "4",
         "--lr", "3e-5",
         "--weight-decay", "1e-4",
         "--max-grad-norm", "2.0",
         "--threat-loss-weight", "1.0",
-        "--attack-loss-weight", "8.0",
+        "--attack-loss-weight", "2.0",
         "--num-workers", "0",
         "--save-interval", "10",
         "--log-interval", "1",
