@@ -588,8 +588,8 @@ def main(args):
 
 if __name__ == "__main__":
     default_args = [
-        "--raw-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/stage1/raw",
-        "--output-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/stage1/processed_detail_index_k_target_K100",
+        "--raw-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/fkr-300vs500/raw",
+        "--output-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/fkr-300vs500/processed_detail_index_k_target_K100",
         "--file-pattern", "episode_*.npz",
         "--split-seed", "1",
         "--train-ratio", "0.8",
@@ -606,7 +606,7 @@ if __name__ == "__main__":
         "--high-threat-floor", "0.75",
         "--high-attack-floor", "0.75",
         "--high-field-percentile", "80.0",
-        "--delta-floor", "0.005",
+        "--delta-floor", "0.003",
         "--delta-percentile", "75.0",
     ]
     main(sys.argv[1:] if len(sys.argv) > 1 else default_args)
