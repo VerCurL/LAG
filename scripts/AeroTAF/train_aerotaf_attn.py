@@ -6,6 +6,7 @@ import logging
 import random
 import sys
 import time
+from collections import OrderedDict
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -28,10 +29,7 @@ except ModuleNotFoundError as exc:
 
 from algorithms.utils.AeroTAF_ATTN import AeroTAFATTNBase
 from scripts.AeroTAF.collector.path_utils import normalize_path, resolve_project_path
-
-
-THREAT_HEAD_PATTERN = "threat_output_module"
-ATTACK_HEAD_PATTERN = "attack_output_module"
+from scripts.AeroTAF.data.schema import CATEGORY_NAMES, CATEGORY_STABLE
 
 
 class AeroTAFATTNArgs:
@@ -67,79 +65,223 @@ class PPOAeroTAFATTN(nn.Module):
         )
         self.to(device)
 
-    def forward(self, obs, actions, seq_len=None, time_offset=0):
+    def forward(self, obs, actions, seq_len, time_offset=0):
         obs = torch.as_tensor(obs, **self.tpdv)
         actions = torch.as_tensor(actions, **self.tpdv)
-        return self.AeroTAF(obs, actions, seq_len=seq_len, time_offset=time_offset)
+        _, threat_output, attack_output = self.AeroTAF(
+            obs,
+            actions,
+            seq_len=seq_len,
+            time_offset=time_offset,
+        )
+        return threat_output, attack_output
 
 
-class AeroTAFWindowStore(Dataset):
-    def __init__(self, npz_path, use_temporal_loss=True):
-        with np.load(npz_path, allow_pickle=True) as data:
-            required = ["obs", "actions", "threat_targets", "attack_targets"]
-            if use_temporal_loss:
-                required.append("temporal_targets")
+class RawEpisodeCache:
+    def __init__(self, max_items=4):
+        self.max_items = max(1, int(max_items))
+        self.cache = OrderedDict()
+
+    def get(self, raw_path):
+        key = str(raw_path)
+        if key in self.cache:
+            self.cache.move_to_end(key)
+            return self.cache[key]
+        with np.load(raw_path, allow_pickle=True) as data:
+            missing = [key for key in ("obs", "actions") if key not in data.files]
+            if missing:
+                raise KeyError(f"{raw_path} missing keys: {missing}")
+            obs = data["obs"].astype(np.float32, copy=False)
+            actions = data["actions"].astype(np.float32, copy=False)
+        self.cache[key] = (obs, actions)
+        if len(self.cache) > self.max_items:
+            self.cache.popitem(last=False)
+        return self.cache[key]
+
+
+def object_array_to_strings(values):
+    return np.asarray([str(v) for v in np.asarray(values, dtype=object).reshape(-1)], dtype=object)
+
+
+def np_scalar_to_string(value):
+    if isinstance(value, np.ndarray):
+        if value.ndim == 0:
+            return str(value.item())
+        if value.size == 1:
+            return str(value.reshape(-1)[0].item())
+    return str(value)
+
+
+class AeroTAFATTNWindowDataset(Dataset):
+    def __init__(
+        self,
+        npz_path,
+        history_windows,
+        raw_cache_size=4,
+        parent_indices=None,
+        name=None,
+        shared_target=None,
+    ):
+        self.path = str(npz_path)
+        self.name = str(name) if name is not None else Path(npz_path).stem
+        self.history_windows = max(1, int(history_windows))
+        self.raw_cache_size = int(raw_cache_size)
+        self.raw_cache = RawEpisodeCache(self.raw_cache_size)
+
+        if shared_target is None:
+            with np.load(npz_path, allow_pickle=True) as split_data:
+                if "all_target_indices" not in split_data.files:
+                    raise KeyError(f"{npz_path} missing all_target_indices. Rebuild with build_targets_detail.py")
+                split_indices = split_data["all_target_indices"].astype(np.int64, copy=False).reshape(-1)
+                all_target_file = (
+                    np_scalar_to_string(split_data["all_target_file"])
+                    if "all_target_file" in split_data.files
+                    else "all_target.npz"
+                )
+            all_target_path = Path(npz_path).parent / all_target_file
+            if not all_target_path.exists():
+                all_target_path = resolve_project_path(all_target_file)
+            self._load_all_target(all_target_path)
+            self.all_parent_indices = split_indices
+        else:
+            self._copy_shared_target(shared_target)
+            self.all_parent_indices = np.asarray(parent_indices, dtype=np.int64).reshape(-1)
+
+        if parent_indices is not None and shared_target is None:
+            self.all_parent_indices = np.asarray(parent_indices, dtype=np.int64).reshape(-1)
+
+        self._validate_parent_indices(self.all_parent_indices)
+        self.all_categories = self.sample_category[self.all_parent_indices]
+        self.active_parent_indices = self.all_parent_indices.copy()
+        self.categories = self.all_categories.copy()
+        self._infer_shapes()
+        self.num_windows = int(len(self.active_parent_indices))
+        self.window_length = self.history_windows
+        self.num_steps = int(len(self.active_parent_indices))
+
+    def _load_all_target(self, all_target_path):
+        self.all_target_path = Path(all_target_path)
+        if not self.all_target_path.exists():
+            raise FileNotFoundError(f"all_target file not found: {self.all_target_path}")
+        with np.load(self.all_target_path, allow_pickle=True) as data:
+            required = ["source_files", "raw_file_indices", "time_indices", "sample_category", "threat_targets", "attack_targets"]
             missing = [key for key in required if key not in data.files]
             if missing:
-                raise KeyError(f"{npz_path} missing keys: {missing}")
-
-            self.obs = data["obs"].astype(np.float32, copy=False)
-            self.actions = data["actions"].astype(np.float32, copy=False)
-            self.threat_targets = data["threat_targets"].astype(np.float32, copy=False)
-            self.attack_targets = data["attack_targets"].astype(np.float32, copy=False)
-            self.temporal_targets = (
-                data["temporal_targets"].astype(np.float32, copy=False)
-                if "temporal_targets" in data.files
-                else None
-            )
-            self.window_lengths = (
-                data["window_lengths"].astype(np.int32, copy=False)
-                if "window_lengths" in data.files
-                else np.full((self.obs.shape[0],), self.obs.shape[1], dtype=np.int32)
+                raise KeyError(f"{self.all_target_path} missing keys: {missing}")
+            self.source_files = object_array_to_strings(data["source_files"])
+            self.raw_file_indices = data["raw_file_indices"].astype(np.int64, copy=False).reshape(-1)
+            self.time_indices = data["time_indices"].astype(np.int64, copy=False).reshape(-1)
+            self.sample_category = data["sample_category"].astype(np.int64, copy=False).reshape(-1)
+            self.threat_targets = data["threat_targets"].astype(np.float32, copy=False).reshape(-1, 1)
+            self.attack_targets = data["attack_targets"].astype(np.float32, copy=False).reshape(-1, 1)
+            self.category_names = (
+                [str(x) for x in data["sample_category_names"].tolist()]
+                if "sample_category_names" in data.files
+                else list(CATEGORY_NAMES)
             )
 
-        if self.obs.ndim != 4:
-            raise ValueError(f"{npz_path}: obs must be [windows, time, agents, obs_dim], got {self.obs.shape}")
-        if self.actions.ndim != 4:
-            raise ValueError(f"{npz_path}: actions must be [windows, time, agents, act_dim], got {self.actions.shape}")
-        if self.threat_targets.ndim != 3:
-            raise ValueError(f"{npz_path}: threat_targets must be [windows, time, 1], got {self.threat_targets.shape}")
-        if self.attack_targets.ndim != 3:
-            raise ValueError(f"{npz_path}: attack_targets must be [windows, time, 1], got {self.attack_targets.shape}")
+    def _copy_shared_target(self, other):
+        self.all_target_path = other.all_target_path
+        self.source_files = other.source_files
+        self.raw_file_indices = other.raw_file_indices
+        self.time_indices = other.time_indices
+        self.sample_category = other.sample_category
+        self.threat_targets = other.threat_targets
+        self.attack_targets = other.attack_targets
+        self.category_names = other.category_names
 
-        expected_prefix = self.obs.shape[:2]
-        for name, value in (
-            ("actions", self.actions),
-            ("threat_targets", self.threat_targets),
-            ("attack_targets", self.attack_targets),
-        ):
-            if value.shape[:2] != expected_prefix:
-                raise ValueError(f"{npz_path}: {name} prefix {value.shape[:2]} != obs prefix {expected_prefix}")
-        if use_temporal_loss and self.temporal_targets is None:
-            raise KeyError(f"{npz_path}: temporal_targets is required when temporal loss is enabled.")
-        if self.temporal_targets is not None and self.temporal_targets.shape[:3] != self.obs.shape[:3]:
-            raise ValueError(f"{npz_path}: temporal_targets prefix {self.temporal_targets.shape[:3]} != obs prefix {self.obs.shape[:3]}")
+    def _validate_parent_indices(self, indices):
+        indices = np.asarray(indices, dtype=np.int64).reshape(-1)
+        parent_size = int(self.time_indices.shape[0])
+        if np.any(indices < 0) or np.any(indices >= parent_size):
+            bad = indices[(indices < 0) | (indices >= parent_size)][:10].tolist()
+            raise ValueError(f"{self.name}: all_target_indices out of range, examples={bad}, parent_size={parent_size}")
+
+    def _resolve_raw_path(self, row):
+        raw_file_index = int(self.raw_file_indices[int(row)])
+        if raw_file_index < 0 or raw_file_index >= self.source_files.shape[0]:
+            raise IndexError(f"bad raw_file_index={raw_file_index} for all_target row={row}")
+        return resolve_project_path(self.source_files[raw_file_index])
+
+    def _infer_shapes(self):
+        if len(self.all_parent_indices) <= 0:
+            raise ValueError(f"{self.name}: empty split")
+        row = int(self.all_parent_indices[0])
+        obs, actions = self.raw_cache.get(self._resolve_raw_path(row))
+        t = int(self.time_indices[row])
+        if obs.ndim != 3 or actions.ndim != 3:
+            raise ValueError(f"raw obs/actions must be [T, agents, dim], got {obs.shape}, {actions.shape}")
+        self.num_agents = int(obs.shape[1])
+        self.obs_dim = int(obs.shape[-1])
+        self.act_dim = int(actions.shape[-1])
+        if t < 0 or t >= obs.shape[0] or t >= actions.shape[0]:
+            raise IndexError(f"bad time_index={t} for first sample")
 
     def __len__(self):
-        return int(self.obs.shape[0])
+        return int(self.active_parent_indices.shape[0])
 
     def __getitem__(self, index):
-        temporal_targets = self.temporal_targets[index] if self.temporal_targets is not None else np.zeros(1, dtype=np.float32)
+        row = int(self.active_parent_indices[int(index)])
+        obs, actions = self.raw_cache.get(self._resolve_raw_path(row))
+        t = int(self.time_indices[row])
+        if t < 0 or t >= obs.shape[0] or t >= actions.shape[0]:
+            raise IndexError(f"bad time_index={t} for row={row}")
+        start = max(0, t - self.history_windows + 1)
         return (
-            self.obs[index],
-            self.actions[index],
-            self.threat_targets[index],
-            self.attack_targets[index],
-            temporal_targets,
+            obs[start : t + 1],
+            actions[start : t + 1],
+            self.threat_targets[row],
+            self.attack_targets[row],
+            np.asarray(start, dtype=np.int64),
         )
 
-    @property
-    def window_length(self):
-        return int(self.obs.shape[1])
+    def set_epoch_sample(self, stable_sample_ratio, seed, epoch, shuffle=True):
+        rng = np.random.default_rng(int(seed) + int(epoch) * 10007)
+        key_positions = np.flatnonzero(self.all_categories != CATEGORY_STABLE)
+        stable_positions = np.flatnonzero(self.all_categories == CATEGORY_STABLE)
+        ratio = float(stable_sample_ratio)
+        if ratio >= 1.0:
+            stable_take = stable_positions
+        elif ratio <= 0.0 or stable_positions.size == 0:
+            stable_take = np.asarray([], dtype=np.int64)
+        else:
+            stable_count = int(np.ceil(stable_positions.size * ratio))
+            stable_count = max(1, min(stable_count, stable_positions.size))
+            stable_take = rng.choice(stable_positions, size=stable_count, replace=False).astype(np.int64)
+        positions = np.concatenate((key_positions, stable_take), axis=0).astype(np.int64, copy=False)
+        if shuffle and positions.size > 0:
+            rng.shuffle(positions)
+        self.active_parent_indices = self.all_parent_indices[positions]
+        self.categories = self.sample_category[self.active_parent_indices]
+        self.num_windows = int(len(self.active_parent_indices))
+        self.num_steps = int(len(self.active_parent_indices))
 
-    @property
-    def step_count(self):
-        return int(self.obs.shape[0] * self.obs.shape[1])
+    def set_all_active(self):
+        self.active_parent_indices = self.all_parent_indices.copy()
+        self.categories = self.all_categories.copy()
+        self.num_windows = int(len(self.active_parent_indices))
+        self.num_steps = int(len(self.active_parent_indices))
+
+    def subset_by_category(self, category_id, name, active=False):
+        if active:
+            parent_indices = self.active_parent_indices[
+                self.sample_category[self.active_parent_indices] == int(category_id)
+            ]
+        else:
+            positions = np.flatnonzero(self.all_categories == int(category_id))
+            parent_indices = self.all_parent_indices[positions]
+        return AeroTAFATTNWindowDataset(
+            self.path,
+            history_windows=self.history_windows,
+            raw_cache_size=self.raw_cache_size,
+            parent_indices=parent_indices,
+            name=name,
+            shared_target=self,
+        )
+
+    def category_counts(self, active=False):
+        categories = self.categories if active else self.all_categories
+        return {name: int(np.sum(categories == idx)) for idx, name in enumerate(CATEGORY_NAMES)}
 
 
 def set_seed(seed):
@@ -159,69 +301,12 @@ def build_device(args):
 
 
 def build_spaces(dataset):
-    obs_dim = dataset.obs.shape[-1]
-    act_dim = dataset.actions.shape[-1]
-    obs_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32)
-    act_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(act_dim,), dtype=np.float32)
+    obs_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(int(dataset.obs_dim),), dtype=np.float32)
+    act_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(int(dataset.act_dim),), dtype=np.float32)
     return obs_space, act_space
 
 
-def is_threat_head_param_name(name):
-    return THREAT_HEAD_PATTERN in name
-
-
-def is_attack_head_param_name(name):
-    return ATTACK_HEAD_PATTERN in name
-
-
-def split_parameter_groups(model):
-    backbone_params = []
-    threat_head_params = []
-    attack_head_params = []
-    for name, param in model.named_parameters():
-        if is_threat_head_param_name(name):
-            threat_head_params.append(param)
-        elif is_attack_head_param_name(name):
-            attack_head_params.append(param)
-        else:
-            backbone_params.append(param)
-    return backbone_params, threat_head_params, attack_head_params
-
-
-def zero_param_grads(params):
-    for param in params:
-        param.grad = None
-
-
-def assign_grads(params, grads):
-    for param, grad in zip(params, grads):
-        param.grad = None if grad is None else grad.detach()
-
-
-def clip_param_grads(params, max_grad_norm):
-    if max_grad_norm is not None and max_grad_norm > 0 and params:
-        torch.nn.utils.clip_grad_norm_(params, max_grad_norm)
-
-
-def build_optimizers(model, args):
-    backbone_params, threat_head_params, attack_head_params = split_parameter_groups(model)
-    if args.train_mode == "split":
-        optimizers = {
-            "backbone": torch.optim.Adam(backbone_params, lr=args.lr, weight_decay=args.weight_decay),
-            "threat_head": torch.optim.Adam(threat_head_params, lr=args.lr, weight_decay=args.weight_decay),
-            "attack_head": torch.optim.Adam(attack_head_params, lr=args.lr, weight_decay=args.weight_decay),
-        }
-        return None, optimizers, backbone_params, threat_head_params, attack_head_params
-
-    if args.train_mode == "heads_only":
-        params = threat_head_params + attack_head_params
-    else:
-        params = list(model.parameters())
-    optimizer = torch.optim.Adam(params, lr=args.lr, weight_decay=args.weight_decay)
-    return optimizer, {}, backbone_params, threat_head_params, attack_head_params
-
-
-class WindowPartitionBatchSampler:
+class StepPartitionBatchSampler:
     def __init__(self, dataset_size, num_batches, seed=1, epoch=0, shuffle=True):
         self.dataset_size = int(dataset_size)
         self.num_batches = max(1, min(int(num_batches), self.dataset_size))
@@ -241,10 +326,14 @@ class WindowPartitionBatchSampler:
                 yield part.tolist()
 
 
+def collate_window_batch(samples):
+    return samples
+
+
 def build_train_loader(dataset, args, device, epoch):
     return DataLoader(
         dataset,
-        batch_sampler=WindowPartitionBatchSampler(
+        batch_sampler=StepPartitionBatchSampler(
             dataset_size=len(dataset),
             num_batches=args.effective_mini_epoch,
             seed=args.seed,
@@ -253,6 +342,7 @@ def build_train_loader(dataset, args, device, epoch):
         ),
         num_workers=args.num_workers,
         pin_memory=(device.type == "cuda"),
+        collate_fn=collate_window_batch,
     )
 
 
@@ -264,84 +354,8 @@ def build_eval_loader(dataset, args, device):
         num_workers=args.num_workers,
         pin_memory=(device.type == "cuda"),
         drop_last=False,
+        collate_fn=collate_window_batch,
     )
-
-
-def prepare_batch(batch, device):
-    obs, actions, threat_targets, attack_targets, temporal_targets = batch
-    obs = torch.as_tensor(obs, dtype=torch.float32, device=device)
-    actions = torch.as_tensor(actions, dtype=torch.float32, device=device)
-    threat_targets = torch.as_tensor(threat_targets, dtype=torch.float32, device=device)
-    attack_targets = torch.as_tensor(attack_targets, dtype=torch.float32, device=device)
-    temporal_targets = torch.as_tensor(temporal_targets, dtype=torch.float32, device=device)
-
-    if obs.ndim != 4:
-        raise ValueError(f"Expected obs [B,T,N,D], got {tuple(obs.shape)}")
-    batch_size, seq_len, num_agents = obs.shape[:3]
-
-    obs = obs.reshape(batch_size * seq_len * num_agents, -1)
-    actions = actions.reshape(batch_size * seq_len * num_agents, -1)
-    threat_targets = threat_targets.reshape(batch_size * seq_len, -1)
-    attack_targets = attack_targets.reshape(batch_size * seq_len, -1)
-    if temporal_targets.ndim >= 4:
-        temporal_targets = temporal_targets.reshape(batch_size * seq_len * num_agents, -1)
-    else:
-        temporal_targets = None
-    return obs, actions, threat_targets, attack_targets, temporal_targets, int(seq_len), int(batch_size), int(batch_size * seq_len)
-
-
-def weighted_loss(outputs, args, use_temporal_loss):
-    threat_loss = F.mse_loss(outputs["threat_pred"], outputs["threat_targets"])
-    attack_loss = F.mse_loss(outputs["attack_pred"], outputs["attack_targets"])
-    if use_temporal_loss:
-        temporal_loss = F.mse_loss(outputs["temporal_pred"], outputs["temporal_targets"])
-    else:
-        temporal_loss = torch.zeros((), dtype=torch.float32, device=outputs["threat_pred"].device)
-    loss = (
-        args.threat_loss_weight * threat_loss
-        + args.attack_loss_weight * attack_loss
-        + args.temporal_loss_weight * temporal_loss
-    )
-    return loss, threat_loss, attack_loss, temporal_loss
-
-
-def forward_losses(model, batch, device, args, use_temporal_loss):
-    obs, actions, threat_targets, attack_targets, temporal_targets, seq_len, window_count, step_count = prepare_batch(batch, device)
-    temporal_pred, threat_pred, attack_pred = model(obs, actions, seq_len=seq_len, time_offset=0)
-    outputs = {
-        "temporal_pred": temporal_pred,
-        "threat_pred": threat_pred,
-        "attack_pred": attack_pred,
-        "temporal_targets": temporal_targets,
-        "threat_targets": threat_targets,
-        "attack_targets": attack_targets,
-        "window_count": window_count,
-        "step_count": step_count,
-    }
-    loss, threat_loss, attack_loss, temporal_loss = weighted_loss(outputs, args, use_temporal_loss)
-    outputs.update(
-        {
-            "loss": loss,
-            "threat_loss": threat_loss,
-            "attack_loss": attack_loss,
-            "temporal_loss": temporal_loss,
-        }
-    )
-    return outputs
-
-
-def metrics_from_outputs(outputs, args):
-    return {
-        "loss": float(outputs["loss"].item()),
-        "threat_loss": float(args.threat_loss_weight * outputs["threat_loss"].item()),
-        "attack_loss": float(args.attack_loss_weight * outputs["attack_loss"].item()),
-        "temporal_loss": float(args.temporal_loss_weight * outputs["temporal_loss"].item()),
-        "raw_threat_loss": float(outputs["threat_loss"].item()),
-        "raw_attack_loss": float(outputs["attack_loss"].item()),
-        "raw_temporal_loss": float(outputs["temporal_loss"].item()),
-        "windows": int(outputs["window_count"]),
-        "steps": int(outputs["step_count"]),
-    }
 
 
 def compute_r_value(sse, target_sum, target_square_sum, count):
@@ -353,69 +367,11 @@ def compute_r_value(sse, target_sum, target_square_sum, count):
     return 1.0 - sse / sst
 
 
-def empty_metrics():
-    return {
-        "loss": 0.0,
-        "threat_loss": 0.0,
-        "attack_loss": 0.0,
-        "temporal_loss": 0.0,
-        "raw_threat_loss": 0.0,
-        "raw_attack_loss": 0.0,
-        "raw_temporal_loss": 0.0,
-        "steps": 0,
-        "threat_r": 0.0,
-        "attack_r": 0.0,
-    }
-
-
-def finalize_metrics(totals):
-    steps = max(int(totals["steps"]), 1)
-    return {
-        "loss": totals["loss"] / steps,
-        "threat_loss": totals["threat_loss"] / steps,
-        "attack_loss": totals["attack_loss"] / steps,
-        "temporal_loss": totals["temporal_loss"] / steps,
-        "raw_threat_loss": totals["raw_threat_loss"] / steps,
-        "raw_attack_loss": totals["raw_attack_loss"] / steps,
-        "raw_temporal_loss": totals["raw_temporal_loss"] / steps,
-        "steps": int(totals["steps"]),
-        "threat_r": compute_r_value(totals["threat_sse"], totals["threat_sum"], totals["threat_square_sum"], totals["threat_count"]),
-        "attack_r": compute_r_value(totals["attack_sse"], totals["attack_sum"], totals["attack_square_sum"], totals["attack_count"]),
-    }
-
-
-def update_totals(totals, outputs, args):
-    step_count = int(outputs["step_count"])
-    totals["loss"] += outputs["loss"].item() * step_count
-    totals["threat_loss"] += args.threat_loss_weight * outputs["threat_loss"].item() * step_count
-    totals["attack_loss"] += args.attack_loss_weight * outputs["attack_loss"].item() * step_count
-    totals["temporal_loss"] += args.temporal_loss_weight * outputs["temporal_loss"].item() * step_count
-    totals["raw_threat_loss"] += outputs["threat_loss"].item() * step_count
-    totals["raw_attack_loss"] += outputs["attack_loss"].item() * step_count
-    totals["raw_temporal_loss"] += outputs["temporal_loss"].item() * step_count
-    totals["steps"] += step_count
-
-    threat_error = outputs["threat_pred"] - outputs["threat_targets"]
-    attack_error = outputs["attack_pred"] - outputs["attack_targets"]
-    totals["threat_sse"] += torch.sum(threat_error * threat_error).item()
-    totals["attack_sse"] += torch.sum(attack_error * attack_error).item()
-    totals["threat_sum"] += torch.sum(outputs["threat_targets"]).item()
-    totals["attack_sum"] += torch.sum(outputs["attack_targets"]).item()
-    totals["threat_square_sum"] += torch.sum(outputs["threat_targets"] * outputs["threat_targets"]).item()
-    totals["attack_square_sum"] += torch.sum(outputs["attack_targets"] * outputs["attack_targets"]).item()
-    totals["threat_count"] += outputs["threat_targets"].numel()
-    totals["attack_count"] += outputs["attack_targets"].numel()
-
-
 def new_totals():
     return {
         "loss": 0.0,
         "threat_loss": 0.0,
         "attack_loss": 0.0,
-        "temporal_loss": 0.0,
-        "raw_threat_loss": 0.0,
-        "raw_attack_loss": 0.0,
-        "raw_temporal_loss": 0.0,
         "steps": 0,
         "threat_sse": 0.0,
         "attack_sse": 0.0,
@@ -428,131 +384,113 @@ def new_totals():
     }
 
 
-def log_update(epoch, epochs, update_index, update_total, metrics, elapsed):
-    logging.info(
-        f"  [E{epoch:03d}/{epochs:03d} U{update_index:03d}/{update_total:03d}] "
-        f"loss={metrics['loss']:.5f} "
-        f"| raw(th/a/t)=({metrics['raw_threat_loss']:.5f}/"
-        f"{metrics['raw_attack_loss']:.5f}/"
-        f"{metrics['raw_temporal_loss']:.5f}) "
-        f"| weighted(th/a/t)=({metrics['threat_loss']:.5f}/"
-        f"{metrics['attack_loss']:.5f}/"
-        f"{metrics['temporal_loss']:.5f}) "
-        f"| windows={metrics['windows']} steps={metrics['steps']} "
-        f"| {elapsed:.2f}s"
-    )
+def update_totals(totals, loss, threat_loss, attack_loss, threat_pred, attack_pred, threat_targets, attack_targets, count):
+    totals["loss"] += float(loss.item()) * count
+    totals["threat_loss"] += float(threat_loss.item()) * count
+    totals["attack_loss"] += float(attack_loss.item()) * count
+    totals["steps"] += int(count)
+
+    threat_error = threat_pred - threat_targets
+    attack_error = attack_pred - attack_targets
+    totals["threat_sse"] += torch.sum(threat_error * threat_error).item()
+    totals["attack_sse"] += torch.sum(attack_error * attack_error).item()
+    totals["threat_sum"] += torch.sum(threat_targets).item()
+    totals["attack_sum"] += torch.sum(attack_targets).item()
+    totals["threat_square_sum"] += torch.sum(threat_targets * threat_targets).item()
+    totals["attack_square_sum"] += torch.sum(attack_targets * attack_targets).item()
+    totals["threat_count"] += threat_targets.numel()
+    totals["attack_count"] += attack_targets.numel()
 
 
-def train_one_epoch(
-    model,
-    loader,
-    device,
-    args,
-    optimizer,
-    optimizers,
-    parameter_groups,
-    use_temporal_loss,
-    epoch,
-    update_log_path,
-    write_update_header,
-):
+def finalize_metrics(totals):
+    steps = max(int(totals["steps"]), 1)
+    return {
+        "loss": totals["loss"] / steps,
+        "threat_loss": totals["threat_loss"] / steps,
+        "attack_loss": totals["attack_loss"] / steps,
+        "steps": int(totals["steps"]),
+        "threat_r": compute_r_value(totals["threat_sse"], totals["threat_sum"], totals["threat_square_sum"], totals["threat_count"]),
+        "attack_r": compute_r_value(totals["attack_sse"], totals["attack_sum"], totals["attack_square_sum"], totals["attack_count"]),
+    }
+
+
+def forward_losses(model, batch, device, args):
+    threat_preds = []
+    attack_preds = []
+    threat_targets = []
+    attack_targets = []
+
+    for obs_seq, action_seq, threat_target, attack_target, time_offset in batch:
+        obs_seq = torch.as_tensor(obs_seq, dtype=torch.float32, device=device)
+        action_seq = torch.as_tensor(action_seq, dtype=torch.float32, device=device)
+        seq_len = int(obs_seq.shape[0])
+        obs_flat = obs_seq.reshape(seq_len * obs_seq.shape[1], -1)
+        action_flat = action_seq.reshape(seq_len * action_seq.shape[1], -1)
+
+        threat_output, attack_output = model(
+            obs_flat,
+            action_flat,
+            seq_len=seq_len,
+            time_offset=int(time_offset),
+        )
+        threat_preds.append(threat_output[-1])
+        attack_preds.append(attack_output[-1])
+        threat_targets.append(torch.as_tensor(threat_target, dtype=torch.float32, device=device).reshape(-1))
+        attack_targets.append(torch.as_tensor(attack_target, dtype=torch.float32, device=device).reshape(-1))
+
+    threat_pred = torch.stack(threat_preds, dim=0).reshape(len(batch), -1)
+    attack_pred = torch.stack(attack_preds, dim=0).reshape(len(batch), -1)
+    threat_targets = torch.stack(threat_targets, dim=0).reshape(len(batch), -1)
+    attack_targets = torch.stack(attack_targets, dim=0).reshape(len(batch), -1)
+
+    raw_threat_loss = F.mse_loss(threat_pred, threat_targets)
+    raw_attack_loss = F.mse_loss(attack_pred, attack_targets)
+    loss = args.threat_loss_weight * raw_threat_loss + args.attack_loss_weight * raw_attack_loss
+    return loss, raw_threat_loss, raw_attack_loss, threat_pred, attack_pred, threat_targets, attack_targets, len(batch)
+
+
+def train_one_epoch(model, loader, device, args, optimizer):
     model.train()
     totals = new_totals()
     update_count = 0
     update_total = len(loader)
-    backbone_params, threat_head_params, attack_head_params = parameter_groups
-
     for batch in loader:
-        update_start = time.time()
+        start_time = time.time()
         update_count += 1
-        outputs = forward_losses(model, batch, device, args, use_temporal_loss)
+        outputs = forward_losses(model, batch, device, args)
+        loss, raw_threat_loss, raw_attack_loss, threat_pred, attack_pred, threat_targets, attack_targets, count = outputs
 
-        if args.train_mode == "split":
-            for opt in optimizers.values():
-                opt.zero_grad()
-            zero_param_grads(backbone_params)
-            zero_param_grads(threat_head_params)
-            zero_param_grads(attack_head_params)
+        optimizer.zero_grad()
+        loss.backward()
+        if args.max_grad_norm > 0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+        optimizer.step()
 
-            temporal_obj = args.temporal_loss_weight * outputs["temporal_loss"]
-            threat_obj = args.threat_loss_weight * outputs["threat_loss"]
-            attack_obj = args.attack_loss_weight * outputs["attack_loss"]
-
-            backbone_grads = torch.autograd.grad(
-                temporal_obj,
-                backbone_params,
-                retain_graph=True,
-                allow_unused=False,
-            )
-            threat_grads = torch.autograd.grad(
-                threat_obj,
-                threat_head_params,
-                retain_graph=True,
-                allow_unused=False,
-            )
-            attack_grads = torch.autograd.grad(
-                attack_obj,
-                attack_head_params,
-                retain_graph=False,
-                allow_unused=False,
-            )
-
-            assign_grads(backbone_params, backbone_grads)
-            assign_grads(threat_head_params, threat_grads)
-            assign_grads(attack_head_params, attack_grads)
-            clip_param_grads(backbone_params, args.max_grad_norm)
-            clip_param_grads(threat_head_params, args.max_grad_norm)
-            clip_param_grads(attack_head_params, args.max_grad_norm)
-            optimizers["backbone"].step()
-            optimizers["threat_head"].step()
-            optimizers["attack_head"].step()
-        else:
-            optimizer.zero_grad()
-            if args.train_mode == "heads_only":
-                loss = args.threat_loss_weight * outputs["threat_loss"] + args.attack_loss_weight * outputs["attack_loss"]
-            else:
-                loss = outputs["loss"]
-            loss.backward()
-            if args.max_grad_norm > 0:
-                torch.nn.utils.clip_grad_norm_(optimizer.param_groups[0]["params"], args.max_grad_norm)
-            optimizer.step()
-
-        update_totals(totals, outputs, args)
-        update_metrics = metrics_from_outputs(outputs, args)
-        update_elapsed = time.time() - update_start
-        log_update(epoch, args.epochs, update_count, update_total, update_metrics, update_elapsed)
-        append_csv_row(
-            update_log_path,
-            {
-                "epoch": epoch,
-                "update": update_count,
-                "update_total": update_total,
-                "windows": update_metrics["windows"],
-                "steps": update_metrics["steps"],
-                "loss": f"{update_metrics['loss']:.8f}",
-                "raw_threat_loss": f"{update_metrics['raw_threat_loss']:.8f}",
-                "raw_attack_loss": f"{update_metrics['raw_attack_loss']:.8f}",
-                "raw_temporal_loss": f"{update_metrics['raw_temporal_loss']:.8f}",
-                "threat_loss": f"{update_metrics['threat_loss']:.8f}",
-                "attack_loss": f"{update_metrics['attack_loss']:.8f}",
-                "temporal_loss": f"{update_metrics['temporal_loss']:.8f}",
-                "time_sec": f"{update_elapsed:.4f}",
-            },
-            write_header=(write_update_header and update_count == 1),
+        weighted_threat = args.threat_loss_weight * raw_threat_loss.item()
+        weighted_attack = args.attack_loss_weight * raw_attack_loss.item()
+        elapsed = time.time() - start_time
+        logging.info(
+            f"  [U{update_count:04d}/{update_total:04d}] "
+            f"loss={loss.item():.5f} "
+            f"| raw(th/a)=({raw_threat_loss.item():.5f}/{raw_attack_loss.item():.5f}) "
+            f"| weighted(th/a)=({weighted_threat:.5f}/{weighted_attack:.5f}) "
+            f"| windows={count} | {elapsed:.2f}s"
         )
+        update_totals(totals, loss, raw_threat_loss, raw_attack_loss, threat_pred, attack_pred, threat_targets, attack_targets, count)
 
     metrics = finalize_metrics(totals)
     metrics["updates"] = int(update_count)
     return metrics
 
 
-def evaluate(model, loader, device, args, use_temporal_loss):
+def evaluate(model, loader, device, args):
     model.eval()
     totals = new_totals()
     with torch.no_grad():
         for batch in loader:
-            outputs = forward_losses(model, batch, device, args, use_temporal_loss)
-            update_totals(totals, outputs, args)
+            outputs = forward_losses(model, batch, device, args)
+            loss, raw_threat_loss, raw_attack_loss, threat_pred, attack_pred, threat_targets, attack_targets, count = outputs
+            update_totals(totals, loss, raw_threat_loss, raw_attack_loss, threat_pred, attack_pred, threat_targets, attack_targets, count)
     return finalize_metrics(totals)
 
 
@@ -565,18 +503,12 @@ def append_csv_row(path, row, write_header=False):
         writer.writerow(row)
 
 
-def optimizer_state(args, optimizer, optimizers):
-    if args.train_mode == "split":
-        return {key: opt.state_dict() for key, opt in optimizers.items()}
-    return optimizer.state_dict()
-
-
-def save_checkpoint(path, model, args, optimizer, optimizers, epoch, val_loss):
+def save_checkpoint(path, model, optimizer, epoch, val_loss, args):
     path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
         {
             "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optimizer_state(args, optimizer, optimizers),
+            "optimizer_state_dict": optimizer.state_dict(),
             "epoch": int(epoch),
             "val_loss": float(val_loss),
             "args": vars(args),
@@ -594,13 +526,16 @@ def dump_config(path, args, dataset_paths, datasets):
     payload = {
         "args": vars(args),
         "dataset_paths": {key: normalize_path(value) for key, value in dataset_paths.items()},
+        "all_target_path": normalize_path(datasets["train"].all_target_path),
         "dataset_summary": {
             key: {
-                "windows": int(len(dataset)),
-                "window_length": int(dataset.window_length),
-                "steps": int(dataset.step_count),
-                "obs_shape": list(dataset.obs.shape),
-                "actions_shape": list(dataset.actions.shape),
+                "points": int(len(dataset.all_parent_indices)),
+                "active_points": int(len(dataset)),
+                "category_counts": dataset.category_counts(active=False),
+                "obs_dim": int(dataset.obs_dim),
+                "act_dim": int(dataset.act_dim),
+                "num_agents": int(dataset.num_agents),
+                "history_windows": int(dataset.history_windows),
             }
             for key, dataset in datasets.items()
         },
@@ -609,57 +544,105 @@ def dump_config(path, args, dataset_paths, datasets):
         json.dump(payload, f, indent=2, ensure_ascii=False)
 
 
-def log_epoch(epoch, args, train_metrics, val_metrics, elapsed):
-    logging.info(
-        f"[E{epoch:03d}/{args.epochs:03d}] "
-        f"train={train_metrics['loss']:.5f} "
-        f"| val={val_metrics['loss']:.5f} "
-        f"| updates={train_metrics.get('updates', 0)} "
-        f"| raw(th/a/t)=({val_metrics['raw_threat_loss']:.5f}/"
-        f"{val_metrics['raw_attack_loss']:.5f}/"
-        f"{val_metrics['raw_temporal_loss']:.5f}) "
-        f"| R(th/a)=({val_metrics['threat_r']:.3f}/{val_metrics['attack_r']:.3f}) "
-        f"| {elapsed:.1f}s"
-    )
+def format_counts(counts):
+    return "{" + ", ".join(f"{name}={int(counts.get(name, 0))}" for name in CATEGORY_NAMES) + "}"
+
+
+def evaluate_raw_losses_by_category(model, dataset, device, args, active=True):
+    results = {}
+    old_eval_batch_size = args.eval_batch_size
+    try:
+        for category_id, category_name in enumerate(CATEGORY_NAMES):
+            if active:
+                category_parent_indices = dataset.active_parent_indices[
+                    dataset.sample_category[dataset.active_parent_indices] == int(category_id)
+                ]
+            else:
+                positions = np.flatnonzero(dataset.all_categories == int(category_id))
+                category_parent_indices = dataset.all_parent_indices[positions]
+
+            if category_parent_indices.size == 0:
+                results[category_name] = {"threat_loss": float("nan"), "attack_loss": float("nan")}
+                continue
+
+            category_dataset = AeroTAFATTNWindowDataset(
+                dataset.path,
+                history_windows=dataset.history_windows,
+                raw_cache_size=dataset.raw_cache_size,
+                parent_indices=category_parent_indices,
+                name=f"{dataset.name}_{category_name}",
+                shared_target=dataset,
+            )
+            category_dataset.set_all_active()
+            args.eval_batch_size = max(1, min(old_eval_batch_size, len(category_dataset)))
+            metrics = evaluate(model, build_eval_loader(category_dataset, args, device), device, args)
+            results[category_name] = {
+                "threat_loss": metrics["threat_loss"],
+                "attack_loss": metrics["attack_loss"],
+            }
+    finally:
+        args.eval_batch_size = old_eval_batch_size
+    return results
+
+
+def evaluate_test_by_category(model, test_dataset, device, args):
+    results = {}
+    test_dataset.set_all_active()
+    eval_batch_size = max(1, int(np.ceil(len(test_dataset) / max(1, int(args.mini_epoch)))))
+    results["all"] = evaluate(model, build_eval_loader(test_dataset, args, device), device, args)
+
+    for category_id, category_name in enumerate(CATEGORY_NAMES):
+        positions = np.flatnonzero(test_dataset.all_categories == int(category_id))
+        if positions.size == 0:
+            results[category_name] = finalize_metrics(new_totals())
+            continue
+        category_dataset = test_dataset.subset_by_category(category_id, f"test_{category_name}")
+        category_dataset.set_all_active()
+        old_eval_batch_size = args.eval_batch_size
+        args.eval_batch_size = max(1, min(eval_batch_size, len(category_dataset)))
+        results[category_name] = evaluate(model, build_eval_loader(category_dataset, args, device), device, args)
+        args.eval_batch_size = old_eval_batch_size
+    return results
+
+
+def add_category_raw_loss_columns(row, prefix, category_losses):
+    for category_name in CATEGORY_NAMES:
+        row[f"{prefix}_{category_name}_threat_loss"] = f"{category_losses[category_name]['threat_loss']:.8f}"
+        row[f"{prefix}_{category_name}_attack_loss"] = f"{category_losses[category_name]['attack_loss']:.8f}"
 
 
 def get_parser():
-    parser = argparse.ArgumentParser(description="Train AeroTAF_ATTN on prebuilt fixed-window AeroTAF datasets.")
+    parser = argparse.ArgumentParser(description="Train AeroTAF_ATTN on detailed point-index datasets.")
     parser.add_argument("--dataset-dir", type=str, required=True, help="Processed dataset directory.")
     parser.add_argument("--train-file", type=str, default="train.npz", help="Training split filename.")
     parser.add_argument("--val-file", type=str, default="val.npz", help="Validation split filename.")
     parser.add_argument("--test-file", type=str, default="test.npz", help="Test split filename.")
-    parser.add_argument("--experiment-name", type=str, default="AeroTAF-ATTN-Windows-K20-L50-S30", help="Experiment name.")
-    parser.add_argument("--save-root", type=str, default="scripts/results/AeroTAF_ATTN", help="Checkpoint root directory.")
+    parser.add_argument("--experiment-name", type=str, default="AeroTAF-ATTN-Detail-Point-K100", help="Experiment name.")
+    parser.add_argument("--save-root", type=str, default="scripts/results/AeroTAF", help="Checkpoint root directory.")
     parser.add_argument("--seed", type=int, default=1, help="Random seed.")
     parser.add_argument("--cuda", action="store_true", default=False, help="Use CUDA if available.")
     parser.add_argument("--cuda-device-id", type=int, default=0, help="CUDA device id.")
     parser.add_argument("--n-training-threads", type=int, default=1, help="Torch training thread count.")
-    parser.add_argument("--mini-epoch", type=int, default=10, help="Number of parameter updates per epoch; each update uses roughly train_windows / mini_epoch windows.")
+    parser.add_argument("--mini-epoch", type=int, default=100, help="Number of parameter updates per epoch.")
     parser.add_argument("--epochs", type=int, default=50, help="Training epochs.")
+    parser.add_argument("--stable-sample-ratio", type=float, default=0.05, help="Stable samples used per train/val epoch.")
+    parser.add_argument("--history-windows", type=int, default=16, help="Maximum number of historical timesteps per sample.")
+    parser.add_argument("--raw-cache-size", type=int, default=4, help="Number of raw episode npz files cached per dataset instance.")
     parser.add_argument("--lr", type=float, default=3e-4, help="Learning rate.")
-    parser.add_argument("--weight-decay", type=float, default=0.0, help="Adam weight decay.")
+    parser.add_argument("--weight-decay", type=float, default=1e-4, help="Adam weight decay.")
     parser.add_argument("--max-grad-norm", type=float, default=2.0, help="Gradient clipping max norm.")
-    parser.add_argument(
-        "--train-mode",
-        type=str,
-        default="split",
-        choices=("heads_only", "joint", "split"),
-        help="heads_only trains field heads only; joint trains all losses together; split updates backbone by temporal loss and heads by field losses.",
-    )
     parser.add_argument("--threat-loss-weight", type=float, default=1.0, help="Weight for threat regression loss.")
     parser.add_argument("--attack-loss-weight", type=float, default=8.0, help="Weight for attack regression loss.")
-    parser.add_argument("--temporal-loss-weight", type=float, default=0.5, help="Weight for temporal feature regression loss.")
     parser.add_argument("--num-workers", type=int, default=0, help="DataLoader worker count.")
     parser.add_argument("--save-interval", type=int, default=10, help="Latest checkpoint save interval in epochs.")
     parser.add_argument("--log-interval", type=int, default=1, help="Epoch logging interval.")
     parser.add_argument("--num-agents", type=int, default=4, help="Number of ego agents.")
     parser.add_argument("--activation-id", type=int, default=1, help="0:Tanh, 1:ReLU, 2:LeakyReLU, 3:ELU.")
     parser.add_argument("--use-feature-normalization", action="store_true", default=False, help="Use LayerNorm on obs/action inputs.")
-    parser.add_argument("--KQ-hidden-size", type=str, default="128 128", help="Spatial/time K/Q MLP hidden sizes.")
-    parser.add_argument("--V-hidden-size", type=str, default="128 128", help="Spatial/time V MLP hidden sizes.")
-    parser.add_argument("--attn-output-hidden-size", type=str, default="128", help="Temporal attention FFN hidden sizes.")
-    parser.add_argument("--field-output-hidden-size", type=str, default="64 32", help="Threat/attack head hidden sizes.")
+    parser.add_argument("--KQ-hidden-size", type=str, default="128 128", help="K/Q MLP hidden sizes.")
+    parser.add_argument("--V-hidden-size", type=str, default="128 128", help="V MLP hidden sizes.")
+    parser.add_argument("--attn-output-hidden-size", type=str, default="64 32", help="Temporal FFN hidden sizes.")
+    parser.add_argument("--field-output-hidden-size", type=str, default="64 32", help="Threat/attack output head hidden sizes.")
     parser.add_argument("--num-heads", type=int, default=4, help="Spatial attention head count.")
     parser.add_argument("--time-head-num", type=int, default=4, help="Temporal attention head count.")
     return parser
@@ -668,7 +651,9 @@ def get_parser():
 def main(args):
     parser = get_parser()
     all_args = parser.parse_args(args)
-    use_temporal_loss = all_args.train_mode != "heads_only"
+
+    if all_args.history_windows <= 0:
+        raise ValueError("--history-windows must be positive")
 
     set_seed(all_args.seed)
     torch.set_num_threads(all_args.n_training_threads)
@@ -686,154 +671,152 @@ def main(args):
             raise FileNotFoundError(f"{split_name} split not found: {dataset_paths[split_name]}")
 
     datasets = {
-        "train": AeroTAFWindowStore(dataset_paths["train"], use_temporal_loss=use_temporal_loss),
-        "val": AeroTAFWindowStore(dataset_paths["val"], use_temporal_loss=use_temporal_loss),
-        "test": AeroTAFWindowStore(dataset_paths["test"], use_temporal_loss=use_temporal_loss),
+        "train": AeroTAFATTNWindowDataset(
+            dataset_paths["train"],
+            history_windows=all_args.history_windows,
+            raw_cache_size=all_args.raw_cache_size,
+        ),
+        "val": AeroTAFATTNWindowDataset(
+            dataset_paths["val"],
+            history_windows=all_args.history_windows,
+            raw_cache_size=all_args.raw_cache_size,
+        ),
+        "test": AeroTAFATTNWindowDataset(
+            dataset_paths["test"],
+            history_windows=all_args.history_windows,
+            raw_cache_size=all_args.raw_cache_size,
+        ),
     }
+    if datasets["train"].num_agents != all_args.num_agents:
+        raise ValueError(f"--num-agents={all_args.num_agents}, but raw data has {datasets['train'].num_agents} agents")
     all_args.effective_mini_epoch = max(1, min(int(all_args.mini_epoch), len(datasets["train"])))
     all_args.eval_batch_size = max(1, int(np.ceil(len(datasets["train"]) / all_args.effective_mini_epoch)))
 
     obs_space, act_space = build_spaces(datasets["train"])
     model = PPOAeroTAFATTN(AeroTAFATTNArgs(all_args), obs_space, act_space, device=device)
-    optimizer, optimizers, backbone_params, threat_head_params, attack_head_params = build_optimizers(model, all_args)
-
-    loaders = {
-        "val": build_eval_loader(datasets["val"], all_args, device),
-        "test": build_eval_loader(datasets["test"], all_args, device),
-    }
-
+    optimizer = torch.optim.Adam(model.parameters(), lr=all_args.lr, weight_decay=all_args.weight_decay)
     run_dir = build_run_dir(all_args)
     run_dir.mkdir(parents=True, exist_ok=True)
     best_ckpt_path = run_dir / "AeroTAF_ATTN_best.pt"
     latest_ckpt_path = run_dir / "AeroTAF_ATTN_latest.pt"
-    update_log_path = run_dir / "update_log.csv"
     epoch_log_path = run_dir / "epoch_log.csv"
     config_path = run_dir / "config.json"
     test_metrics_path = run_dir / "test_metrics.json"
     dump_config(config_path, all_args, dataset_paths, datasets)
 
     logging.info("=" * 72)
-    logging.info("AeroTAF_ATTN Window Training")
+    logging.info("AeroTAF_ATTN Detail Window Training")
     logging.info("=" * 72)
-    logging.info(f"device     : {device}")
-    logging.info(f"dataset    : {normalize_path(dataset_dir)}")
-    logging.info(f"run dir    : {normalize_path(run_dir)}")
+    logging.info(f"device      : {device}")
+    logging.info(f"dataset     : {normalize_path(dataset_dir)}")
+    logging.info(f"all target  : {normalize_path(datasets['train'].all_target_path)}")
+    logging.info(f"run dir     : {normalize_path(run_dir)}")
+    logging.info(f"history     : {all_args.history_windows}")
+    logging.info(f"dims        : agents={datasets['train'].num_agents} obs={datasets['train'].obs_dim} action={datasets['train'].act_dim}")
     logging.info(
-        f"windows    : train={len(datasets['train'])} val={len(datasets['val'])} test={len(datasets['test'])} "
-        f"| length={datasets['train'].window_length}"
+        f"split rows  : train={len(datasets['train'].all_parent_indices)} "
+        f"val={len(datasets['val'].all_parent_indices)} test={len(datasets['test'].all_parent_indices)} "
+        f"| stable_ratio={all_args.stable_sample_ratio}"
     )
+    logging.info(f"train cats  : {format_counts(datasets['train'].category_counts(active=False))}")
+    logging.info(f"val cats    : {format_counts(datasets['val'].category_counts(active=False))}")
+    logging.info(f"test cats   : {format_counts(datasets['test'].category_counts(active=False))}")
     logging.info(
-        f"train mode : {all_args.train_mode} | mini_epoch={all_args.effective_mini_epoch} "
-        f"| windows/update~{all_args.eval_batch_size} | epochs={all_args.epochs} | lr={all_args.lr:.2e}"
+        f"loss w      : threat={all_args.threat_loss_weight} attack={all_args.attack_loss_weight} | lr={all_args.lr:.2e}"
     )
-    logging.info(
-        f"loss w     : threat={all_args.threat_loss_weight} attack={all_args.attack_loss_weight} temporal={all_args.temporal_loss_weight}"
-    )
-    if all_args.train_mode == "split":
-        logging.info(
-            f"params     : backbone={len(backbone_params)} threat_head={len(threat_head_params)} attack_head={len(attack_head_params)}"
-        )
     logging.info("-" * 72)
 
-    initial_val_start = time.time()
     best_val_loss = float("inf")
-    parameter_groups = (backbone_params, threat_head_params, attack_head_params)
-    initial_val_metrics = evaluate(model, loaders["val"], device, all_args, use_temporal_loss)
-    best_val_loss = initial_val_metrics["loss"]
-    save_checkpoint(best_ckpt_path, model, all_args, optimizer, optimizers, 0, best_val_loss)
-    logging.info(
-        f"[INIT] val={initial_val_metrics['loss']:.6f} "
-        f"| raw(th/a/t)=({initial_val_metrics['raw_threat_loss']:.6f}/"
-        f"{initial_val_metrics['raw_attack_loss']:.6f}/"
-        f"{initial_val_metrics['raw_temporal_loss']:.6f}) "
-        f"| R(th/a)=({initial_val_metrics['threat_r']:.4f}/{initial_val_metrics['attack_r']:.4f}) "
-        f"| {time.time() - initial_val_start:.1f}s"
-    )
-
     for epoch in range(1, all_args.epochs + 1):
         start_time = time.time()
-        train_loader = build_train_loader(datasets["train"], all_args, device, epoch)
-        train_metrics = train_one_epoch(
-            model=model,
-            loader=train_loader,
-            device=device,
-            args=all_args,
-            optimizer=optimizer,
-            optimizers=optimizers,
-            parameter_groups=parameter_groups,
-            use_temporal_loss=use_temporal_loss,
-            epoch=epoch,
-            update_log_path=update_log_path,
-            write_update_header=(epoch == 1),
+        datasets["train"].set_epoch_sample(all_args.stable_sample_ratio, all_args.seed, epoch, shuffle=True)
+        datasets["val"].set_epoch_sample(all_args.stable_sample_ratio, all_args.seed + 100000, epoch, shuffle=True)
+        all_args.effective_mini_epoch = max(1, min(int(all_args.mini_epoch), len(datasets["train"])))
+        all_args.eval_batch_size = max(1, int(np.ceil(len(datasets["train"]) / all_args.effective_mini_epoch)))
+
+        logging.info(
+            f"[E{epoch:03d}/{all_args.epochs:03d}] "
+            f"train_active={len(datasets['train'])} {format_counts(datasets['train'].category_counts(active=True))} | "
+            f"val_active={len(datasets['val'])} {format_counts(datasets['val'].category_counts(active=True))} | "
+            f"mini_epoch={all_args.effective_mini_epoch} | windows/update~{all_args.eval_batch_size}"
         )
-        val_metrics = evaluate(model, loaders["val"], device, all_args, use_temporal_loss)
+
+        train_loader = build_train_loader(datasets["train"], all_args, device, epoch)
+        train_metrics = train_one_epoch(model, train_loader, device, all_args, optimizer)
+        val_loader = build_eval_loader(datasets["val"], all_args, device)
+        val_metrics = evaluate(model, val_loader, device, all_args)
+        train_category_losses = evaluate_raw_losses_by_category(model, datasets["train"], device, all_args, active=True)
+        val_category_losses = evaluate_raw_losses_by_category(model, datasets["val"], device, all_args, active=True)
         elapsed = time.time() - start_time
 
-        is_best = val_metrics["loss"] < best_val_loss
-        if is_best:
+        if val_metrics["loss"] < best_val_loss:
             best_val_loss = val_metrics["loss"]
-            save_checkpoint(best_ckpt_path, model, all_args, optimizer, optimizers, epoch, best_val_loss)
+            save_checkpoint(best_ckpt_path, model, optimizer, epoch, best_val_loss, all_args)
             logging.info(f"[BEST] epoch={epoch:03d} val={best_val_loss:.6f} -> {normalize_path(best_ckpt_path)}")
 
         if epoch % all_args.save_interval == 0 or epoch == all_args.epochs:
-            save_checkpoint(latest_ckpt_path, model, all_args, optimizer, optimizers, epoch, best_val_loss)
+            save_checkpoint(latest_ckpt_path, model, optimizer, epoch, best_val_loss, all_args)
 
-        row = {
+        csv_row = {
             "epoch": epoch,
-            "train_loss": f"{train_metrics['loss']:.8f}",
-            "train_raw_threat_loss": f"{train_metrics['raw_threat_loss']:.8f}",
-            "train_raw_attack_loss": f"{train_metrics['raw_attack_loss']:.8f}",
-            "train_raw_temporal_loss": f"{train_metrics['raw_temporal_loss']:.8f}",
-            "train_updates": int(train_metrics.get("updates", 0)),
-            "val_loss": f"{val_metrics['loss']:.8f}",
-            "val_raw_threat_loss": f"{val_metrics['raw_threat_loss']:.8f}",
-            "val_raw_attack_loss": f"{val_metrics['raw_attack_loss']:.8f}",
-            "val_raw_temporal_loss": f"{val_metrics['raw_temporal_loss']:.8f}",
-            "best_val_loss": f"{best_val_loss:.8f}",
-            "time_sec": f"{elapsed:.4f}",
+            "train_raw_threat_loss": f"{train_metrics['threat_loss']:.8f}",
+            "train_raw_attack_loss": f"{train_metrics['attack_loss']:.8f}",
+            "val_raw_threat_loss": f"{val_metrics['threat_loss']:.8f}",
+            "val_raw_attack_loss": f"{val_metrics['attack_loss']:.8f}",
         }
-        append_csv_row(epoch_log_path, row, write_header=(epoch == 1))
+        add_category_raw_loss_columns(csv_row, "train", train_category_losses)
+        add_category_raw_loss_columns(csv_row, "val", val_category_losses)
+        append_csv_row(epoch_log_path, csv_row, write_header=(epoch == 1))
 
         if epoch % all_args.log_interval == 0 or epoch == 1 or epoch == all_args.epochs:
-            log_epoch(epoch, all_args, train_metrics, val_metrics, elapsed)
+            logging.info(
+                f"[VAL {epoch:03d}] "
+                f"train={train_metrics['loss']:.5f} "
+                f"| val={val_metrics['loss']:.5f} "
+                f"| raw_val(th/a)=({val_metrics['threat_loss']:.5f}/{val_metrics['attack_loss']:.5f}) "
+                f"| R(th/a)=({val_metrics['threat_r']:.3f}/{val_metrics['attack_r']:.3f}) "
+                f"| {elapsed:.1f}s"
+            )
 
     if best_ckpt_path.exists():
         checkpoint = torch.load(best_ckpt_path, map_location=device, weights_only=False)
         model.load_state_dict(checkpoint["model_state_dict"])
         logging.info(f"loaded best checkpoint for final test: {normalize_path(best_ckpt_path)}")
 
-    test_metrics = evaluate(model, loaders["test"], device, all_args, use_temporal_loss)
+    test_metrics = evaluate_test_by_category(model, datasets["test"], device, all_args)
     with open(test_metrics_path, "w", encoding="utf-8") as f:
         json.dump(test_metrics, f, indent=2, ensure_ascii=False)
 
     logging.info("-" * 72)
-    logging.info(
-        f"[TEST] loss={test_metrics['loss']:.6f} "
-        f"| raw(th/a/t)=({test_metrics['raw_threat_loss']:.6f}/"
-        f"{test_metrics['raw_attack_loss']:.6f}/"
-        f"{test_metrics['raw_temporal_loss']:.6f}) "
-        f"| R(th/a)=({test_metrics['threat_r']:.4f}/{test_metrics['attack_r']:.4f})"
-    )
+    for name in ["all"] + list(CATEGORY_NAMES):
+        metrics = test_metrics[name]
+        logging.info(
+            f"[TEST:{name:11s}] loss={metrics['loss']:.6f} "
+            f"| raw(th/a)=({metrics['threat_loss']:.6f}/{metrics['attack_loss']:.6f}) "
+            f"| R(th/a)=({metrics['threat_r']:.4f}/{metrics['attack_r']:.4f}) "
+            f"| windows={metrics['steps']}"
+        )
     logging.info(f"test metrics saved: {normalize_path(test_metrics_path)}")
     logging.info("Done.")
 
 
 if __name__ == "__main__":
     default_args = [
-        "--dataset-dir", "datasets/aerotaf/4v4_shoot_mappo_pool_stage1/processed_stage1_K20_L50_S30",
-        "--experiment-name", "AeroTAF-ATTN-stage1-K20-L50-S30",
-        "--save-root", "scripts/results/AeroTAF_ATTN",
+        "--dataset-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/fkr-300vs500/processed_detail_index_k_target_K100",
+        "--experiment-name", "AeroTAF-ATTN-Detail-Point-K100",
+        "--save-root", "scripts/results/AeroTAF",
         "--seed", "1",
         "--n-training-threads", "1",
         "--mini-epoch", "10",
-        "--epochs", "50",
+        "--epochs", "10",
+        "--stable-sample-ratio", "0.05",
+        "--history-windows", "100",
+        "--raw-cache-size", "4",
         "--lr", "3e-5",
         "--weight-decay", "1e-4",
         "--max-grad-norm", "2.0",
-        "--train-mode", "split",
         "--threat-loss-weight", "1.0",
-        "--attack-loss-weight", "8.0",
-        "--temporal-loss-weight", "0.5",
+        "--attack-loss-weight", "2.0",
         "--num-workers", "0",
         "--save-interval", "10",
         "--log-interval", "1",
@@ -841,7 +824,7 @@ if __name__ == "__main__":
         "--activation-id", "1",
         "--KQ-hidden-size", "128 128",
         "--V-hidden-size", "128 128",
-        "--attn-output-hidden-size", "128",
+        "--attn-output-hidden-size", "64 32",
         "--field-output-hidden-size", "64 32",
         "--num-heads", "4",
         "--time-head-num", "4",
