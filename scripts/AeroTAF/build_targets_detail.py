@@ -589,13 +589,13 @@ def main(args):
 if __name__ == "__main__":
     default_args = [
         "--raw-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/fkr-300vs500/raw",
-        "--output-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/fkr-300vs500/processed_detail_index_k_target_K100",
+        "--output-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/fkr-300vs500/processed_detail_index_k_target_K50",
         "--file-pattern", "episode_*.npz",
         "--split-seed", "1",
         "--train-ratio", "0.8",
         "--val-ratio", "0.1",
         "--test-ratio", "0.1",
-        "--field-k-step", "100",
+        "--field-k-step", "50",
         "--field-gamma", "0.96",
         "--ego-team", "0.0",
         "--r-min", "4000.0",

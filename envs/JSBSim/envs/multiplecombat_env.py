@@ -3,6 +3,7 @@ import math
 import random
 from typing import Tuple, Dict, Any
 from .env_base import BaseEnv
+from ..core.simulatior import MissileSimulator
 from ..tasks import (HierarchicalMultipleCombatShootTask, HierarchicalMultipleCombatTask, MultipleCombatTask,
                      FKR_4v4_HierarchicalMultipleCombatShootTask)
 
@@ -213,3 +214,45 @@ class MultipleCombatEnv(BaseEnv):
             info["AeroTAF_snapshot"] = self.situation_extractor.extract(env=self)
 
         return self._pack(obs), self._pack(share_obs), self._pack(rewards), self._pack(dones), info
+
+    def get_restore_state(self, extra: Dict[str, Any] = None) -> Dict[str, Any]:
+        return {
+            "restore_schema": "MultipleCombatEnv.pre_action.v1",
+            "current_step": int(self.current_step),
+            "config_name": getattr(self.config, "name", ""),
+            "policy_type": getattr(self.config, "policy_type", ""),
+            "fix_position": bool(getattr(self.config, "fix_position", False)),
+            "center": (float(self.center_lon), float(self.center_lat), float(self.center_alt)),
+            "agent_ids": list(self.agents.keys()),
+            "ego_ids": list(self.ego_ids),
+            "enm_ids": list(self.enm_ids),
+            "aircraft": {uid: sim.get_restore_state() for uid, sim in self._jsbsims.items()},
+            "temp_sims": {uid: sim.get_restore_state() for uid, sim in self._tempsims.items()},
+            "task": self.task.get_restore_state() if hasattr(self.task, "get_restore_state") else {},
+            "extra": extra or {},
+        }
+
+    def set_restore_state(self, state: Dict[str, Any]) -> None:
+        self.current_step = int(state.get("current_step", 0))
+
+        for sim in self._jsbsims.values():
+            sim.launch_missiles.clear()
+            sim.under_missiles.clear()
+
+        aircraft_states = state.get("aircraft", {})
+        for uid, sim_state in aircraft_states.items():
+            if uid not in self._jsbsims:
+                raise KeyError(f"restore state contains unknown aircraft uid: {uid}")
+            self._jsbsims[uid].set_restore_state(sim_state)
+
+        self._tempsims.clear()
+        for uid, missile_state in state.get("temp_sims", {}).items():
+            missile = MissileSimulator.from_restore_state(missile_state, self._jsbsims)
+            self._tempsims[uid] = missile
+            if missile.parent_aircraft is not None and missile not in missile.parent_aircraft.launch_missiles:
+                missile.parent_aircraft.launch_missiles.append(missile)
+            if missile.target_aircraft is not None and missile not in missile.target_aircraft.under_missiles:
+                missile.target_aircraft.under_missiles.append(missile)
+
+        if hasattr(self.task, "set_restore_state"):
+            self.task.set_restore_state(self, state.get("task", {}))

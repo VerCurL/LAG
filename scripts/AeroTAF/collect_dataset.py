@@ -30,7 +30,8 @@ def get_parser():
     parser.add_argument("--max-parallel", type=int, default=20, help="Max parallel rollout workers.")
     parser.add_argument("--base-seed", type=int, default=1, help="Base random seed.")
     parser.add_argument("--seeds-per-pair", type=int, default=5, help="Episodes to collect for each directed model pair.")
-    parser.add_argument("--deterministic", action="store_true", default=False, help="Use deterministic actor rollout.")
+    parser.add_argument("--deterministic", action="store_true", default=True, help="Use deterministic actor rollout.")
+    parser.add_argument("--stochastic", action="store_false", dest="deterministic", help="Use stochastic actor rollout.")
     parser.add_argument("--scenario-name", default="4v4/ShootMissile/HierarchySelfplay")
     parser.add_argument("--policy-type", default="fkr")
     parser.add_argument("--max-episode-steps", type=int, default=1000)
@@ -246,6 +247,7 @@ def main(args):
     print("pair mode     : directed all-pairs")
     print(f"seeds/pair    : {all_args.seeds_per_pair}")
     print(f"scenario      : {all_args.scenario_name}")
+    print(f"deterministic : {all_args.deterministic}")
     print(f"out dir       : {out_dir}")
     print(f"total tasks   : {total_task_count}")
     print(f"completed     : {total_task_count - len(pending_tasks)}")
@@ -269,6 +271,7 @@ def main(args):
             "total_task_count": total_task_count,
             "completed_task_count": total_task_count - len(pending_tasks),
             "pending_task_count": len(pending_tasks),
+            "deterministic": bool(all_args.deterministic),
         },
     )
 
@@ -296,7 +299,7 @@ if __name__ == "__main__":
         "--device", "cpu",
         "--max-parallel", "20",
         "--base-seed", "1",
-        "--seeds-per-pair", "1000",
+        "--seeds-per-pair", "10",
         "--scenario-name", "4v4/ShootMissile/HierarchySelfplay",
         "--policy-type", "fkr",
         "--max-episode-steps", "1000",

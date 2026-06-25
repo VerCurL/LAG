@@ -2,6 +2,7 @@ import logging
 import time
 import os
 import gymnasium
+import random
 from gymnasium.utils import seeding
 import numpy as np
 from typing import Dict, Any, Tuple
@@ -257,6 +258,9 @@ class BaseEnv(gymnasium.Env):
               this won't be true if seed=None, for example.
         """
         self.np_random, seed = seeding.np_random(seed)
+        seed32 = int(seed) % (2 ** 32)
+        random.seed(seed32)
+        np.random.seed(seed32)
         return [seed]
 
     def refresh_records(self):

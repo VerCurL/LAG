@@ -1,4 +1,5 @@
 import multiprocessing as mp
+import random
 import traceback
 from pathlib import Path
 
@@ -30,6 +31,16 @@ class ActorArgs:
 
 def t2n(x):
     return x.detach().cpu().numpy()
+
+
+def set_global_seed(seed):
+    seed = int(seed)
+    seed32 = seed % (2 ** 32)
+    random.seed(seed32)
+    np.random.seed(seed32)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 
 def load_state_dict(path, device):
@@ -102,8 +113,7 @@ def run_episode_task(task):
     seed = int(task["seed"])
 
     torch.set_num_threads(1)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
+    set_global_seed(seed)
 
     device = torch.device(task["device"])
     num_agents_total = task["num_agents_total"]
@@ -137,6 +147,9 @@ def run_episode_task(task):
 
         obs_list = []
         action_list = []
+        ego_action_list = []
+        enm_action_list = []
+        all_action_list = []
         mask_list = [masks.copy()]
         snapshot_list = []
         done_list = []
@@ -170,6 +183,9 @@ def run_episode_task(task):
             actions = np.concatenate((ego_actions, enm_actions), axis=0)
             obs_list.append(ego_obs.astype(np.float32, copy=True))
             action_list.append(ego_actions.astype(np.float32, copy=True))
+            ego_action_list.append(ego_actions.astype(np.int64, copy=True))
+            enm_action_list.append(enm_actions.astype(np.int64, copy=True))
+            all_action_list.append(actions.astype(np.int64, copy=True))
 
             next_obs, _, _, dones, info = env.step(actions)
 
@@ -260,6 +276,9 @@ def run_episode_task(task):
                 out_path,
                 obs=np.asarray(obs_list, dtype=np.float32),
                 actions=np.asarray(action_list, dtype=np.float32),
+                ego_actions=np.asarray(ego_action_list, dtype=np.int64),
+                enm_actions=np.asarray(enm_action_list, dtype=np.int64),
+                all_actions=np.asarray(all_action_list, dtype=np.int64),
                 masks=np.asarray(mask_list, dtype=np.float32),
                 dones=np.asarray(done_list, dtype=np.float32),
                 snapshots=np.asarray(snapshot_list, dtype=object),

@@ -233,6 +233,20 @@ class HierarchicalMultipleCombatTask(MultipleCombatTask):
         self._inner_rnn_states = {agent_id: np.zeros((1, 1, 128)) for agent_id in env.agents.keys()}
         return super().reset(env)
 
+    def get_restore_state(self):
+        return {
+            "inner_rnn_states": {
+                agent_id: value.copy()
+                for agent_id, value in getattr(self, "_inner_rnn_states", {}).items()
+            },
+        }
+
+    def set_restore_state(self, env, state):
+        self._inner_rnn_states = {
+            agent_id: np.asarray(state.get("inner_rnn_states", {}).get(agent_id, np.zeros((1, 1, 128))), dtype=np.float32).copy()
+            for agent_id in env.agents.keys()
+        }
+
 
 
 class HierarchicalMultipleCombatShootTask(HierarchicalMultipleCombatTask):
@@ -335,6 +349,42 @@ class HierarchicalMultipleCombatShootTask(HierarchicalMultipleCombatTask):
         self._shoot_action = {agent_id: False for agent_id in env.agents.keys()}
         self._missiles_temp = {agent_id: [] for agent_id in env.agents.keys()}
         return super().reset(env)
+
+    def get_restore_state(self):
+        state = super().get_restore_state()
+        state.update(
+            {
+                "last_shoot_time": dict(getattr(self, "_last_shoot_time", {})),
+                "remaining_missiles": dict(getattr(self, "_remaining_missiles", {})),
+                "shoot_action": dict(getattr(self, "_shoot_action", {})),
+                "missiles_temp": {
+                    agent_id: [missile.uid for missile in missiles]
+                    for agent_id, missiles in getattr(self, "_missiles_temp", {}).items()
+                },
+            }
+        )
+        return state
+
+    def set_restore_state(self, env, state):
+        super().set_restore_state(env, state)
+        self._last_shoot_time = {
+            agent_id: int(state.get("last_shoot_time", {}).get(agent_id, -self.min_attack_interval))
+            for agent_id in env.agents.keys()
+        }
+        self._remaining_missiles = {
+            agent_id: int(state.get("remaining_missiles", {}).get(agent_id, env.agents[agent_id].num_left_missiles))
+            for agent_id in env.agents.keys()
+        }
+        self._shoot_action = {
+            agent_id: bool(state.get("shoot_action", {}).get(agent_id, False))
+            for agent_id in env.agents.keys()
+        }
+        self._missiles_temp = {}
+        for agent_id in env.agents.keys():
+            missile_uids = state.get("missiles_temp", {}).get(agent_id, [])
+            self._missiles_temp[agent_id] = [
+                env._tempsims[uid] for uid in missile_uids if uid in env._tempsims
+            ]
 
     def normalize_action(self, env, agent_id, action):
         self._shoot_action[agent_id] = action[3] > 0

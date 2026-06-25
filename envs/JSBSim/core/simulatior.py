@@ -189,6 +189,60 @@ class AircraftSimulator(BaseSimulator):
         # update inner property
         self._update_properties()
 
+    def _iter_jsbsim_property_names(self):
+        names = []
+        for item in self.jsbsim_exec.query_property_catalog(""):
+            item = item.strip()
+            if not item:
+                continue
+            names.append(item.split(" ")[0])
+        return names
+
+    def get_restore_state(self):
+        properties = {}
+        for name in self._iter_jsbsim_property_names():
+            try:
+                value = self.jsbsim_exec.get_property_value(name)
+            except Exception:
+                continue
+            if np.isscalar(value) and np.isfinite(value):
+                properties[name] = float(value)
+        return {
+            "uid": self.uid,
+            "color": self.color,
+            "model": self.model,
+            "init_state": dict(self.init_state),
+            "origin": (float(self.lon0), float(self.lat0), float(self.alt0)),
+            "bloods": float(self.bloods),
+            "status": int(self.__status),
+            "num_missiles": int(self.num_missiles),
+            "num_left_missiles": int(self.num_left_missiles),
+            "geodetic": self._geodetic.copy(),
+            "position": self._position.copy(),
+            "posture": self._posture.copy(),
+            "velocity": self._velocity.copy(),
+            "properties": properties,
+        }
+
+    def set_restore_state(self, state):
+        self.reload(new_state=dict(state.get("init_state", self.init_state)), new_origin=tuple(state.get("origin", (self.lon0, self.lat0, self.alt0))))
+        for name, value in state.get("properties", {}).items():
+            try:
+                self.jsbsim_exec.set_property_value(name, float(value))
+            except Exception:
+                pass
+        self.bloods = float(state.get("bloods", self.bloods))
+        self.__status = int(state.get("status", self.__status))
+        self.num_left_missiles = int(state.get("num_left_missiles", self.num_left_missiles))
+        self._geodetic[:] = np.asarray(state.get("geodetic", self._geodetic), dtype=float)
+        self._position[:] = np.asarray(state.get("position", self._position), dtype=float)
+        self._posture[:] = np.asarray(state.get("posture", self._posture), dtype=float)
+        self._velocity[:] = np.asarray(state.get("velocity", self._velocity), dtype=float)
+        try:
+            self._update_properties()
+        except Exception:
+            pass
+
     def clear_defalut_condition(self):
         default_condition = {
             Catalog.ic_long_gc_deg: 120.0,  # geodesic longitude [deg]
@@ -574,3 +628,58 @@ class MissileSimulator(BaseSimulator):
         # update mass
         if self._t < self._t_thrust:
             self._m = self._m - self.dt * self._dm
+
+    def get_restore_state(self):
+        return {
+            "uid": self.uid,
+            "color": self.color,
+            "model": self.model,
+            "dt": float(self.dt),
+            "status": int(self.__status),
+            "parent_uid": self.parent_aircraft.uid if self.parent_aircraft is not None else "",
+            "target_uid": self.target_aircraft.uid if self.target_aircraft is not None else "",
+            "render_explosion": bool(self.render_explosion),
+            "geodetic": self._geodetic.copy(),
+            "position": self._position.copy(),
+            "posture": self._posture.copy(),
+            "velocity": self._velocity.copy(),
+            "origin": (float(self.lon0), float(self.lat0), float(self.alt0)),
+            "t": float(getattr(self, "_t", 0.0)),
+            "m": float(getattr(self, "_m", self._m0)),
+            "dtheta": float(getattr(self, "_dtheta", 0.0)),
+            "dphi": float(getattr(self, "_dphi", 0.0)),
+            "distance_pre": float(getattr(self, "_distance_pre", np.inf)),
+            "distance_increment": list(getattr(self, "_distance_increment", [])),
+            "distance_increment_maxlen": int(getattr(getattr(self, "_distance_increment", []), "maxlen", int(5 / self.dt))),
+            "left_t": int(getattr(self, "_left_t", int(1 / self.dt))),
+        }
+
+    @classmethod
+    def from_restore_state(cls, state, aircraft_by_uid):
+        missile = cls(
+            uid=str(state["uid"]),
+            color=str(state.get("color", "Red")),
+            model=str(state.get("model", "AIM-9L")),
+            dt=float(state.get("dt", 1 / 12)),
+        )
+        missile.set_restore_state(state, aircraft_by_uid)
+        return missile
+
+    def set_restore_state(self, state, aircraft_by_uid):
+        self.__status = int(state.get("status", MissileSimulator.INACTIVE))
+        self.parent_aircraft = aircraft_by_uid.get(str(state.get("parent_uid", "")))
+        self.target_aircraft = aircraft_by_uid.get(str(state.get("target_uid", "")))
+        self.render_explosion = bool(state.get("render_explosion", False))
+        self._geodetic[:] = np.asarray(state.get("geodetic", self._geodetic), dtype=float)
+        self._position[:] = np.asarray(state.get("position", self._position), dtype=float)
+        self._posture[:] = np.asarray(state.get("posture", self._posture), dtype=float)
+        self._velocity[:] = np.asarray(state.get("velocity", self._velocity), dtype=float)
+        self.lon0, self.lat0, self.alt0 = tuple(state.get("origin", (self.lon0, self.lat0, self.alt0)))
+        self._t = float(state.get("t", 0.0))
+        self._m = float(state.get("m", self._m0))
+        self._dtheta = float(state.get("dtheta", 0.0))
+        self._dphi = float(state.get("dphi", 0.0))
+        self._distance_pre = float(state.get("distance_pre", np.inf))
+        maxlen = int(state.get("distance_increment_maxlen", int(5 / self.dt)))
+        self._distance_increment = deque(state.get("distance_increment", []), maxlen=maxlen)
+        self._left_t = int(state.get("left_t", int(1 / self.dt)))
