@@ -41,6 +41,7 @@ CF_ACTION_NAMES = (
     "invert_altitude",
     "invert_velocity",
 )
+RENDERED_FACTUAL_TACVIEW_PATHS = set()
 
 
 class ActorArgs:
@@ -258,6 +259,60 @@ def actor_step(actor, obs, rnn_states, masks, deterministic):
     return t2n(actions).astype(np.int64, copy=False), t2n(next_rnn_states)
 
 
+def get_worker_slot(num_workers):
+    if int(num_workers) <= 1:
+        return 1
+    identity = mp.current_process()._identity
+    if not identity:
+        return 1
+    return ((int(identity[0]) - 1) % int(num_workers)) + 1
+
+
+def render_rollout_acmi(
+    env,
+    ego_actor,
+    enm_actor,
+    ego_obs,
+    enm_obs,
+    ego_rnn_states,
+    enm_rnn_states,
+    masks,
+    first_step_actions,
+    args,
+    acmi_path,
+):
+    acmi_path = resolve_project_path(acmi_path)
+    acmi_path.parent.mkdir(parents=True, exist_ok=True)
+    env.refresh_records()
+    env.render(mode="txt", filepath=str(acmi_path))
+
+    num_ego_agents = int(args.num_agents_total) // 2
+    ego_obs = np.asarray(ego_obs, dtype=np.float32).copy()
+    enm_obs = np.asarray(enm_obs, dtype=np.float32).copy()
+    ego_rnn_states = np.asarray(ego_rnn_states, dtype=np.float32).copy()
+    enm_rnn_states = np.asarray(enm_rnn_states, dtype=np.float32).copy()
+    masks = np.asarray(masks, dtype=np.float32).copy()
+
+    for step_i in range(int(args.field_k_step)):
+        if step_i == 0:
+            _, ego_rnn_states = actor_step(ego_actor, ego_obs, ego_rnn_states, masks, bool(args.deterministic))
+            _, enm_rnn_states = actor_step(enm_actor, enm_obs, enm_rnn_states, masks, bool(args.deterministic))
+            step_actions = np.asarray(first_step_actions, dtype=np.int64)
+        else:
+            ego_actions, ego_rnn_states = actor_step(ego_actor, ego_obs, ego_rnn_states, masks, bool(args.deterministic))
+            enm_actions, enm_rnn_states = actor_step(enm_actor, enm_obs, enm_rnn_states, masks, bool(args.deterministic))
+            step_actions = np.concatenate((ego_actions, enm_actions), axis=0)
+
+        next_obs, _, _, dones, _ = env.step(step_actions)
+        env.render(mode="txt", filepath=str(acmi_path))
+        if bool(np.all(dones)):
+            break
+
+        masks = np.ones((num_ego_agents, 1), dtype=np.float32)
+        ego_obs = next_obs[:num_ego_agents]
+        enm_obs = next_obs[num_ego_agents:]
+
+
 def replay_to_time(env, ego_actor, enm_actor, target_t, num_ego_agents, recurrent_hidden_size, deterministic):
     obs, _ = env.reset()
     ego_obs = obs[:num_ego_agents]
@@ -289,10 +344,14 @@ def rollout_counterfactual_label(
     args,
     device,
     restore_ref=None,
+    factual_actions=None,
+    factual_tacview_path="",
+    counterfactual_tacview_path="",
 ):
     env = None
     try:
         num_ego_agents = int(args.num_agents_total) // 2
+        restore_state = None
         if restore_ref is not None:
             restore_state = load_restore_state(restore_ref["restore_file"], restore_ref["state_index"])
             metadata = restore_state.get("extra", {}).get("metadata", metadata)
@@ -315,6 +374,46 @@ def rollout_counterfactual_label(
                 int(args.recurrent_hidden_size_actor),
                 bool(args.deterministic),
             )
+            restore_state = env.get_restore_state(
+                extra={
+                    "ego_obs": ego_obs.astype(np.float32, copy=True),
+                    "enm_obs": enm_obs.astype(np.float32, copy=True),
+                    "ego_rnn_states": ego_rnn_states.astype(np.float32, copy=True),
+                    "enm_rnn_states": enm_rnn_states.astype(np.float32, copy=True),
+                    "masks": masks.astype(np.float32, copy=True),
+                }
+            )
+
+        if factual_tacview_path and factual_actions is not None:
+            factual_tacview_key = normalize_path(resolve_project_path(factual_tacview_path))
+            if factual_tacview_key not in RENDERED_FACTUAL_TACVIEW_PATHS:
+                render_rollout_acmi(
+                    env,
+                    ego_actor,
+                    enm_actor,
+                    ego_obs,
+                    enm_obs,
+                    ego_rnn_states,
+                    enm_rnn_states,
+                    masks,
+                    factual_actions,
+                    args,
+                    factual_tacview_path,
+                )
+                RENDERED_FACTUAL_TACVIEW_PATHS.add(factual_tacview_key)
+            env.set_restore_state(restore_state)
+            extra = restore_state.get("extra", {})
+            ego_obs = np.asarray(extra["ego_obs"], dtype=np.float32)
+            enm_obs = np.asarray(extra["enm_obs"], dtype=np.float32)
+            ego_rnn_states = np.asarray(extra["ego_rnn_states"], dtype=np.float32)
+            enm_rnn_states = np.asarray(extra["enm_rnn_states"], dtype=np.float32)
+            masks = np.asarray(extra["masks"], dtype=np.float32)
+
+        if counterfactual_tacview_path:
+            acmi_path = resolve_project_path(counterfactual_tacview_path)
+            acmi_path.parent.mkdir(parents=True, exist_ok=True)
+            env.refresh_records()
+            env.render(mode="txt", filepath=str(acmi_path))
 
         snapshots = []
         masks_for_field = []
@@ -334,6 +433,8 @@ def rollout_counterfactual_label(
                 raise RuntimeError("AeroTAF_snapshot is missing during counterfactual rollout.")
             snapshots.append(snapshot)
             masks_for_field.append(np.ones((num_ego_agents, 1), dtype=np.float32))
+            if counterfactual_tacview_path:
+                env.render(mode="txt", filepath=str(resolve_project_path(counterfactual_tacview_path)))
 
             if bool(np.all(dones)):
                 break
@@ -376,6 +477,7 @@ def run_counterfactual_task(task):
         set_global_seed(int(task["metadata"]["random_seed"]))
         device = torch.device(args.device)
         field_calculator = make_field_calculator(args)
+        write_tacview = bool(args.tacview) and get_worker_slot(int(args.num_workers)) == 1
         threat_target, attack_target, rollout_steps = rollout_counterfactual_label(
             metadata=task["metadata"],
             target_t=task["time_index"],
@@ -385,6 +487,9 @@ def run_counterfactual_task(task):
             args=args,
             device=device,
             restore_ref=task.get("restore_ref"),
+            factual_actions=np.asarray(task["factual_actions"], dtype=np.int64),
+            factual_tacview_path=task.get("factual_tacview_path", "") if write_tacview else "",
+            counterfactual_tacview_path=task.get("counterfactual_tacview_path", "") if write_tacview else "",
         )
         return {
             "status": "ok",
@@ -507,6 +612,8 @@ def build_split(split_name, split_path, output_dir, args):
         "deterministic": bool(args.deterministic),
         "fix_position": bool(args.fix_position),
         "device": str(args.device),
+        "num_workers": int(args.num_workers),
+        "tacview": bool(args.tacview),
         "recurrent_hidden_size_actor": int(args.recurrent_hidden_size_actor),
         "field_k_step": int(args.field_k_step),
         "field_gamma": float(args.field_gamma),
@@ -584,6 +691,13 @@ def build_split(split_name, split_path, output_dir, args):
                             "counterfactual_actions": cf_actions,
                             "counterfactual_agent_action": cf_actions[agent_index],
                             "restore_ref": restore_lookup.get(row),
+                            "factual_tacview_path": normalize_path(
+                                args.tacview_dir / f"{split_name}_row{row:08d}_t{time_index:06d}_factual.txt.acmi"
+                            ),
+                            "counterfactual_tacview_path": normalize_path(
+                                args.tacview_dir
+                                / f"{split_name}_row{row:08d}_t{time_index:06d}_{cf_name}_agent{agent_index:02d}.txt.acmi"
+                            ),
                         }
                     )
 
@@ -607,6 +721,8 @@ def build_split(split_name, split_path, output_dir, args):
         f"[split:{split_name}] prepared_tasks={len(tasks)} "
         f"| workers={args.num_workers} | chunk_size={args.task_chunk_size}"
     )
+    if args.tacview:
+        logging.info(f"[split:{split_name}] tacview enabled: {normalize_path(args.tacview_dir)}")
 
     for done_i, result in enumerate(
         iter_task_results(tasks, int(args.num_workers), int(args.task_chunk_size)),
@@ -660,6 +776,8 @@ def get_parser():
     parser.add_argument("--num-workers", type=int, default=1, help="Parallel worker process count. Use 1 for serial execution.")
     parser.add_argument("--task-chunk-size", type=int, default=1, help="Multiprocessing imap_unordered chunk size.")
     parser.add_argument("--restore-dir", type=str, default="", help="Optional restore_states directory from collect_restore_states.py.")
+    parser.add_argument("--tacview", action="store_true", default=False, help="Write txt.acmi rollouts for Tacview visualization.")
+    parser.add_argument("--tacview-dir", type=str, default="", help="Tacview output directory. Defaults to output_dir/tacview.")
 
     parser.add_argument("--field-k-step", type=int, default=100, help="Future horizon K for counterfactual target calculation.")
     parser.add_argument("--field-gamma", type=float, default=0.96, help="Discount gamma for K-step target calculation.")
@@ -689,6 +807,13 @@ def main(args):
         else dataset_dir / f"coma_counterfactual_K{all_args.field_k_step}"
     )
     output_dir.mkdir(parents=True, exist_ok=True)
+    all_args.tacview_dir = (
+        resolve_project_path(all_args.tacview_dir)
+        if all_args.tacview_dir
+        else output_dir / "tacview"
+    )
+    if all_args.tacview:
+        all_args.tacview_dir.mkdir(parents=True, exist_ok=True)
 
     splits = [name.strip() for name in all_args.splits.split() if name.strip()]
 
@@ -702,6 +827,7 @@ def main(args):
     logging.info(f"K/gamma     : {all_args.field_k_step}/{all_args.field_gamma}")
     logging.info(f"workers     : {all_args.num_workers}")
     logging.info(f"restore     : {normalize_path(resolve_project_path(all_args.restore_dir)) if all_args.restore_dir else 'disabled, replay from seed/model to t'}")
+    logging.info(f"tacview     : {normalize_path(all_args.tacview_dir) if all_args.tacview else 'disabled'}")
     logging.info("-" * 72)
 
     summaries = []
@@ -716,6 +842,13 @@ def main(args):
         "dataset_dir": normalize_path(dataset_dir),
         "output_dir": normalize_path(output_dir),
         "restore_dir": normalize_path(resolve_project_path(all_args.restore_dir)) if all_args.restore_dir else "",
+        "tacview": {
+            "enabled": bool(all_args.tacview),
+            "output_dir": normalize_path(all_args.tacview_dir) if all_args.tacview else "",
+            "mode": "txt.acmi",
+            "scope": "all serial tasks, or tasks executed by worker slot 1 when num_workers > 1",
+            "contains": "factual K-step rollout from t and counterfactual K-step rollouts from t",
+        },
         "splits": splits,
         "counterfactual_actions": list(CF_ACTION_NAMES),
         "counterfactual_definition": {
@@ -745,13 +878,15 @@ def main(args):
 
 if __name__ == "__main__":
     default_args = [
-        "--dataset-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/fkr-300vs500/processed_detail_index_k_target_K100",
+        "--dataset-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/fkr-300vs500/processed_detail_index_k_target_K50",
+        "--restore-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/fkr-300vs500/processed_detail_index_k_target_K50/restore_states",
         "--splits", "val test",
-        "--field-k-step", "100",
+        "--field-k-step", "50",
         "--field-gamma", "0.96",
         "--num-agents-total", "8",
         "--device", "cpu",
-        "--num-workers", "24",
+        # "--tacview",
+        "--num-workers", "64",
         "--task-chunk-size", "1",
         "--log-interval", "10",
     ]

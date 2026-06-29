@@ -674,7 +674,14 @@ class MissileSimulator(BaseSimulator):
         self._position[:] = np.asarray(state.get("position", self._position), dtype=float)
         self._posture[:] = np.asarray(state.get("posture", self._posture), dtype=float)
         self._velocity[:] = np.asarray(state.get("velocity", self._velocity), dtype=float)
-        self.lon0, self.lat0, self.alt0 = tuple(state.get("origin", (self.lon0, self.lat0, self.alt0)))
+        if "origin" in state:
+            self.lon0, self.lat0, self.alt0 = tuple(state["origin"])
+        elif self.parent_aircraft is not None:
+            self.lon0, self.lat0, self.alt0 = (
+                self.parent_aircraft.lon0,
+                self.parent_aircraft.lat0,
+                self.parent_aircraft.alt0,
+            )
         self._t = float(state.get("t", 0.0))
         self._m = float(state.get("m", self._m0))
         self._dtheta = float(state.get("dtheta", 0.0))
