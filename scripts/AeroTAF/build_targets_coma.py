@@ -1,12 +1,15 @@
 #!/usr/bin/env python
 import argparse
+import contextlib
 import json
 import logging
 import multiprocessing as mp
+import os
 import random
 import sys
 import time
 import traceback
+import warnings
 from argparse import Namespace
 from pathlib import Path
 
@@ -16,6 +19,38 @@ if str(ROOT_DIR) not in sys.path:
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 
+
+@contextlib.contextmanager
+def suppress_noisy_output():
+    with open(os.devnull, "w") as devnull:
+        old_stdout = sys.stdout
+        old_stderr = sys.stderr
+        old_stdout_fd = os.dup(1)
+        old_stderr_fd = os.dup(2)
+        try:
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os.dup2(devnull.fileno(), 1)
+            os.dup2(devnull.fileno(), 2)
+            sys.stdout = devnull
+            sys.stderr = devnull
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                yield
+        finally:
+            try:
+                sys.stdout.flush()
+                sys.stderr.flush()
+            except Exception:
+                pass
+            os.dup2(old_stdout_fd, 1)
+            os.dup2(old_stderr_fd, 2)
+            os.close(old_stdout_fd)
+            os.close(old_stderr_fd)
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr
+
+
 try:
     import numpy as np
     import torch
@@ -24,13 +59,14 @@ except ModuleNotFoundError as exc:
     logging.info("Please activate the same Python environment used by this project, then run this script again.")
     sys.exit(1)
 
-from algorithms.mappo.ppo_actor import PPOActor as MAPPOActor
-from envs.JSBSim.envs import MultipleCombatEnv
-from envs.JSBSim.situation.extractor import SituationExtractor
-from envs.JSBSim.situation.field import FieldCalculator
-from scripts.AeroTAF.build_targets_detail import build_fields_for_episode
-from scripts.AeroTAF.collector.path_utils import canonicalize_task_key, normalize_path, resolve_project_path
-from scripts.AeroTAF.data.schema import CATEGORY_NAMES
+with suppress_noisy_output():
+    from algorithms.mappo.ppo_actor import PPOActor as MAPPOActor
+    from envs.JSBSim.envs import MultipleCombatEnv
+    from envs.JSBSim.situation.extractor import SituationExtractor
+    from envs.JSBSim.situation.field import FieldCalculator
+    from scripts.AeroTAF.build_targets_detail import build_fields_for_episode
+    from scripts.AeroTAF.collector.path_utils import canonicalize_task_key, normalize_path, resolve_project_path
+    from scripts.AeroTAF.data.schema import CATEGORY_NAMES
 
 
 CF_ACTION_NAMES = (
@@ -472,25 +508,26 @@ def make_field_calculator(args):
 
 def run_counterfactual_task(task):
     try:
-        torch.set_num_threads(1)
-        args = Namespace(**task["runner_args"])
-        set_global_seed(int(task["metadata"]["random_seed"]))
-        device = torch.device(args.device)
-        field_calculator = make_field_calculator(args)
-        write_tacview = bool(args.tacview) and get_worker_slot(int(args.num_workers)) == 1
-        threat_target, attack_target, rollout_steps = rollout_counterfactual_label(
-            metadata=task["metadata"],
-            target_t=task["time_index"],
-            agent_index=task["agent_index"],
-            counterfactual_actions=np.asarray(task["counterfactual_actions"], dtype=np.int64),
-            field_calculator=field_calculator,
-            args=args,
-            device=device,
-            restore_ref=task.get("restore_ref"),
-            factual_actions=np.asarray(task["factual_actions"], dtype=np.int64),
-            factual_tacview_path=task.get("factual_tacview_path", "") if write_tacview else "",
-            counterfactual_tacview_path=task.get("counterfactual_tacview_path", "") if write_tacview else "",
-        )
+        with suppress_noisy_output():
+            torch.set_num_threads(1)
+            args = Namespace(**task["runner_args"])
+            set_global_seed(int(task["metadata"]["random_seed"]))
+            device = torch.device(args.device)
+            field_calculator = make_field_calculator(args)
+            write_tacview = bool(args.tacview) and get_worker_slot(int(args.num_workers)) == 1
+            threat_target, attack_target, rollout_steps = rollout_counterfactual_label(
+                metadata=task["metadata"],
+                target_t=task["time_index"],
+                agent_index=task["agent_index"],
+                counterfactual_actions=np.asarray(task["counterfactual_actions"], dtype=np.int64),
+                field_calculator=field_calculator,
+                args=args,
+                device=device,
+                restore_ref=task.get("restore_ref"),
+                factual_actions=np.asarray(task["factual_actions"], dtype=np.int64),
+                factual_tacview_path=task.get("factual_tacview_path", "") if write_tacview else "",
+                counterfactual_tacview_path=task.get("counterfactual_tacview_path", "") if write_tacview else "",
+            )
         return {
             "status": "ok",
             "cf_name": task["cf_name"],
@@ -872,8 +909,6 @@ def main(args):
     }
     manifest_path = output_dir / "coma_counterfactual_manifest.json"
     save_json(manifest_path, manifest)
-    logging.info(f"Saved manifest: {normalize_path(manifest_path)}")
-    logging.info("Done.")
 
 
 if __name__ == "__main__":
