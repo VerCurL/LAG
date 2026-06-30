@@ -342,6 +342,37 @@ def category_summary_for_indices(full_dataset, indices):
     }
 
 
+def build_split_candidate_indices(categories, stable_sample_ratio, seed):
+    categories = np.asarray(categories).reshape(-1)
+    stable_sample_ratio = float(stable_sample_ratio)
+    if not np.isfinite(stable_sample_ratio) or stable_sample_ratio < 0.0 or stable_sample_ratio > 1.0:
+        raise ValueError(f"--stable-sample-ratio must be in [0, 1], got {stable_sample_ratio}")
+
+    stable_indices = np.flatnonzero(categories == CATEGORY_STABLE).astype(np.int64, copy=False)
+    non_stable_indices = np.flatnonzero(categories != CATEGORY_STABLE).astype(np.int64, copy=False)
+
+    keep_stable_count = int(round(stable_indices.shape[0] * stable_sample_ratio))
+    keep_stable_count = max(0, min(int(stable_indices.shape[0]), keep_stable_count))
+
+    rng = np.random.default_rng(int(seed))
+    sampled_stable_indices = stable_indices.copy()
+    rng.shuffle(sampled_stable_indices)
+    sampled_stable_indices = sampled_stable_indices[:keep_stable_count]
+
+    candidate_indices = np.concatenate((non_stable_indices, sampled_stable_indices), axis=0).astype(np.int64, copy=False)
+    rng.shuffle(candidate_indices)
+
+    return candidate_indices, {
+        "stable_sample_ratio": stable_sample_ratio,
+        "stable_total": int(stable_indices.shape[0]),
+        "stable_selected": int(sampled_stable_indices.shape[0]),
+        "stable_dropped": int(stable_indices.shape[0] - sampled_stable_indices.shape[0]),
+        "non_stable_selected": int(non_stable_indices.shape[0]),
+        "candidate_total": int(candidate_indices.shape[0]),
+        "all_target_total": int(categories.shape[0]),
+    }
+
+
 def save_dataset(path, dataset):
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(path, **dataset)
@@ -367,6 +398,7 @@ def get_parser():
     parser.add_argument("--train-ratio", type=float, default=0.8, help="Point ratio assigned to train within each category.")
     parser.add_argument("--val-ratio", type=float, default=0.1, help="Point ratio assigned to val within each category.")
     parser.add_argument("--test-ratio", type=float, default=0.1, help="Point ratio assigned to test within each category.")
+    parser.add_argument("--stable-sample-ratio", type=float, default=1.0, help="Randomly keep this ratio of stable points for train/val/test splits.")
 
     parser.add_argument("--field-k-step", type=int, default=20, help="Future horizon K for AeroTAF target calculation.")
     parser.add_argument("--field-gamma", type=float, default=0.95, help="Discount gamma for K-step target calculation.")
@@ -474,13 +506,29 @@ def main(args):
     )
 
     logging.info("[stage] category-wise random point split ...")
-    split_indices, category_split_counts, normalized_split_ratios = split_indices_by_category(
+    split_candidate_indices, stable_sampling_summary = build_split_candidate_indices(
         categories=all_dataset["sample_category"],
+        stable_sample_ratio=all_args.stable_sample_ratio,
+        seed=all_args.split_seed,
+    )
+    split_indices_local, category_split_counts, normalized_split_ratios = split_indices_by_category(
+        categories=all_dataset["sample_category"][split_candidate_indices],
         category_names=CATEGORY_NAMES,
         train_ratio=all_args.train_ratio,
         val_ratio=all_args.val_ratio,
         test_ratio=all_args.test_ratio,
         seed=all_args.split_seed,
+    )
+    split_indices = {
+        split_name: split_candidate_indices[np.asarray(indices, dtype=np.int64).reshape(-1)]
+        for split_name, indices in split_indices_local.items()
+    }
+    logging.info(
+        "[stage] stable sampling: "
+        f"ratio={stable_sampling_summary['stable_sample_ratio']:.4f}, "
+        f"selected={stable_sampling_summary['stable_selected']}/"
+        f"{stable_sampling_summary['stable_total']}, "
+        f"dropped={stable_sampling_summary['stable_dropped']}"
     )
     logging.info(
         "[stage] split ratios: "
@@ -558,6 +606,7 @@ def main(args):
             },
         },
         "split_seed": all_args.split_seed,
+        "stable_sampling": stable_sampling_summary,
         "requested_split_ratios": {
             "train": all_args.train_ratio,
             "val": all_args.val_ratio,
@@ -589,12 +638,13 @@ def main(args):
 if __name__ == "__main__":
     default_args = [
         "--raw-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/fkr-300vs500/raw",
-        "--output-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/fkr-300vs500/processed_detail_index_k_target_K50",
+        "--output-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/fkr-300vs500/processed_detail_K50",
         "--file-pattern", "episode_*.npz",
         "--split-seed", "1",
         "--train-ratio", "0.8",
         "--val-ratio", "0.1",
         "--test-ratio", "0.1",
+        "--stable-sample-ratio", "0.05",
         "--field-k-step", "50",
         "--field-gamma", "0.96",
         "--ego-team", "0.0",
