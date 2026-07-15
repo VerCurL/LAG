@@ -28,8 +28,10 @@ from scripts.AeroTAF.collector.path_utils import normalize_path, resolve_project
 from scripts.AeroTAF.data.schema import CATEGORY_NAMES
 from scripts.AeroTAF.train_aerotaf_attn import (
     AeroTAFATTNWindowDataset,
+    COMA_ACTION_NAMES,
     StepPartitionBatchSampler,
     add_category_raw_loss_columns,
+    add_counterfactual_raw_loss_columns,
     append_csv_row,
     build_device,
     build_eval_loader,
@@ -39,6 +41,7 @@ from scripts.AeroTAF.train_aerotaf_attn import (
     dump_config,
     finalize_metrics,
     format_counts,
+    load_counterfactual_datasets,
     new_totals,
     save_checkpoint,
     set_seed,
@@ -186,6 +189,24 @@ def evaluate(model, loader, device, args):
     return finalize_metrics(totals)
 
 
+def evaluate_counterfactual_datasets(model, datasets, device, args):
+    results = {}
+    old_eval_batch_size = args.eval_batch_size
+    try:
+        for action_name in COMA_ACTION_NAMES:
+            dataset = datasets[action_name]
+            args.eval_batch_size = max(1, min(old_eval_batch_size, len(dataset)))
+            results[action_name] = evaluate(
+                model,
+                build_eval_loader(dataset, args, device),
+                device,
+                args,
+            )
+    finally:
+        args.eval_batch_size = old_eval_batch_size
+    return results
+
+
 def evaluate_raw_losses_by_category(model, dataset, device, args, active=True):
     results = {}
     old_eval_batch_size = args.eval_batch_size
@@ -249,6 +270,12 @@ def get_parser():
     parser.add_argument("--train-file", type=str, default="train.npz", help="Training split filename.")
     parser.add_argument("--val-file", type=str, default="val.npz", help="Validation split filename.")
     parser.add_argument("--test-file", type=str, default="test.npz", help="Test split filename.")
+    parser.add_argument(
+        "--coma-dir",
+        type=str,
+        default="",
+        help="Optional build_targets_coma.py output directory containing val/test counterfactual npz files.",
+    )
     parser.add_argument("--experiment-name", type=str, default="AeroTAF-ATTN-Fast-Detail-Point-K100", help="Experiment name.")
     parser.add_argument("--save-root", type=str, default="scripts/results/AeroTAF", help="Checkpoint root directory.")
     parser.add_argument("--seed", type=int, default=1, help="Random seed.")
@@ -319,6 +346,13 @@ def main(args):
             raw_cache_size=all_args.raw_cache_size,
         ),
     }
+    counterfactual_datasets = {}
+    if all_args.coma_dir:
+        coma_dir = resolve_project_path(all_args.coma_dir)
+        counterfactual_datasets = {
+            "val": load_counterfactual_datasets(coma_dir, "val", datasets["val"]),
+            "test": load_counterfactual_datasets(coma_dir, "test", datasets["test"]),
+        }
     if datasets["train"].num_agents != all_args.num_agents:
         raise ValueError(f"--num-agents={all_args.num_agents}, but raw data has {datasets['train'].num_agents} agents")
     all_args.effective_mini_epoch = max(1, min(int(all_args.mini_epoch), len(datasets["train"])))
@@ -334,7 +368,13 @@ def main(args):
     epoch_log_path = run_dir / "epoch_log.csv"
     config_path = run_dir / "config.json"
     test_metrics_path = run_dir / "test_metrics.json"
-    dump_config(config_path, all_args, dataset_paths, datasets)
+    dump_config(
+        config_path,
+        all_args,
+        dataset_paths,
+        datasets,
+        counterfactual_datasets=counterfactual_datasets,
+    )
 
     logging.info("=" * 72)
     logging.info("AeroTAF_ATNN_Fast Detail Window Training")
@@ -353,6 +393,14 @@ def main(args):
     logging.info(f"train cats  : {format_counts(datasets['train'].category_counts(active=False))}")
     logging.info(f"val cats    : {format_counts(datasets['val'].category_counts(active=False))}")
     logging.info(f"test cats   : {format_counts(datasets['test'].category_counts(active=False))}")
+    if counterfactual_datasets:
+        logging.info(f"coma dir    : {normalize_path(resolve_project_path(all_args.coma_dir))}")
+        for split_name in ("val", "test"):
+            counts = ", ".join(
+                f"{action_name}={len(counterfactual_datasets[split_name][action_name])}"
+                for action_name in COMA_ACTION_NAMES
+            )
+            logging.info(f"coma {split_name:4s}   : {counts}")
     logging.info(
         f"loss w      : threat={all_args.threat_loss_weight} attack={all_args.attack_loss_weight} | lr={all_args.lr:.2e}"
     )
@@ -377,6 +425,16 @@ def main(args):
         train_metrics = train_one_epoch(model, train_loader, device, all_args, optimizer)
         val_loader = build_eval_loader(datasets["val"], all_args, device)
         val_metrics = evaluate(model, val_loader, device, all_args)
+        val_counterfactual_metrics = (
+            evaluate_counterfactual_datasets(
+                model,
+                counterfactual_datasets["val"],
+                device,
+                all_args,
+            )
+            if counterfactual_datasets
+            else {}
+        )
         train_category_losses = evaluate_raw_losses_by_category(model, datasets["train"], device, all_args, active=True)
         val_category_losses = evaluate_raw_losses_by_category(model, datasets["val"], device, all_args, active=True)
         elapsed = time.time() - start_time
@@ -398,6 +456,8 @@ def main(args):
         }
         add_category_raw_loss_columns(csv_row, "train", train_category_losses)
         add_category_raw_loss_columns(csv_row, "val", val_category_losses)
+        if val_counterfactual_metrics:
+            add_counterfactual_raw_loss_columns(csv_row, "val", val_counterfactual_metrics)
         append_csv_row(epoch_log_path, csv_row, write_header=(epoch == 1))
 
         if epoch % all_args.log_interval == 0 or epoch == 1 or epoch == all_args.epochs:
@@ -409,6 +469,13 @@ def main(args):
                 f"| R(th/a)=({val_metrics['threat_r']:.3f}/{val_metrics['attack_r']:.3f}) "
                 f"| {elapsed:.1f}s"
             )
+            for action_name, metrics in val_counterfactual_metrics.items():
+                logging.info(
+                    f"[VAL-COMA:{action_name:15s}] "
+                    f"raw(th/a)=({metrics['threat_loss']:.5f}/{metrics['attack_loss']:.5f}) "
+                    f"| R(th/a)=({metrics['threat_r']:.3f}/{metrics['attack_r']:.3f}) "
+                    f"| windows={metrics['steps']}"
+                )
 
     if best_ckpt_path.exists():
         checkpoint = torch.load(best_ckpt_path, map_location=device, weights_only=False)
@@ -416,14 +483,34 @@ def main(args):
         logging.info(f"loaded best checkpoint for final test: {normalize_path(best_ckpt_path)}")
 
     test_metrics = evaluate_test_by_category(model, datasets["test"], device, all_args)
+    test_counterfactual_metrics = (
+        evaluate_counterfactual_datasets(
+            model,
+            counterfactual_datasets["test"],
+            device,
+            all_args,
+        )
+        if counterfactual_datasets
+        else {}
+    )
+    test_report = dict(test_metrics)
+    if test_counterfactual_metrics:
+        test_report["counterfactual"] = test_counterfactual_metrics
     with open(test_metrics_path, "w", encoding="utf-8") as f:
-        json.dump(test_metrics, f, indent=2, ensure_ascii=False)
+        json.dump(test_report, f, indent=2, ensure_ascii=False)
 
     logging.info("-" * 72)
     for name in ["all"] + list(CATEGORY_NAMES):
         metrics = test_metrics[name]
         logging.info(
             f"[TEST:{name:11s}] loss={metrics['loss']:.6f} "
+            f"| raw(th/a)=({metrics['threat_loss']:.6f}/{metrics['attack_loss']:.6f}) "
+            f"| R(th/a)=({metrics['threat_r']:.4f}/{metrics['attack_r']:.4f}) "
+            f"| windows={metrics['steps']}"
+        )
+    for action_name, metrics in test_counterfactual_metrics.items():
+        logging.info(
+            f"[TEST-COMA:{action_name:14s}] loss={metrics['loss']:.6f} "
             f"| raw(th/a)=({metrics['threat_loss']:.6f}/{metrics['attack_loss']:.6f}) "
             f"| R(th/a)=({metrics['threat_r']:.4f}/{metrics['attack_r']:.4f}) "
             f"| windows={metrics['steps']}"
@@ -435,6 +522,7 @@ def main(args):
 if __name__ == "__main__":
     default_args = [
         "--dataset-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/fkr-300vs500/processed_detail_index_k_target_K100",
+        # "--coma-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/fkr-300vs500/processed_detail_index_k_target_K100/coma_counterfactual_K100",
         "--experiment-name", "AeroTAF-ATTN-Fast-Detail-Point-K100",
         "--save-root", "scripts/results/AeroTAF",
         "--seed", "1",
