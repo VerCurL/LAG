@@ -32,6 +32,16 @@ from scripts.AeroTAF.collector.path_utils import normalize_path, resolve_project
 from scripts.AeroTAF.data.schema import CATEGORY_NAMES, CATEGORY_STABLE
 
 
+COMA_ACTION_NAMES = (
+    "previous",
+    "no_op",
+    "invert_maneuver",
+    "invert_heading",
+    "invert_altitude",
+    "invert_velocity",
+)
+
+
 class AeroTAFATTNArgs:
     def __init__(self, args):
         self.num_agents = args.num_agents
@@ -284,6 +294,137 @@ class AeroTAFATTNWindowDataset(Dataset):
         return {name: int(np.sum(categories == idx)) for idx, name in enumerate(CATEGORY_NAMES)}
 
 
+class AeroTAFATTNCounterfactualDataset(Dataset):
+    def __init__(self, npz_path, factual_dataset, expected_split, expected_action):
+        self.path = str(npz_path)
+        self.name = f"{expected_split}_{expected_action}"
+        self.factual_dataset = factual_dataset
+        self.history_windows = factual_dataset.history_windows
+        self.raw_cache_size = factual_dataset.raw_cache_size
+        self.raw_cache = factual_dataset.raw_cache
+        self.num_agents = factual_dataset.num_agents
+        self.obs_dim = factual_dataset.obs_dim
+        self.act_dim = factual_dataset.act_dim
+
+        with np.load(npz_path, allow_pickle=True) as data:
+            required = [
+                "all_target_indices",
+                "raw_file_indices",
+                "time_indices",
+                "agent_indices",
+                "sample_category",
+                "counterfactual_agent_actions",
+                "threat_targets",
+                "attack_targets",
+            ]
+            missing = [key for key in required if key not in data.files]
+            if missing:
+                raise KeyError(f"{npz_path} missing COMA keys: {missing}")
+
+            split_name = np_scalar_to_string(data["split_name"]) if "split_name" in data.files else expected_split
+            action_name = (
+                np_scalar_to_string(data["counterfactual_name"])
+                if "counterfactual_name" in data.files
+                else expected_action
+            )
+            if split_name != expected_split:
+                raise ValueError(f"{npz_path}: split_name={split_name}, expected={expected_split}")
+            if action_name != expected_action:
+                raise ValueError(f"{npz_path}: counterfactual_name={action_name}, expected={expected_action}")
+
+            self.all_target_indices = data["all_target_indices"].astype(np.int64, copy=False).reshape(-1)
+            self.raw_file_indices = data["raw_file_indices"].astype(np.int64, copy=False).reshape(-1)
+            self.time_indices = data["time_indices"].astype(np.int64, copy=False).reshape(-1)
+            self.agent_indices = data["agent_indices"].astype(np.int64, copy=False).reshape(-1)
+            self.sample_category = data["sample_category"].astype(np.int64, copy=False).reshape(-1)
+            self.counterfactual_agent_actions = data["counterfactual_agent_actions"].astype(
+                np.float32,
+                copy=False,
+            )
+            self.threat_targets = data["threat_targets"].astype(np.float32, copy=False).reshape(-1, 1)
+            self.attack_targets = data["attack_targets"].astype(np.float32, copy=False).reshape(-1, 1)
+
+        self._validate(expected_split, expected_action)
+
+    def _validate(self, expected_split, expected_action):
+        lengths = {
+            "all_target_indices": self.all_target_indices.shape[0],
+            "raw_file_indices": self.raw_file_indices.shape[0],
+            "time_indices": self.time_indices.shape[0],
+            "agent_indices": self.agent_indices.shape[0],
+            "sample_category": self.sample_category.shape[0],
+            "counterfactual_agent_actions": self.counterfactual_agent_actions.shape[0],
+            "threat_targets": self.threat_targets.shape[0],
+            "attack_targets": self.attack_targets.shape[0],
+        }
+        if len(set(lengths.values())) != 1:
+            raise ValueError(f"{self.path}: inconsistent COMA row counts: {lengths}")
+        if len(self) <= 0:
+            raise ValueError(f"{self.path}: empty COMA dataset")
+
+        parent_size = self.factual_dataset.time_indices.shape[0]
+        bad_parent = (self.all_target_indices < 0) | (self.all_target_indices >= parent_size)
+        if np.any(bad_parent):
+            examples = self.all_target_indices[bad_parent][:10].tolist()
+            raise ValueError(f"{self.path}: all_target_indices out of range, examples={examples}")
+
+        if not np.all(np.isin(self.all_target_indices, self.factual_dataset.all_parent_indices)):
+            allowed = np.isin(self.all_target_indices, self.factual_dataset.all_parent_indices)
+            examples = self.all_target_indices[~allowed][:10].tolist()
+            raise ValueError(
+                f"{self.path}: contains rows outside the current {expected_split} split, examples={examples}"
+            )
+
+        parent_rows = self.all_target_indices
+        expected_raw = self.factual_dataset.raw_file_indices[parent_rows]
+        expected_time = self.factual_dataset.time_indices[parent_rows]
+        expected_category = self.factual_dataset.sample_category[parent_rows]
+        if not np.array_equal(self.raw_file_indices, expected_raw):
+            raise ValueError(f"{self.path}: raw_file_indices do not match all_target.npz")
+        if not np.array_equal(self.time_indices, expected_time):
+            raise ValueError(f"{self.path}: time_indices do not match all_target.npz")
+        if not np.array_equal(self.sample_category, expected_category):
+            raise ValueError(f"{self.path}: sample_category does not match all_target.npz")
+        if np.any(self.agent_indices < 0) or np.any(self.agent_indices >= self.num_agents):
+            bad = self.agent_indices[(self.agent_indices < 0) | (self.agent_indices >= self.num_agents)][:10].tolist()
+            raise ValueError(f"{self.path}: invalid ego agent_indices, examples={bad}")
+        if self.counterfactual_agent_actions.ndim != 2:
+            raise ValueError(
+                f"{self.path}: counterfactual_agent_actions must be [rows, action_dim], "
+                f"got {self.counterfactual_agent_actions.shape}"
+            )
+        if self.counterfactual_agent_actions.shape[1] != self.act_dim:
+            raise ValueError(
+                f"{self.path}: counterfactual action dim={self.counterfactual_agent_actions.shape[1]}, "
+                f"raw ego action dim={self.act_dim}"
+            )
+
+        self.split_name = expected_split
+        self.counterfactual_name = expected_action
+
+    def __len__(self):
+        return int(self.all_target_indices.shape[0])
+
+    def __getitem__(self, index):
+        index = int(index)
+        row = int(self.all_target_indices[index])
+        obs, factual_actions = self.raw_cache.get(self.factual_dataset._resolve_raw_path(row))
+        t = int(self.factual_dataset.time_indices[row])
+        if t < 0 or t >= obs.shape[0] or t >= factual_actions.shape[0]:
+            raise IndexError(f"bad time_index={t} for COMA row={row}")
+
+        start = max(0, t - self.history_windows + 1)
+        action_window = factual_actions[start : t + 1].copy()
+        action_window[-1, int(self.agent_indices[index])] = self.counterfactual_agent_actions[index]
+        return (
+            obs[start : t + 1],
+            action_window,
+            self.threat_targets[index],
+            self.attack_targets[index],
+            np.asarray(start, dtype=np.int64),
+        )
+
+
 def set_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
@@ -356,6 +497,25 @@ def build_eval_loader(dataset, args, device):
         drop_last=False,
         collate_fn=collate_window_batch,
     )
+
+
+def load_counterfactual_datasets(coma_dir, split_name, factual_dataset):
+    coma_dir = resolve_project_path(coma_dir)
+    if not coma_dir.exists():
+        raise FileNotFoundError(f"COMA dataset directory not found: {coma_dir}")
+
+    datasets = {}
+    for action_name in COMA_ACTION_NAMES:
+        path = coma_dir / f"{split_name}_{action_name}.npz"
+        if not path.exists():
+            raise FileNotFoundError(f"COMA {split_name} dataset not found: {path}")
+        datasets[action_name] = AeroTAFATTNCounterfactualDataset(
+            path,
+            factual_dataset=factual_dataset,
+            expected_split=split_name,
+            expected_action=action_name,
+        )
+    return datasets
 
 
 def compute_r_value(sse, target_sum, target_square_sum, count):
@@ -511,6 +671,24 @@ def evaluate(model, loader, device, args):
     return finalize_metrics(totals)
 
 
+def evaluate_counterfactual_datasets(model, datasets, device, args):
+    results = {}
+    old_eval_batch_size = args.eval_batch_size
+    try:
+        for action_name in COMA_ACTION_NAMES:
+            dataset = datasets[action_name]
+            args.eval_batch_size = max(1, min(old_eval_batch_size, len(dataset)))
+            results[action_name] = evaluate(
+                model,
+                build_eval_loader(dataset, args, device),
+                device,
+                args,
+            )
+    finally:
+        args.eval_batch_size = old_eval_batch_size
+    return results
+
+
 def append_csv_row(path, row, write_header=False):
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a", newline="", encoding="utf-8") as f:
@@ -539,7 +717,7 @@ def build_run_dir(args):
     return resolve_project_path(args.save_root) / args.experiment_name / f"run-{timestamp}-seed{args.seed}"
 
 
-def dump_config(path, args, dataset_paths, datasets):
+def dump_config(path, args, dataset_paths, datasets, counterfactual_datasets=None):
     payload = {
         "args": vars(args),
         "dataset_paths": {key: normalize_path(value) for key, value in dataset_paths.items()},
@@ -557,6 +735,17 @@ def dump_config(path, args, dataset_paths, datasets):
             for key, dataset in datasets.items()
         },
     }
+    if counterfactual_datasets:
+        payload["counterfactual_dataset_summary"] = {
+            split_name: {
+                action_name: {
+                    "path": normalize_path(dataset.path),
+                    "points": int(len(dataset)),
+                }
+                for action_name, dataset in split_datasets.items()
+            }
+            for split_name, split_datasets in counterfactual_datasets.items()
+        }
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
 
@@ -628,12 +817,25 @@ def add_category_raw_loss_columns(row, prefix, category_losses):
         row[f"{prefix}_{category_name}_attack_loss"] = f"{category_losses[category_name]['attack_loss']:.8f}"
 
 
+def add_counterfactual_raw_loss_columns(row, prefix, counterfactual_metrics):
+    for action_name in COMA_ACTION_NAMES:
+        metrics = counterfactual_metrics[action_name]
+        row[f"{prefix}_coma_{action_name}_threat_loss"] = f"{metrics['threat_loss']:.8f}"
+        row[f"{prefix}_coma_{action_name}_attack_loss"] = f"{metrics['attack_loss']:.8f}"
+
+
 def get_parser():
     parser = argparse.ArgumentParser(description="Train AeroTAF_ATTN on detailed point-index datasets.")
     parser.add_argument("--dataset-dir", type=str, required=True, help="Processed dataset directory.")
     parser.add_argument("--train-file", type=str, default="train.npz", help="Training split filename.")
     parser.add_argument("--val-file", type=str, default="val.npz", help="Validation split filename.")
     parser.add_argument("--test-file", type=str, default="test.npz", help="Test split filename.")
+    parser.add_argument(
+        "--coma-dir",
+        type=str,
+        default="",
+        help="Optional build_targets_coma.py output directory containing val/test counterfactual npz files.",
+    )
     parser.add_argument("--experiment-name", type=str, default="AeroTAF-ATTN-Detail-Point-K100", help="Experiment name.")
     parser.add_argument("--save-root", type=str, default="scripts/results/AeroTAF", help="Checkpoint root directory.")
     parser.add_argument("--seed", type=int, default=1, help="Random seed.")
@@ -704,6 +906,13 @@ def main(args):
             raw_cache_size=all_args.raw_cache_size,
         ),
     }
+    counterfactual_datasets = {}
+    if all_args.coma_dir:
+        coma_dir = resolve_project_path(all_args.coma_dir)
+        counterfactual_datasets = {
+            "val": load_counterfactual_datasets(coma_dir, "val", datasets["val"]),
+            "test": load_counterfactual_datasets(coma_dir, "test", datasets["test"]),
+        }
     if datasets["train"].num_agents != all_args.num_agents:
         raise ValueError(f"--num-agents={all_args.num_agents}, but raw data has {datasets['train'].num_agents} agents")
     all_args.effective_mini_epoch = max(1, min(int(all_args.mini_epoch), len(datasets["train"])))
@@ -719,7 +928,13 @@ def main(args):
     epoch_log_path = run_dir / "epoch_log.csv"
     config_path = run_dir / "config.json"
     test_metrics_path = run_dir / "test_metrics.json"
-    dump_config(config_path, all_args, dataset_paths, datasets)
+    dump_config(
+        config_path,
+        all_args,
+        dataset_paths,
+        datasets,
+        counterfactual_datasets=counterfactual_datasets,
+    )
 
     logging.info("=" * 72)
     logging.info("AeroTAF_ATTN Detail Window Training")
@@ -738,6 +953,14 @@ def main(args):
     logging.info(f"train cats  : {format_counts(datasets['train'].category_counts(active=False))}")
     logging.info(f"val cats    : {format_counts(datasets['val'].category_counts(active=False))}")
     logging.info(f"test cats   : {format_counts(datasets['test'].category_counts(active=False))}")
+    if counterfactual_datasets:
+        logging.info(f"coma dir    : {normalize_path(resolve_project_path(all_args.coma_dir))}")
+        for split_name in ("val", "test"):
+            counts = ", ".join(
+                f"{action_name}={len(counterfactual_datasets[split_name][action_name])}"
+                for action_name in COMA_ACTION_NAMES
+            )
+            logging.info(f"coma {split_name:4s}   : {counts}")
     logging.info(
         f"loss w      : threat={all_args.threat_loss_weight} attack={all_args.attack_loss_weight} | lr={all_args.lr:.2e}"
     )
@@ -762,6 +985,16 @@ def main(args):
         train_metrics = train_one_epoch(model, train_loader, device, all_args, optimizer)
         val_loader = build_eval_loader(datasets["val"], all_args, device)
         val_metrics = evaluate(model, val_loader, device, all_args)
+        val_counterfactual_metrics = (
+            evaluate_counterfactual_datasets(
+                model,
+                counterfactual_datasets["val"],
+                device,
+                all_args,
+            )
+            if counterfactual_datasets
+            else {}
+        )
         train_category_losses = evaluate_raw_losses_by_category(model, datasets["train"], device, all_args, active=True)
         val_category_losses = evaluate_raw_losses_by_category(model, datasets["val"], device, all_args, active=True)
         elapsed = time.time() - start_time
@@ -783,6 +1016,8 @@ def main(args):
         }
         add_category_raw_loss_columns(csv_row, "train", train_category_losses)
         add_category_raw_loss_columns(csv_row, "val", val_category_losses)
+        if val_counterfactual_metrics:
+            add_counterfactual_raw_loss_columns(csv_row, "val", val_counterfactual_metrics)
         append_csv_row(epoch_log_path, csv_row, write_header=(epoch == 1))
 
         if epoch % all_args.log_interval == 0 or epoch == 1 or epoch == all_args.epochs:
@@ -794,6 +1029,13 @@ def main(args):
                 f"| R(th/a)=({val_metrics['threat_r']:.3f}/{val_metrics['attack_r']:.3f}) "
                 f"| {elapsed:.1f}s"
             )
+            for action_name, metrics in val_counterfactual_metrics.items():
+                logging.info(
+                    f"[VAL-COMA:{action_name:15s}] "
+                    f"raw(th/a)=({metrics['threat_loss']:.5f}/{metrics['attack_loss']:.5f}) "
+                    f"| R(th/a)=({metrics['threat_r']:.3f}/{metrics['attack_r']:.3f}) "
+                    f"| windows={metrics['steps']}"
+                )
 
     if best_ckpt_path.exists():
         checkpoint = torch.load(best_ckpt_path, map_location=device, weights_only=False)
@@ -801,14 +1043,34 @@ def main(args):
         logging.info(f"loaded best checkpoint for final test: {normalize_path(best_ckpt_path)}")
 
     test_metrics = evaluate_test_by_category(model, datasets["test"], device, all_args)
+    test_counterfactual_metrics = (
+        evaluate_counterfactual_datasets(
+            model,
+            counterfactual_datasets["test"],
+            device,
+            all_args,
+        )
+        if counterfactual_datasets
+        else {}
+    )
+    test_report = dict(test_metrics)
+    if test_counterfactual_metrics:
+        test_report["counterfactual"] = test_counterfactual_metrics
     with open(test_metrics_path, "w", encoding="utf-8") as f:
-        json.dump(test_metrics, f, indent=2, ensure_ascii=False)
+        json.dump(test_report, f, indent=2, ensure_ascii=False)
 
     logging.info("-" * 72)
     for name in ["all"] + list(CATEGORY_NAMES):
         metrics = test_metrics[name]
         logging.info(
             f"[TEST:{name:11s}] loss={metrics['loss']:.6f} "
+            f"| raw(th/a)=({metrics['threat_loss']:.6f}/{metrics['attack_loss']:.6f}) "
+            f"| R(th/a)=({metrics['threat_r']:.4f}/{metrics['attack_r']:.4f}) "
+            f"| windows={metrics['steps']}"
+        )
+    for action_name, metrics in test_counterfactual_metrics.items():
+        logging.info(
+            f"[TEST-COMA:{action_name:14s}] loss={metrics['loss']:.6f} "
             f"| raw(th/a)=({metrics['threat_loss']:.6f}/{metrics['attack_loss']:.6f}) "
             f"| R(th/a)=({metrics['threat_r']:.4f}/{metrics['attack_r']:.4f}) "
             f"| windows={metrics['steps']}"
@@ -820,6 +1082,7 @@ def main(args):
 if __name__ == "__main__":
     default_args = [
         "--dataset-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/fkr-300vs500/processed_detail_index_k_target_K100",
+        # "--coma-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/fkr-300vs500/processed_detail_index_k_target_K100/coma_counterfactual_K100",
         "--experiment-name", "AeroTAF-ATTN-Detail-Point-K100",
         "--save-root", "scripts/results/AeroTAF",
         "--seed", "1",
