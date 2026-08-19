@@ -18,7 +18,7 @@ class MultipleCombatEnv(BaseEnv):
         self._create_records = False
         self.situation_extractor = None
 
-        if algorithm == "mappoCFC":
+        if algorithm in {"mappoCFC", "mappoCFC_legacy"}:
             # todo: 这里还没写好，导弹数需要用config来传
             from envs.JSBSim.situation.extractor import SituationExtractor
             self.situation_extractor = SituationExtractor()

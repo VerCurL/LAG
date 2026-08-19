@@ -6,7 +6,7 @@ from typing import List
 import numpy as np
 import torch
 
-from algorithms.utils.buffer import SharedReplayBuffer, AeroTAFRolloutBuffer
+from algorithms.utils.buffer import SharedReplayBuffer
 from .base_runner import Runner
 from utils.flight_recorder import FlightDataRecorder
 from envs.JSBSim.situation.field import FieldCalculator
@@ -40,6 +40,9 @@ class ShareJSBSimRunner(Runner):
         elif self.algorithm_name == "mappoCFC":
             from algorithms.mappoCFC.ppo_trainer import PPOAeroTAFTrainer as Trainer
             from algorithms.mappoCFC.ppo_policy import PPOAeroTAFPolicy as Policy
+        elif self.algorithm_name == "mappoCFC_legacy":
+            from algorithms.mappoCFC_legacy.ppo_trainer import PPOAeroTAFTrainer as Trainer
+            from algorithms.mappoCFC_legacy.ppo_policy import PPOAeroTAFPolicy as Policy
         else:
             raise NotImplementedError
         self.policy = Policy(self.all_args, self.obs_space, self.share_obs_space, self.act_space, device=self.device)
@@ -54,6 +57,13 @@ class ShareJSBSimRunner(Runner):
 
         # ⭐特定使用的buffer
         if self.algorithm_name == "mappoCFC":
+            from algorithms.mappoCFC.online_dataset import AeroTAFRolloutBuffer
+            self.AeroTAF_buffer = AeroTAFRolloutBuffer(
+                buffer_size=self.buffer_size,
+                n_envs=self.n_rollout_threads,
+            )
+        elif self.algorithm_name == "mappoCFC_legacy":
+            from algorithms.utils.buffer import AeroTAFRolloutBuffer
             self.AeroTAF_buffer = AeroTAFRolloutBuffer(
                 buffer_size=self.buffer_size,
                 n_envs=self.n_rollout_threads,
@@ -252,7 +262,9 @@ class ShareJSBSimRunner(Runner):
         self.buffer.compute_returns(next_values)
 
     def train(self):
-        if self.AeroTAF_buffer is not None:
+        if self.algorithm_name == "mappoCFC":
+            train_infos = self.trainer.train(self.policy, self.buffer, self.AeroTAF_buffer)
+        elif self.algorithm_name == "mappoCFC_legacy":
             self.field_calculator = FieldCalculator()
             train_infos = self.trainer.train(self.policy, self.buffer, self.AeroTAF_buffer, self.field_calculator)
         else:
@@ -443,6 +455,9 @@ class ShareJSBSimRunner(Runner):
 
         if self.algorithm_name == "mappoCFC":
             policy_AeroTAF_state_dict = self.policy.AeroTAF.state_dict()
+            torch.save(policy_AeroTAF_state_dict, str(self.save_dir) + '/AeroTAF_ATTN_Fast_latest.pt')
+        elif self.algorithm_name == "mappoCFC_legacy":
+            policy_AeroTAF_state_dict = self.policy.AeroTAF.state_dict()
             torch.save(policy_AeroTAF_state_dict, str(self.save_dir) + '/AeroTAF_latest.pt')
 
         # [Selfplay] save policy & performance
@@ -457,6 +472,9 @@ class ShareJSBSimRunner(Runner):
         self.policy.critic.load_state_dict(policy_critic_state_dict)
 
         if self.algorithm_name == "mappoCFC":
+            policy_AeroTAF_state_dict = torch.load(str(self.model_dir) + '/AeroTAF_ATTN_Fast_latest.pt')
+            self.policy.AeroTAF.load_state_dict(policy_AeroTAF_state_dict)
+        elif self.algorithm_name == "mappoCFC_legacy":
             policy_AeroTAF_state_dict = torch.load(str(self.model_dir) + '/AeroTAF_latest.pt')
             self.policy.AeroTAF.load_state_dict(policy_AeroTAF_state_dict)
 

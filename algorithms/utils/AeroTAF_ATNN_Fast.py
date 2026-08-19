@@ -260,10 +260,13 @@ class AeroTAFATNNFastLayer(nn.Module):
         s = s.view(batch_size, seq_len, self.agent_num, s.shape[-1])
         a = a.view(batch_size, seq_len, self.agent_num, a.shape[-1])
 
-        spatial_outputs = []
-        for t in range(seq_len):
-            spatial_outputs.append(self._spatial_encode(s[:, t], a[:, t]))
-        x = torch.stack(spatial_outputs, dim=1)
+        # Spatial attention is independent across timesteps. Folding B and T
+        # avoids launching the same modules once per history position.
+        spatial = self._spatial_encode(
+            s.reshape(batch_size * seq_len, self.agent_num, s.shape[-1]),
+            a.reshape(batch_size * seq_len, self.agent_num, a.shape[-1]),
+        )
+        x = spatial.view(batch_size, seq_len, self.agent_num, spatial.shape[-1])
 
         z_last = self._temporal_encode_last(x, time_offset=time_offset)
         return self._output_heads(z_last)

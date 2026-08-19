@@ -3,6 +3,53 @@ import csv
 import os
 
 class AlgorithmsLogger:
+    NEW_CFC_COLUMNS = [
+        "AeroTAF_loss",
+        "AeroTAF_grad_norm",
+        "AeroTAF_threat_loss",
+        "AeroTAF_attack_loss",
+        "AeroTAF_updates",
+        "AeroTAF_train_samples",
+        "AeroTAF_train_episodes",
+        "AeroTAF_event_points",
+        "AeroTAF_high_field_points",
+        "AeroTAF_high_change_points",
+        "AeroTAF_stable_points",
+        "AeroTAF_event_threat_loss",
+        "AeroTAF_event_attack_loss",
+        "AeroTAF_high_field_threat_loss",
+        "AeroTAF_high_field_attack_loss",
+        "AeroTAF_high_change_threat_loss",
+        "AeroTAF_high_change_attack_loss",
+        "AeroTAF_stable_threat_loss",
+        "AeroTAF_stable_attack_loss",
+        "CFC_applied",
+        "CFC_fact_threat_mean",
+        "CFC_fact_attack_mean",
+        "CFC_threat_delta_mean",
+        "CFC_attack_delta_mean",
+        "CFC_contribution_mean",
+        "CFC_contribution_std",
+        "CFC_weight_min",
+        "CFC_weight_max",
+        "CFC_reward_sum_error",
+    ]
+
+    LEGACY_CFC_COLUMNS = [
+        "AeroTAF_loss",
+        "AeroTAF_grad_norm",
+        "threat_loss",
+        "attack_loss",
+        "fact_threat_mean",
+        "fact_attack_mean",
+        "threat_delta_mean",
+        "attack_delta_mean",
+        "contribution_mean",
+        "contribution_std",
+        "weight_min",
+        "weight_max",
+    ]
+
     def __init__(self, save_dir, filename="training_log.csv", algorithm_name="ppo"):
         # 自动创建目录（如果不存在）
         if not os.path.exists(save_dir):
@@ -40,21 +87,10 @@ class AlgorithmsLogger:
             # 按照算法添加额外列
             if self.algorithm_name in ["mappo"]:
                 pass
-            elif self.algorithm_name in ["mappoCFC"]:
-                header += [
-                    "AeroTAF_loss",
-                    "AeroTAF_grad_norm",
-                    "threat_loss",
-                    "attack_loss",
-                    "fact_threat_mean",
-                    "fact_attack_mean",
-                    "threat_delta_mean",
-                    "attack_delta_mean",
-                    "contribution_mean",
-                    "contribution_std",
-                    "weight_min",
-                    "weight_max",
-                ]
+            elif self.algorithm_name == "mappoCFC":
+                header += self.NEW_CFC_COLUMNS
+            elif self.algorithm_name == "mappoCFC_legacy":
+                header += self.LEGACY_CFC_COLUMNS
             self.writer.writerow(header)
 
         self.csv_file.flush()
@@ -88,21 +124,10 @@ class AlgorithmsLogger:
 
         ]
 
-        if self.algorithm_name in ["mappoCFC"]:
-            row += [
-                data.get("AeroTAF_loss", None),
-                data.get("AeroTAF_grad_norm", None),
-                data.get("threat_loss", None),
-                data.get("attack_loss", None),
-                data.get("fact_threat_mean", None),
-                data.get("fact_attack_mean", None),
-                data.get("threat_delta_mean", None),
-                data.get("attack_delta_mean", None),
-                data.get("contribution_mean", None),
-                data.get("contribution_std", None),
-                data.get("weight_min", None),
-                data.get("weight_max", None),
-            ]
+        if self.algorithm_name == "mappoCFC":
+            row += [data.get(column, None) for column in self.NEW_CFC_COLUMNS]
+        elif self.algorithm_name == "mappoCFC_legacy":
+            row += [data.get(column, None) for column in self.LEGACY_CFC_COLUMNS]
 
         self.writer.writerow(row)
         self.csv_file.flush()

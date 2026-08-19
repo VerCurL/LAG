@@ -1,74 +1,74 @@
+from pathlib import Path
+
 import torch
-from .ppo_actor import PPOActor
-from .ppo_critic import PPOCritic
+
+from algorithms.mappo.ppo_actor import PPOActor
+from algorithms.mappo.ppo_critic import PPOCritic
 from .ppo_AeroTAF import PPOAeroTAF
 
 
 class PPOAeroTAFPolicy:
     def __init__(self, args, obs_space, cent_obs_space, act_space, device=torch.device("cpu")):
-
         self.args = args
         self.device = device
-        # optimizer config
-        self.lr = args.lr
-
         self.obs_space = obs_space
         self.cent_obs_space = cent_obs_space
         self.act_space = act_space
 
-        self.AeroTAF = PPOAeroTAF(args, self.obs_space, self.act_space, self.device)
-        self.actor = PPOActor(args, self.obs_space, self.act_space, self.device)
-        self.critic = PPOCritic(args, self.cent_obs_space, self.device)
+        self.AeroTAF = PPOAeroTAF(args, obs_space, act_space, device)
+        self.actor = PPOActor(args, obs_space, act_space, device)
+        self.critic = PPOCritic(args, cent_obs_space, device)
 
-        self.optimizer = torch.optim.Adam([
-            {'params': self.actor.parameters()},
-            {'params': self.critic.parameters()}
-        ], lr=self.lr)
-
+        self.optimizer = torch.optim.Adam(
+            [
+                {"params": self.actor.parameters()},
+                {"params": self.critic.parameters()},
+            ],
+            lr=args.lr,
+        )
         self.AeroTAF_optimizer = torch.optim.Adam(
             self.AeroTAF.parameters(),
-            lr=self.lr,
+            lr=args.AeroTAF_lr,
+            weight_decay=args.AeroTAF_weight_decay,
         )
+        if args.AeroTAF_pretrained_model:
+            self.load_pretrained_aerotaf(args.AeroTAF_pretrained_model)
+
+    def load_pretrained_aerotaf(self, checkpoint_path):
+        path = Path(checkpoint_path).expanduser()
+        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
+        state_dict = checkpoint.get("model_state_dict", checkpoint) if isinstance(checkpoint, dict) else checkpoint
+        self.AeroTAF.load_state_dict(state_dict)
 
     def get_actions(self, cent_obs, obs, rnn_states_actor, rnn_states_critic, masks):
-        """
-        Returns:
-            values, actions, action_log_probs, rnn_states_actor, rnn_states_critic
-        """
         actions, action_log_probs, rnn_states_actor = self.actor(obs, rnn_states_actor, masks)
         values, rnn_states_critic = self.critic(cent_obs, rnn_states_critic, masks)
         return values, actions, action_log_probs, rnn_states_actor, rnn_states_critic
 
     def get_values(self, cent_obs, rnn_states_critic, masks):
-        """
-        Returns:
-            values
-        """
         values, _ = self.critic(cent_obs, rnn_states_critic, masks)
         return values
 
-    def evaluate_actions(self, cent_obs, obs, rnn_states_actor, rnn_states_critic, action, masks, active_masks=None):
-        """
-        Returns:
-            values, action_log_probs, dist_entropy
-        """
-        action_log_probs, dist_entropy = self.actor.evaluate_actions(obs, rnn_states_actor, action, masks, active_masks)
+    def evaluate_actions(
+        self,
+        cent_obs,
+        obs,
+        rnn_states_actor,
+        rnn_states_critic,
+        action,
+        masks,
+        active_masks=None,
+    ):
+        action_log_probs, dist_entropy = self.actor.evaluate_actions(
+            obs, rnn_states_actor, action, masks, active_masks
+        )
         values, _ = self.critic(cent_obs, rnn_states_critic, masks)
         return values, action_log_probs, dist_entropy
 
-    def evaluate_AeroTAF(self, obs, actions):
-        """
-        Returns:
-            threat_output, attack_output, AeroTAF_record_info
-        """
-        threat_output, attack_output, AeroTAF_record_info = self.AeroTAF(obs, actions)
-        return threat_output, attack_output, AeroTAF_record_info
+    def evaluate_AeroTAF(self, obs, actions, seq_len, time_offset=0):
+        return self.AeroTAF(obs, actions, seq_len=seq_len, time_offset=time_offset)
 
     def act(self, obs, rnn_states_actor, masks, deterministic=False):
-        """
-        Returns:
-            actions, rnn_states_actor
-        """
         actions, _, rnn_states_actor = self.actor(obs, rnn_states_actor, masks, deterministic)
         return actions, rnn_states_actor
 
@@ -83,4 +83,10 @@ class PPOAeroTAFPolicy:
         self.critic.eval()
 
     def copy(self):
-        return PPOAeroTAFPolicy(self.args, self.obs_space, self.act_space, self.device)
+        return PPOAeroTAFPolicy(
+            self.args,
+            self.obs_space,
+            self.cent_obs_space,
+            self.act_space,
+            self.device,
+        )

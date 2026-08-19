@@ -61,7 +61,7 @@ def _get_prepare_config(parser: argparse.ArgumentParser):
     group.add_argument("--env-name", type=str, default='JSBSim',
                        help="specify the name of environment")
     group.add_argument("--algorithm-name", type=str, default='ppo',
-                       choices=["mappo", "mappoCFC"],
+                       choices=["mappo", "mappoCFC", "mappoCFC_legacy"],
                        help="Specifiy the algorithm (default ppo)")
     group.add_argument("--experiment-name", type=str, default="check",
                        help="An identifier to distinguish different experiment.")
@@ -372,8 +372,34 @@ def _get_AeroTAF_type(parser: argparse.ArgumentParser):
     group.add_argument("--KQ-hidden-size", type=str, default='128 128')
     group.add_argument("--V-hidden-size", type=str, default='128 128')
     group.add_argument("--AeroTAF-out-hidden-size", type=str, default='128 128')
-    group.add_argument("--num-heads", type=int, default=1)
+    group.add_argument("--AeroTAF-spatial-head-num", type=int, default=1)
     group.add_argument("--AeroTAF-kstep", type=int, default=20)
+    group.add_argument("--AeroTAF-history-windows", type=int, default=100)
+    group.add_argument("--AeroTAF-time-head-num", type=int, default=4)
+    group.add_argument("--AeroTAF-attn-output-hidden-size", type=str, default='64 32')
+    group.add_argument("--AeroTAF-field-output-hidden-size", type=str, default='64 32')
+    group.add_argument("--AeroTAF-epoch", type=int, default=1)
+    group.add_argument("--AeroTAF-mini-batch-size", type=int, default=256)
+    group.add_argument("--AeroTAF-inference-batch-size", type=int, default=512)
+    group.add_argument("--AeroTAF-stable-sample-ratio", type=float, default=0.05)
+    group.add_argument("--AeroTAF-lr", type=float, default=3e-5)
+    group.add_argument("--AeroTAF-weight-decay", type=float, default=1e-4)
+    group.add_argument("--AeroTAF-threat-loss-weight", type=float, default=1.0)
+    group.add_argument("--AeroTAF-attack-loss-weight", type=float, default=1.0)
+    group.add_argument("--AeroTAF-field-gamma", type=float, default=0.95)
+    group.add_argument("--AeroTAF-ego-team", type=float, default=0.0)
+    group.add_argument("--AeroTAF-pretrained-model", type=str, default='')
+    group.add_argument("--AeroTAF-high-threat-floor", type=float, default=0.20)
+    group.add_argument("--AeroTAF-high-attack-floor", type=float, default=0.15)
+    group.add_argument("--AeroTAF-high-field-percentile", type=float, default=75.0)
+    group.add_argument("--AeroTAF-delta-floor", type=float, default=0.03)
+    group.add_argument("--AeroTAF-delta-percentile", type=float, default=80.0)
+    group.add_argument("--CFC-counterfactual-actions", type=str, default='previous')
+    group.add_argument("--CFC-threat-coef", type=float, default=1.0)
+    group.add_argument("--CFC-attack-coef", type=float, default=1.0)
+    group.add_argument("--CFC-softmax-tau", type=float, default=0.2)
+    group.add_argument("--CFC-reward-blend", type=float, default=1.0)
+    group.add_argument("--CFC-warmup-rollouts", type=int, default=0)
 
 
     # group.add_argument("--KQ-hidden-size", type=str, default='256 256',
@@ -382,7 +408,7 @@ def _get_AeroTAF_type(parser: argparse.ArgumentParser):
     #                    help="Dimension of hidden layers for pcan V networks (default '128 128')")
     # group.add_argument("--PCANOut-hidden-size", type=str, default='128',
     #                    help="Dimension of hidden layers for pcan out networks (default '128')")
-    # group.add_argument("--num-heads", type=int, default=1,
+    # group.add_argument("--AeroTAF-spatial-head-num", type=int, default=1,
     #                    help="Number of attention heads for pcan out networks (default 1)")
     # group.add_argument("--obs-pred-coef", type=float, default=0.5,
     #                    help="Obs loss coef of pcan out networks (default 0.5)")
