@@ -152,6 +152,34 @@ class AeroTAFATNNFastLayer(nn.Module):
         x = self.norm(x + attn_output)
         return x
 
+    def _spatial_encode_variants(self, s_t: torch.Tensor, a_variants: torch.Tensor):
+        """Encode many current-action variants while sharing state-only Q/K."""
+        batch_size, variant_count, _, action_dim = a_variants.shape
+        state_dim = s_t.shape[-1]
+        s_variants = s_t[:, None].expand(-1, variant_count, -1, -1)
+        x = torch.cat((s_variants, a_variants), dim=-1)
+
+        kq_dim = self._KQ_hidden_size[-1]
+        v_dim = self._V_hidden_size[-1]
+        kq_head_dim = kq_dim // self.head_num
+        v_head_dim = v_dim // self.head_num
+
+        s_flat = s_t.reshape(batch_size * self.agent_num, state_dim)
+        K = self.K_module(s_flat).view(batch_size, self.agent_num, kq_dim)
+        Q = self.Q_module(s_flat).view(batch_size, self.agent_num, kq_dim)
+        K = K.view(batch_size, self.agent_num, self.head_num, kq_head_dim).transpose(1, 2)
+        Q = Q.view(batch_size, self.agent_num, self.head_num, kq_head_dim).transpose(1, 2)
+        weights = F.softmax(torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(kq_head_dim), dim=-1)
+
+        V = self.V_module(x.reshape(batch_size * variant_count * self.agent_num, state_dim + action_dim))
+        V = V.view(batch_size, variant_count, self.agent_num, self.head_num, v_head_dim)
+        V = V.permute(0, 1, 3, 2, 4)
+        heads = torch.matmul(weights[:, None], V)
+        heads = heads.permute(0, 1, 3, 2, 4).contiguous().view(
+            batch_size, variant_count, self.agent_num, v_dim
+        )
+        return self.norm(x + self.attn_output_module(heads))
+
     def _project_temporal_kv(self, x: torch.Tensor):
         """
         x: [B * N, T, dim]
@@ -228,6 +256,129 @@ class AeroTAFATNNFastLayer(nn.Module):
         threat_output = self.threat_output_module(pooled_flat).view(batch_size * seq_len, self.agent_num, -1).mean(dim=1)
         attack_output = self.attack_output_module(pooled_flat).view(batch_size * seq_len, self.agent_num, -1).mean(dim=1)
         return temporal_output, threat_output, attack_output
+
+    def build_trajectory_cache(self, s: torch.Tensor, a: torch.Tensor):
+        """Project factual trajectory features once for cached sliding-window inference."""
+        if s.ndim != 4 or a.ndim != 4:
+            raise ValueError("cached AeroTAF inputs must be [env, time, agent, feature]")
+        n_envs, time_steps, agent_num, _ = s.shape
+        if agent_num != self.agent_num or a.shape[:3] != s.shape[:3]:
+            raise ValueError("cached AeroTAF state/action shapes do not match")
+
+        spatial = self._spatial_encode(
+            s.reshape(n_envs * time_steps, agent_num, s.shape[-1]),
+            a.reshape(n_envs * time_steps, agent_num, a.shape[-1]),
+        ).view(n_envs, time_steps, agent_num, -1)
+        flat = spatial.reshape(n_envs * time_steps * agent_num, spatial.shape[-1])
+        temporal_k = self.time_K_module(flat).view(
+            n_envs,
+            time_steps,
+            agent_num,
+            self.time_head_num,
+            self._time_kq_head_dim,
+        )
+        temporal_v = self.time_V_module(flat).view(
+            n_envs,
+            time_steps,
+            agent_num,
+            self.time_head_num,
+            self._time_v_head_dim,
+        )
+        return {
+            "states": s,
+            "actions": a,
+            "spatial": spatial,
+            "temporal_k": temporal_k,
+            "temporal_v": temporal_v,
+        }
+
+    def _cached_history(self, cache, env_indices, time_indices, segment_starts, history_windows):
+        window = int(history_windows)
+        offsets = torch.arange(window - 1, -1, -1, device=time_indices.device)
+        history_indices = time_indices[:, None] - offsets[None]
+        starts = segment_starts[env_indices, time_indices]
+        valid = history_indices >= starts[:, None]
+        safe_indices = torch.maximum(history_indices, starts[:, None])
+
+        K = cache["temporal_k"][env_indices[:, None], safe_indices]
+        V = cache["temporal_v"][env_indices[:, None], safe_indices]
+        K = K.permute(0, 2, 3, 1, 4).contiguous()
+        V = V.permute(0, 2, 3, 1, 4).contiguous()
+
+        batch_size = env_indices.numel()
+        positions = torch.arange(window, device=time_indices.device)
+        K = self._apply_rope(
+            K.view(batch_size * self.agent_num, self.time_head_num, window, self._time_kq_head_dim),
+            positions,
+        ).view(batch_size, self.agent_num, self.time_head_num, window, self._time_kq_head_dim)
+        return K, V, valid
+
+    def _finish_cached_temporal(self, x_last, attended):
+        leading_shape = x_last.shape[:-2]
+        feature_dim = x_last.shape[-1]
+        flat_size = math.prod(leading_shape) * self.agent_num
+        x_flat = x_last.reshape(flat_size, feature_dim)
+        attended_flat = attended.reshape(flat_size, self._time_v_dim)
+
+        y = self.time_attn_norm(x_flat + self.time_attn_output_module(attended_flat))
+        z = self.time_ffn_norm(y + self.time_ffn_module(y))
+        z = z.view(*leading_shape, self.agent_num, feature_dim)
+
+        pooled = z.reshape(flat_size, feature_dim)
+        threat = self.threat_output_module(pooled).view(*leading_shape, self.agent_num, -1).mean(dim=-2)
+        attack = self.attack_output_module(pooled).view(*leading_shape, self.agent_num, -1).mean(dim=-2)
+        return threat, attack
+
+    def predict_cached(
+        self,
+        cache,
+        env_indices: torch.Tensor,
+        time_indices: torch.Tensor,
+        segment_starts: torch.Tensor,
+        history_windows: int,
+        action_variants: torch.Tensor,
+    ):
+        """Predict endpoint variants while sharing all factual history projections."""
+        env_indices = env_indices.to(dtype=torch.long)
+        time_indices = time_indices.to(dtype=torch.long)
+        batch_size, variant_count = action_variants.shape[:2]
+        if batch_size != env_indices.numel() or action_variants.shape[2] != self.agent_num:
+            raise ValueError("cached AeroTAF endpoint batch does not match action variants")
+
+        history_k, history_v, valid = self._cached_history(
+            cache, env_indices, time_indices, segment_starts, history_windows
+        )
+        current_states = cache["states"][env_indices, time_indices]
+        x_last = self._spatial_encode_variants(current_states, action_variants)
+        flat = x_last.reshape(batch_size * variant_count * self.agent_num, x_last.shape[-1])
+
+        query = self.time_Q_module(flat).view(
+            batch_size, variant_count, self.agent_num, self.time_head_num, self._time_kq_head_dim
+        )
+        endpoint_k = self.time_K_module(flat).view_as(query)
+        endpoint_v = self.time_V_module(flat).view(
+            batch_size, variant_count, self.agent_num, self.time_head_num, self._time_v_head_dim
+        )
+
+        current_position = torch.tensor([int(history_windows) - 1], device=flat.device)
+        query = self._apply_rope(
+            query.reshape(-1, self.time_head_num, 1, self._time_kq_head_dim), current_position
+        ).reshape_as(query)
+        endpoint_k = self._apply_rope(
+            endpoint_k.reshape(-1, self.time_head_num, 1, self._time_kq_head_dim), current_position
+        ).reshape_as(endpoint_k)
+
+        scores = torch.einsum("bvnhd,bnhld->bvnhl", query, history_k)
+        scores = scores / math.sqrt(self._time_kq_head_dim)
+        scores[..., -1] = (query * endpoint_k).sum(dim=-1) / math.sqrt(self._time_kq_head_dim)
+        scores = scores.masked_fill(~valid[:, None, None, None, :], torch.finfo(scores.dtype).min)
+        weights = F.softmax(scores, dim=-1)
+
+        attended = torch.einsum("bvnhl,bnhld->bvnhd", weights, history_v)
+        factual_endpoint_v = history_v[..., -1, :][:, None]
+        attended = attended + weights[..., -1, None] * (endpoint_v - factual_endpoint_v)
+        attended = attended.reshape(batch_size, variant_count, self.agent_num, self._time_v_dim)
+        return self._finish_cached_temporal(x_last, attended)
 
     def forward_sequence(self, s: torch.Tensor, a: torch.Tensor, seq_len: int = None, time_offset: int = 0):
         """
@@ -332,6 +483,32 @@ class AeroTAFATNNFastBase(nn.Module):
             time_offset=time_offset,
         )
         return temporal_output, threat_output, attack_output
+
+    def build_trajectory_cache(self, s, a):
+        if self._use_feature_normalization:
+            s = self.obs_feature_norm(s)
+            a = self.act_feature_norm(a)
+        return self.AeroTAF.build_trajectory_cache(s, a)
+
+    def predict_cached(
+        self,
+        cache,
+        env_indices,
+        time_indices,
+        segment_starts,
+        history_windows,
+        action_variants,
+    ):
+        if self._use_feature_normalization:
+            action_variants = self.act_feature_norm(action_variants)
+        return self.AeroTAF.predict_cached(
+            cache,
+            env_indices,
+            time_indices,
+            segment_starts,
+            history_windows,
+            action_variants,
+        )
 
     @property
     def output_size(self):

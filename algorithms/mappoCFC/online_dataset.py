@@ -33,27 +33,27 @@ def parse_counterfactual_actions(value):
 
 def build_counterfactual_action(kind, current_action, previous_action):
     action = np.asarray(current_action).copy()
-    shoot = action[3] if action.shape[0] > 3 else None
+    shoot = action[..., 3].copy() if action.shape[-1] > 3 else None
 
     if kind == "previous":
-        action[:3] = np.asarray(previous_action)[:3]
+        action[..., :3] = np.asarray(previous_action)[..., :3]
     elif kind == "no_op":
-        action[:3] = np.asarray([1, 2, 1], dtype=action.dtype)
+        action[..., :3] = np.asarray([1, 2, 1], dtype=action.dtype)
     elif kind == "invert_maneuver":
-        action[0] = 2 - action[0]
-        action[1] = 4 - action[1]
-        action[2] = 2 - action[2]
+        action[..., 0] = 2 - action[..., 0]
+        action[..., 1] = 4 - action[..., 1]
+        action[..., 2] = 2 - action[..., 2]
     elif kind == "invert_heading":
-        action[1] = 4 - action[1]
+        action[..., 1] = 4 - action[..., 1]
     elif kind == "invert_altitude":
-        action[0] = 2 - action[0]
+        action[..., 0] = 2 - action[..., 0]
     elif kind == "invert_velocity":
-        action[2] = 2 - action[2]
+        action[..., 2] = 2 - action[..., 2]
     else:
         raise ValueError(f"unknown counterfactual action: {kind}")
 
     if shoot is not None:
-        action[3] = shoot
+        action[..., 3] = shoot
     return action
 
 
@@ -144,24 +144,46 @@ class OnlineAeroTAFDataset:
 
     def grouped_batches(self, indices, batch_size, seed=None):
         rng = np.random.default_rng(seed)
-        groups = defaultdict(list)
-        for index in np.asarray(indices, dtype=np.int64):
-            groups[self.window_length(index)].append(int(index))
-        lengths = list(groups)
-        rng.shuffle(lengths)
-        for seq_len in lengths:
-            group = np.asarray(groups[seq_len], dtype=np.int64)
+        indices = np.asarray(indices, dtype=np.int64)
+        env_i = indices // self.time_steps
+        time_i = indices % self.time_steps
+        starts = np.maximum(
+            self.segment_starts[env_i, time_i],
+            time_i - self.history_windows + 1,
+        )
+        window_lengths = time_i - starts + 1
+        unique_lengths = np.unique(window_lengths)
+        rng.shuffle(unique_lengths)
+        for seq_len in unique_lengths:
+            group = indices[window_lengths == seq_len].copy()
             rng.shuffle(group)
             for start in range(0, len(group), int(batch_size)):
-                yield group[start : start + int(batch_size)], seq_len
+                yield group[start : start + int(batch_size)], int(seq_len)
 
     def stack_windows(self, indices, counterfactual_kind=None, counterfactual_agent=None):
-        windows = [
-            self.window(index, counterfactual_kind, counterfactual_agent)
-            for index in np.asarray(indices, dtype=np.int64)
-        ]
-        obs = np.stack([item[0] for item in windows], axis=0)
-        actions = np.stack([item[1] for item in windows], axis=0)
+        indices = np.asarray(indices, dtype=np.int64)
+        if indices.size == 0:
+            raise ValueError("cannot stack an empty AeroTAF window batch")
+        env_i = indices // self.time_steps
+        time_i = indices % self.time_steps
+        segment_starts = self.segment_starts[env_i, time_i]
+        starts = np.maximum(segment_starts, time_i - self.history_windows + 1)
+        lengths = time_i - starts + 1
+        if np.any(lengths != lengths[0]):
+            raise ValueError("AeroTAF window batches must contain one sequence length")
+
+        time_grid = starts[:, None] + np.arange(int(lengths[0]), dtype=np.int64)[None]
+        obs = self.obs[env_i[:, None], time_grid]
+        actions = self.actions[env_i[:, None], time_grid]
+        if counterfactual_kind is not None:
+            actions = actions.copy()
+            agent_i = int(counterfactual_agent)
+            previous_time = np.where(time_i > segment_starts, time_i - 1, time_i)
+            actions[:, -1, agent_i] = build_counterfactual_action(
+                counterfactual_kind,
+                self.actions[env_i, time_i, agent_i],
+                self.actions[env_i, previous_time, agent_i],
+            )
         return obs, actions
 
     def category_counts(self, indices=None, eligible_only=False):
@@ -252,8 +274,7 @@ class AeroTAFRolloutBuffer:
             )
             if location[4]
         ]
-        episode_limit = max(1, int(args.n_rollout_threads))
-        train_item_indices = complete_indices[:episode_limit]
+        train_item_indices = complete_indices
         if not train_item_indices:
             raise RuntimeError(
                 "the rollout contains no complete episode for AeroTAF training; "

@@ -37,3 +37,30 @@ class PPOAeroTAF(nn.Module):
             time_offset=time_offset,
         )
         return threat_output, attack_output, self.AeroTAF.record_info
+
+    def build_trajectory_cache(self, obs, actions):
+        obs = check(obs).to(**self.tpdv)
+        actions = check(actions).to(**self.tpdv)
+        return self.AeroTAF.build_trajectory_cache(obs, actions)
+
+    def predict_cached(
+        self,
+        cache,
+        env_indices,
+        time_indices,
+        segment_starts,
+        history_windows,
+        action_variants,
+    ):
+        env_indices = check(env_indices).to(device=self.tpdv["device"], dtype=torch.long)
+        time_indices = check(time_indices).to(device=self.tpdv["device"], dtype=torch.long)
+        segment_starts = check(segment_starts).to(device=self.tpdv["device"], dtype=torch.long)
+        action_variants = check(action_variants).to(**self.tpdv)
+        return self.AeroTAF.predict_cached(
+            cache,
+            env_indices,
+            time_indices,
+            segment_starts,
+            history_windows,
+            action_variants,
+        )

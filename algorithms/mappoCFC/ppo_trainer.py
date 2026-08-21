@@ -1,4 +1,5 @@
 from collections import defaultdict
+import time
 
 import numpy as np
 import torch
@@ -174,6 +175,86 @@ class PPOAeroTAFTrainer:
             attack[indices] = _t2n(attack_pred).reshape(-1)
         return threat, attack
 
+    def _build_counterfactual_variants(self, current_actions, previous_actions):
+        batch_size, num_agents, action_dim = current_actions.shape
+        if action_dim < 3:
+            raise ValueError("CFC counterfactual actions require at least three maneuver dimensions")
+        action_count = len(self.counterfactual_actions)
+        variants = current_actions[:, None].expand(
+            batch_size, 1 + num_agents * action_count, num_agents, action_dim
+        ).clone()
+
+        for agent_i in range(num_agents):
+            for action_i, action_name in enumerate(self.counterfactual_actions):
+                variant_i = 1 + agent_i * action_count + action_i
+                action = variants[:, variant_i, agent_i]
+                current = current_actions[:, agent_i]
+                previous = previous_actions[:, agent_i]
+                if action_name == "previous":
+                    action[:, :3] = previous[:, :3]
+                elif action_name == "no_op":
+                    action[:, 0] = 1
+                    action[:, 1] = 2
+                    action[:, 2] = 1
+                elif action_name == "invert_maneuver":
+                    action[:, 0] = 2 - current[:, 0]
+                    action[:, 1] = 4 - current[:, 1]
+                    action[:, 2] = 2 - current[:, 2]
+                elif action_name == "invert_heading":
+                    action[:, 1] = 4 - current[:, 1]
+                elif action_name == "invert_altitude":
+                    action[:, 0] = 2 - current[:, 0]
+                elif action_name == "invert_velocity":
+                    action[:, 2] = 2 - current[:, 2]
+                else:
+                    raise ValueError(f"unknown counterfactual action: {action_name}")
+        return variants
+
+    @torch.inference_mode()
+    def _predict_all_fields_cached(self, policy, dataset):
+        obs = check(dataset.obs).to(**self.tpdv)
+        actions = check(dataset.actions).to(**self.tpdv)
+        segment_starts = check(dataset.segment_starts).to(device=self.device, dtype=torch.long)
+        fact_threat = np.empty(len(dataset), dtype=np.float32)
+        fact_attack = np.empty(len(dataset), dtype=np.float32)
+        cf_threat = np.empty((len(dataset), self.num_agents), dtype=np.float32)
+        cf_attack = np.empty_like(cf_threat)
+        action_count = len(self.counterfactual_actions)
+        use_amp = bool(getattr(self.args, "AeroTAF_inference_amp", False) and self.device.type == "cuda")
+
+        with torch.autocast(device_type=self.device.type, dtype=torch.float16, enabled=use_amp):
+            cache = policy.build_AeroTAF_trajectory_cache(obs, actions)
+            for start in range(0, len(dataset), self.args.AeroTAF_inference_batch_size):
+                stop = min(start + self.args.AeroTAF_inference_batch_size, len(dataset))
+                indices = torch.arange(start, stop, device=self.device, dtype=torch.long)
+                env_indices = torch.div(indices, dataset.time_steps, rounding_mode="floor")
+                time_indices = indices.remainder(dataset.time_steps)
+                starts = segment_starts[env_indices, time_indices]
+                previous_time = torch.where(time_indices > starts, time_indices - 1, time_indices)
+                current_actions = actions[env_indices, time_indices]
+                previous_actions = actions[env_indices, previous_time]
+                variants = self._build_counterfactual_variants(current_actions, previous_actions)
+
+                threat, attack = policy.evaluate_AeroTAF_cached(
+                    cache,
+                    env_indices,
+                    time_indices,
+                    segment_starts,
+                    dataset.history_windows,
+                    variants,
+                )
+                threat = threat.squeeze(-1).float()
+                attack = attack.squeeze(-1).float()
+                fact_threat[start:stop] = _t2n(threat[:, 0])
+                fact_attack[start:stop] = _t2n(attack[:, 0])
+                cf_threat[start:stop] = _t2n(
+                    threat[:, 1:].reshape(stop - start, self.num_agents, action_count).mean(dim=-1)
+                )
+                cf_attack[start:stop] = _t2n(
+                    attack[:, 1:].reshape(stop - start, self.num_agents, action_count).mean(dim=-1)
+                )
+        return fact_threat, fact_attack, cf_threat, cf_attack
+
     @staticmethod
     def _masked_softmax(values, active_masks, tau, eps=1e-8):
         active = np.asarray(active_masks, dtype=np.float32) > 0.5
@@ -193,21 +274,31 @@ class PPOAeroTAFTrainer:
     @torch.no_grad()
     def redistribute_rewards_by_cfc(self, policy, buffer, dataset):
         policy.prep_rollout()
-        fact_threat, fact_attack = self._predict_fields(policy, dataset)
-        fact_threat = fact_threat.reshape(dataset.n_envs, dataset.time_steps).T
-        fact_attack = fact_attack.reshape(dataset.n_envs, dataset.time_steps).T
-
-        cf_threat = np.zeros((dataset.time_steps, dataset.n_envs, self.num_agents, 1), dtype=np.float32)
-        cf_attack = np.zeros_like(cf_threat)
-        for agent_i in range(self.num_agents):
-            agent_threat = []
-            agent_attack = []
-            for action_name in self.counterfactual_actions:
-                threat, attack = self._predict_fields(policy, dataset, action_name, agent_i)
-                agent_threat.append(threat.reshape(dataset.n_envs, dataset.time_steps).T)
-                agent_attack.append(attack.reshape(dataset.n_envs, dataset.time_steps).T)
-            cf_threat[:, :, agent_i, 0] = np.mean(agent_threat, axis=0)
-            cf_attack[:, :, agent_i, 0] = np.mean(agent_attack, axis=0)
+        if hasattr(policy, "build_AeroTAF_trajectory_cache"):
+            fact_threat, fact_attack, cf_threat, cf_attack = self._predict_all_fields_cached(policy, dataset)
+            fact_threat = fact_threat.reshape(dataset.n_envs, dataset.time_steps).T
+            fact_attack = fact_attack.reshape(dataset.n_envs, dataset.time_steps).T
+            cf_threat = cf_threat.reshape(
+                dataset.n_envs, dataset.time_steps, self.num_agents
+            ).transpose(1, 0, 2)[..., None]
+            cf_attack = cf_attack.reshape(
+                dataset.n_envs, dataset.time_steps, self.num_agents
+            ).transpose(1, 0, 2)[..., None]
+        else:
+            fact_threat, fact_attack = self._predict_fields(policy, dataset)
+            fact_threat = fact_threat.reshape(dataset.n_envs, dataset.time_steps).T
+            fact_attack = fact_attack.reshape(dataset.n_envs, dataset.time_steps).T
+            cf_threat = np.zeros((dataset.time_steps, dataset.n_envs, self.num_agents, 1), dtype=np.float32)
+            cf_attack = np.zeros_like(cf_threat)
+            for agent_i in range(self.num_agents):
+                agent_threat = []
+                agent_attack = []
+                for action_name in self.counterfactual_actions:
+                    threat, attack = self._predict_fields(policy, dataset, action_name, agent_i)
+                    agent_threat.append(threat.reshape(dataset.n_envs, dataset.time_steps).T)
+                    agent_attack.append(attack.reshape(dataset.n_envs, dataset.time_steps).T)
+                cf_threat[:, :, agent_i, 0] = np.mean(agent_threat, axis=0)
+                cf_attack[:, :, agent_i, 0] = np.mean(agent_attack, axis=0)
 
         threat_delta = cf_threat - fact_threat[:, :, None, None]
         attack_delta = fact_attack[:, :, None, None] - cf_attack
@@ -328,8 +419,14 @@ class PPOAeroTAFTrainer:
 
     def train(self, policy, buffer, cfc_buffer):
         self.train_calls += 1
+        stage_start = time.perf_counter()
         dataset = cfc_buffer.build_dataset(buffer, self.field_calculator, self.args)
+        dataset_time = time.perf_counter() - stage_start
+
+        stage_start = time.perf_counter()
         train_info, selected = self.train_aerotaf(policy, dataset)
+        train_info["AeroTAF_dataset_time"] = dataset_time
+        train_info["AeroTAF_train_time"] = time.perf_counter() - stage_start
 
         for category_name, count in dataset.category_counts(eligible_only=True).items():
             train_info[f"AeroTAF_{category_name}_points"] = float(count)
@@ -348,10 +445,14 @@ class PPOAeroTAFTrainer:
             and self.aerotaf_gradient_updates > 0
         )
         if can_apply_cfc:
+            stage_start = time.perf_counter()
             train_info.update(self.redistribute_rewards_by_cfc(policy, buffer, dataset))
+            train_info["CFC_inference_time"] = time.perf_counter() - stage_start
         else:
             train_info["CFC_applied"] = 0.0
+            train_info["CFC_inference_time"] = 0.0
 
+        stage_start = time.perf_counter()
         self.compute(policy, buffer)
         ppo_totals = defaultdict(float)
         ppo_updates = 0
@@ -371,4 +472,5 @@ class PPOAeroTAFTrainer:
         for key, value in ppo_totals.items():
             train_info[key] = value / max(ppo_updates, 1)
         train_info["ppo_updates"] = float(ppo_updates)
+        train_info["MAPPO_update_time"] = time.perf_counter() - stage_start
         return train_info

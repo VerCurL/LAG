@@ -381,6 +381,7 @@ def _get_AeroTAF_type(parser: argparse.ArgumentParser):
     group.add_argument("--AeroTAF-epoch", type=int, default=1)
     group.add_argument("--AeroTAF-mini-batch-size", type=int, default=256)
     group.add_argument("--AeroTAF-inference-batch-size", type=int, default=512)
+    group.add_argument("--AeroTAF-inference-amp", action="store_true", default=False)
     group.add_argument("--AeroTAF-stable-sample-ratio", type=float, default=0.05)
     group.add_argument("--AeroTAF-lr", type=float, default=3e-5)
     group.add_argument("--AeroTAF-weight-decay", type=float, default=1e-4)

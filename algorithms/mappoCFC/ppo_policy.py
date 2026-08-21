@@ -68,6 +68,27 @@ class PPOAeroTAFPolicy:
     def evaluate_AeroTAF(self, obs, actions, seq_len, time_offset=0):
         return self.AeroTAF(obs, actions, seq_len=seq_len, time_offset=time_offset)
 
+    def build_AeroTAF_trajectory_cache(self, obs, actions):
+        return self.AeroTAF.build_trajectory_cache(obs, actions)
+
+    def evaluate_AeroTAF_cached(
+        self,
+        cache,
+        env_indices,
+        time_indices,
+        segment_starts,
+        history_windows,
+        action_variants,
+    ):
+        return self.AeroTAF.predict_cached(
+            cache,
+            env_indices,
+            time_indices,
+            segment_starts,
+            history_windows,
+            action_variants,
+        )
+
     def act(self, obs, rnn_states_actor, masks, deterministic=False):
         actions, _, rnn_states_actor = self.actor(obs, rnn_states_actor, masks, deterministic)
         return actions, rnn_states_actor

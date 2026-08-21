@@ -11,6 +11,8 @@ class AlgorithmsLogger:
         "AeroTAF_updates",
         "AeroTAF_train_samples",
         "AeroTAF_train_episodes",
+        "AeroTAF_dataset_time",
+        "AeroTAF_train_time",
         "AeroTAF_event_points",
         "AeroTAF_high_field_points",
         "AeroTAF_high_change_points",
@@ -33,6 +35,8 @@ class AlgorithmsLogger:
         "CFC_weight_min",
         "CFC_weight_max",
         "CFC_reward_sum_error",
+        "CFC_inference_time",
+        "MAPPO_update_time",
     ]
 
     LEGACY_CFC_COLUMNS = [
