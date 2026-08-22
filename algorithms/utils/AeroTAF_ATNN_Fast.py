@@ -132,19 +132,13 @@ class AeroTAFATNNFastLayer(nn.Module):
         s_flat = s_t.reshape(batch_size * self.agent_num, s_t.shape[-1])
         x_flat = x.reshape(batch_size * self.agent_num, x_dim)
 
-        K = self.K_module(s_flat).view(batch_size, self.agent_num, KQ_dim)
-        Q = self.Q_module(s_flat).view(batch_size, self.agent_num, KQ_dim)
         V = self.V_module(x_flat).view(batch_size, self.agent_num, V_dim)
 
         KQ_head_dim = KQ_dim // self.head_num
         V_head_dim = V_dim // self.head_num
 
-        K = K.view(batch_size, self.agent_num, self.head_num, KQ_head_dim).transpose(1, 2)
-        Q = Q.view(batch_size, self.agent_num, self.head_num, KQ_head_dim).transpose(1, 2)
         V = V.view(batch_size, self.agent_num, self.head_num, V_head_dim).transpose(1, 2)
-
-        scores = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(KQ_head_dim)
-        attn_weights = F.softmax(scores, dim=-1)
+        attn_weights = self._spatial_weights(s_t)
         heads = torch.matmul(attn_weights, V)
         heads = heads.transpose(1, 2).contiguous().view(batch_size, self.agent_num, V_dim)
 
@@ -152,33 +146,48 @@ class AeroTAFATNNFastLayer(nn.Module):
         x = self.norm(x + attn_output)
         return x
 
-    def _spatial_encode_variants(self, s_t: torch.Tensor, a_variants: torch.Tensor):
-        """Encode many current-action variants while sharing state-only Q/K."""
-        batch_size, variant_count, _, action_dim = a_variants.shape
-        state_dim = s_t.shape[-1]
-        s_variants = s_t[:, None].expand(-1, variant_count, -1, -1)
-        x = torch.cat((s_variants, a_variants), dim=-1)
-
+    def _spatial_weights(self, s_t: torch.Tensor):
+        """Spatial attention weights depend on observations, not actions."""
+        batch_size = s_t.shape[0]
         kq_dim = self._KQ_hidden_size[-1]
-        v_dim = self._V_hidden_size[-1]
-        kq_head_dim = kq_dim // self.head_num
-        v_head_dim = v_dim // self.head_num
-
-        s_flat = s_t.reshape(batch_size * self.agent_num, state_dim)
+        head_dim = kq_dim // self.head_num
+        s_flat = s_t.reshape(batch_size * self.agent_num, s_t.shape[-1])
         K = self.K_module(s_flat).view(batch_size, self.agent_num, kq_dim)
         Q = self.Q_module(s_flat).view(batch_size, self.agent_num, kq_dim)
-        K = K.view(batch_size, self.agent_num, self.head_num, kq_head_dim).transpose(1, 2)
-        Q = Q.view(batch_size, self.agent_num, self.head_num, kq_head_dim).transpose(1, 2)
-        weights = F.softmax(torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(kq_head_dim), dim=-1)
+        K = K.view(batch_size, self.agent_num, self.head_num, head_dim).transpose(1, 2)
+        Q = Q.view(batch_size, self.agent_num, self.head_num, head_dim).transpose(1, 2)
+        scores = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(head_dim)
+        return F.softmax(scores, dim=-1)
 
-        V = self.V_module(x.reshape(batch_size * variant_count * self.agent_num, state_dim + action_dim))
+    def _spatial_apply_weights(self, s_t: torch.Tensor, a_t: torch.Tensor, attn_weights: torch.Tensor):
+        """Apply cached spatial weights to factual or variant actions."""
+        batch_size = s_t.shape[0]
+        v_dim = self._V_hidden_size[-1]
+        v_head_dim = v_dim // self.head_num
+
+        if a_t.ndim == 3:
+            x = torch.cat((s_t, a_t), dim=-1)
+            V = self.V_module(x.reshape(batch_size * self.agent_num, x.shape[-1]))
+            V = V.view(batch_size, self.agent_num, self.head_num, v_head_dim).transpose(1, 2)
+            heads = torch.matmul(attn_weights, V)
+            heads = heads.transpose(1, 2).contiguous().view(batch_size, self.agent_num, v_dim)
+            return self.norm(x + self.attn_output_module(heads))
+
+        variant_count = a_t.shape[1]
+        s_variants = s_t[:, None].expand(-1, variant_count, -1, -1)
+        x = torch.cat((s_variants, a_t), dim=-1)
+        V = self.V_module(x.reshape(batch_size * variant_count * self.agent_num, x.shape[-1]))
         V = V.view(batch_size, variant_count, self.agent_num, self.head_num, v_head_dim)
         V = V.permute(0, 1, 3, 2, 4)
-        heads = torch.matmul(weights[:, None], V)
+        heads = torch.matmul(attn_weights[:, None], V)
         heads = heads.permute(0, 1, 3, 2, 4).contiguous().view(
             batch_size, variant_count, self.agent_num, v_dim
         )
         return self.norm(x + self.attn_output_module(heads))
+
+    def _spatial_encode_variants(self, s_t: torch.Tensor, a_variants: torch.Tensor):
+        """Encode many current-action variants while sharing state-only Q/K."""
+        return self._spatial_apply_weights(s_t, a_variants, self._spatial_weights(s_t))
 
     def _project_temporal_kv(self, x: torch.Tensor):
         """
@@ -208,13 +217,27 @@ class AeroTAFATNNFastLayer(nn.Module):
         Q = Q.view(batch_agent_size, 1, self.time_head_num, self._time_kq_head_dim).transpose(1, 2)
         return Q
 
-    def _temporal_encode_last(self, x: torch.Tensor, time_offset: int = 0):
+    def _temporal_encode_last(
+        self,
+        x: torch.Tensor,
+        time_offset: int = 0,
+        valid_mask: torch.Tensor = None,
+    ):
         """
         x: [B, T, N, dim]
         returns:
             z_last: [B, 1, N, dim]
         """
         batch_size, seq_len, _, feature_dim = x.shape
+        if valid_mask is not None:
+            if valid_mask.shape != (batch_size, seq_len):
+                raise ValueError(
+                    "AeroTAF temporal mask must be [batch, sequence], got "
+                    f"{tuple(valid_mask.shape)} for {(batch_size, seq_len)}"
+                )
+            valid_mask = valid_mask.to(device=x.device, dtype=torch.bool)
+            if not torch.all(valid_mask.any(dim=-1)):
+                raise ValueError("every AeroTAF history window must contain a valid timestep")
         x = x.permute(0, 2, 1, 3).contiguous().view(batch_size * self.agent_num, seq_len, feature_dim)
         x_last = x[:, -1:, :]
 
@@ -227,6 +250,17 @@ class AeroTAFATNNFastLayer(nn.Module):
         Q = self._apply_rope(Q, query_positions)
 
         scores = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(self._time_kq_head_dim)
+        if valid_mask is not None:
+            agent_mask = valid_mask[:, None, :].expand(
+                batch_size, self.agent_num, seq_len
+            )
+            agent_mask = agent_mask.reshape(
+                batch_size * self.agent_num, 1, 1, seq_len
+            )
+            scores = scores.masked_fill(
+                ~agent_mask,
+                torch.finfo(scores.dtype).min,
+            )
         attn_weights = F.softmax(scores, dim=-1)
         heads = torch.matmul(attn_weights, V)
         heads = heads.transpose(1, 2).contiguous().view(batch_size * self.agent_num, 1, self._time_v_dim)
@@ -265,10 +299,15 @@ class AeroTAFATNNFastLayer(nn.Module):
         if agent_num != self.agent_num or a.shape[:3] != s.shape[:3]:
             raise ValueError("cached AeroTAF state/action shapes do not match")
 
-        spatial = self._spatial_encode(
-            s.reshape(n_envs * time_steps, agent_num, s.shape[-1]),
-            a.reshape(n_envs * time_steps, agent_num, a.shape[-1]),
+        state_steps = s.reshape(n_envs * time_steps, agent_num, s.shape[-1])
+        action_steps = a.reshape(n_envs * time_steps, agent_num, a.shape[-1])
+        spatial_weights = self._spatial_weights(state_steps)
+        spatial = self._spatial_apply_weights(
+            state_steps, action_steps, spatial_weights
         ).view(n_envs, time_steps, agent_num, -1)
+        spatial_weights = spatial_weights.view(
+            n_envs, time_steps, self.head_num, agent_num, agent_num
+        )
         flat = spatial.reshape(n_envs * time_steps * agent_num, spatial.shape[-1])
         temporal_k = self.time_K_module(flat).view(
             n_envs,
@@ -288,6 +327,7 @@ class AeroTAFATNNFastLayer(nn.Module):
             "states": s,
             "actions": a,
             "spatial": spatial,
+            "spatial_weights": spatial_weights,
             "temporal_k": temporal_k,
             "temporal_v": temporal_v,
         }
@@ -349,7 +389,10 @@ class AeroTAFATNNFastLayer(nn.Module):
             cache, env_indices, time_indices, segment_starts, history_windows
         )
         current_states = cache["states"][env_indices, time_indices]
-        x_last = self._spatial_encode_variants(current_states, action_variants)
+        spatial_weights = cache["spatial_weights"][env_indices, time_indices]
+        x_last = self._spatial_apply_weights(
+            current_states, action_variants, spatial_weights
+        )
         flat = x_last.reshape(batch_size * variant_count * self.agent_num, x_last.shape[-1])
 
         query = self.time_Q_module(flat).view(
@@ -380,7 +423,14 @@ class AeroTAFATNNFastLayer(nn.Module):
         attended = attended.reshape(batch_size, variant_count, self.agent_num, self._time_v_dim)
         return self._finish_cached_temporal(x_last, attended)
 
-    def forward_sequence(self, s: torch.Tensor, a: torch.Tensor, seq_len: int = None, time_offset: int = 0):
+    def forward_sequence(
+        self,
+        s: torch.Tensor,
+        a: torch.Tensor,
+        seq_len: int = None,
+        time_offset: int = 0,
+        valid_mask: torch.Tensor = None,
+    ):
         """
         Inputs:
             s: [B * T * N, obs_dim]
@@ -419,11 +469,28 @@ class AeroTAFATNNFastLayer(nn.Module):
         )
         x = spatial.view(batch_size, seq_len, self.agent_num, spatial.shape[-1])
 
-        z_last = self._temporal_encode_last(x, time_offset=time_offset)
+        z_last = self._temporal_encode_last(
+            x,
+            time_offset=time_offset,
+            valid_mask=valid_mask,
+        )
         return self._output_heads(z_last)
 
-    def forward(self, s: torch.Tensor, a: torch.Tensor, seq_len: int = None, time_offset: int = 0):
-        return self.forward_sequence(s, a, seq_len=seq_len, time_offset=time_offset)
+    def forward(
+        self,
+        s: torch.Tensor,
+        a: torch.Tensor,
+        seq_len: int = None,
+        time_offset: int = 0,
+        valid_mask: torch.Tensor = None,
+    ):
+        return self.forward_sequence(
+            s,
+            a,
+            seq_len=seq_len,
+            time_offset=time_offset,
+            valid_mask=valid_mask,
+        )
 
     @property
     def output_size(self):
@@ -472,7 +539,7 @@ class AeroTAFATNNFastBase(nn.Module):
             field_output_hidden_size=field_output_hidden_size,
         )
 
-    def forward(self, s, a, seq_len=None, time_offset=0):
+    def forward(self, s, a, seq_len=None, time_offset=0, valid_mask=None):
         if self._use_feature_normalization:
             s = self.obs_feature_norm(s)
             a = self.act_feature_norm(a)
@@ -481,6 +548,7 @@ class AeroTAFATNNFastBase(nn.Module):
             a,
             seq_len=seq_len,
             time_offset=time_offset,
+            valid_mask=valid_mask,
         )
         return temporal_output, threat_output, attack_output
 

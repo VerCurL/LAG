@@ -7,6 +7,45 @@ import numpy as np
 from abc import ABC, abstractmethod
 from multiprocessing import Pipe, Process
 from multiprocessing.connection import Connection
+from multiprocessing import shared_memory
+
+
+_AEROTAF_AIRCRAFT_DIM = 24
+_AEROTAF_MISSILE_DIM = 14
+_AEROTAF_MAX_MISSILES = 16
+
+
+def _write_aerotaf_snapshot(row, snapshot, num_agents):
+    """Write one snapshot into a fixed-size shared-memory row."""
+    row.fill(0.0)
+    if snapshot is None:
+        return
+
+    aircraft = np.asarray(snapshot["aircraft"], dtype=np.float32)
+    missiles = np.asarray(snapshot["missiles"], dtype=np.float32)
+    if aircraft.shape != (num_agents, _AEROTAF_AIRCRAFT_DIM):
+        raise ValueError(
+            "unexpected AeroTAF aircraft snapshot shape: "
+            f"{aircraft.shape}, expected {(num_agents, _AEROTAF_AIRCRAFT_DIM)}"
+        )
+    if missiles.shape != (_AEROTAF_MAX_MISSILES, _AEROTAF_MISSILE_DIM):
+        raise ValueError(
+            "unexpected AeroTAF missile snapshot shape: "
+            f"{missiles.shape}, expected "
+            f"{(_AEROTAF_MAX_MISSILES, _AEROTAF_MISSILE_DIM)}"
+        )
+
+    aircraft_size = num_agents * _AEROTAF_AIRCRAFT_DIM
+    row[:aircraft_size] = aircraft.reshape(-1)
+    row[aircraft_size:] = missiles.reshape(-1)
+
+
+def _aerotaf_snapshot_view(row, num_agents):
+    """Build the legacy dict interface over one shared-memory row."""
+    aircraft_size = num_agents * _AEROTAF_AIRCRAFT_DIM
+    aircraft = row[:aircraft_size].reshape(num_agents, _AEROTAF_AIRCRAFT_DIM)
+    missiles = row[aircraft_size:].reshape(_AEROTAF_MAX_MISSILES, _AEROTAF_MISSILE_DIM)
+    return {"aircraft": aircraft, "missiles": missiles}
 
 
 class CloudpickleWrapper(object):
@@ -368,7 +407,12 @@ class ShareDummyVecEnv(DummyVecEnv, ShareVecEnv):
         return obs, share_obs
 
 
-def shareworker(remote: Connection, parent_remote: Connection, env_fn_wrappers):
+def shareworker(
+    remote: Connection,
+    parent_remote: Connection,
+    env_fn_wrappers,
+    snapshot_buffer_size=0,
+):
     """Maintain an environment instance in subprocess,
     communicate with parent-process via multiprocessing.Pipe.
 
@@ -394,13 +438,62 @@ def shareworker(remote: Connection, parent_remote: Connection, env_fn_wrappers):
 
     parent_remote.close()
     envs = [env_fn_wrapper() for env_fn_wrapper in env_fn_wrappers.x]
+    snapshot_shm = None
+    snapshot_array = None
+    snapshot_step = 0
+    snapshot_num_agents = int(getattr(envs[0], "num_agents", 0)) if envs else 0
+    if snapshot_buffer_size > 0 and snapshot_num_agents <= 0:
+        raise ValueError("AeroTAF shared snapshot buffer requires a valid agent count")
+    snapshot_row_size = (
+        snapshot_num_agents * _AEROTAF_AIRCRAFT_DIM
+        + _AEROTAF_MAX_MISSILES * _AEROTAF_MISSILE_DIM
+    )
+    if snapshot_buffer_size > 0:
+        snapshot_shm = shared_memory.SharedMemory(
+            create=True,
+            size=(
+                len(envs)
+                * int(snapshot_buffer_size)
+                * snapshot_row_size
+                * np.dtype(np.float32).itemsize
+            ),
+        )
+        snapshot_array = np.ndarray(
+            (len(envs), int(snapshot_buffer_size), snapshot_row_size),
+            dtype=np.float32,
+            buffer=snapshot_shm.buf,
+        )
     try:
         while True:
             cmd, data = remote.recv()
             if cmd == 'step':
-                remote.send([step_env(env, action) for env, action in zip(envs, data)])
+                results = []
+                for env_i, (env, action) in enumerate(zip(envs, data)):
+                    result = step_env(env, action)
+                    if snapshot_array is not None:
+                        info = result[4]
+                        snapshot = info.pop("AeroTAF_snapshot", None)
+                        _write_aerotaf_snapshot(
+                            snapshot_array[env_i, snapshot_step],
+                            snapshot,
+                            snapshot_num_agents,
+                        )
+                    results.append(result)
+                remote.send(results)
+                if snapshot_array is not None:
+                    snapshot_step = (snapshot_step + 1) % int(snapshot_buffer_size)
             elif cmd == 'reset':
                 remote.send([env.reset() for env in envs])
+                snapshot_step = 0
+            elif cmd == 'get_aerotaf_snapshot_buffer':
+                if snapshot_shm is None:
+                    remote.send(None)
+                else:
+                    remote.send({
+                        "name": snapshot_shm.name,
+                        "shape": snapshot_array.shape,
+                        "num_agents": snapshot_num_agents,
+                    })
             elif cmd == 'close':
                 remote.close()
                 break
@@ -415,21 +508,37 @@ def shareworker(remote: Connection, parent_remote: Connection, env_fn_wrappers):
     finally:
         for env in envs:
             env.close()
+        if snapshot_shm is not None:
+            snapshot_shm.close()
+            try:
+                snapshot_shm.unlink()
+            except FileNotFoundError:
+                pass
 
 
 class ShareSubprocVecEnv(SubprocVecEnv, ShareVecEnv):
-    def __init__(self, env_fns, context='spawn', in_series=1):
+    def __init__(self, env_fns, context='spawn', in_series=1, snapshot_buffer_size=0):
         self.waiting = False
         self.closed = False
         self.in_series = in_series
+        self.snapshot_buffer_size = int(snapshot_buffer_size)
+        self.snapshot_step = 0
+        self.snapshot_views = []
+        self.snapshot_memories = []
         nenvs = len(env_fns)
         assert nenvs % in_series == 0, "Number of envs must be divisible by number of envs to run in series"
         self.nremotes = nenvs // in_series
         env_fns = np.array_split(env_fns, self.nremotes)
+        self.env_indices = np.array_split(np.arange(nenvs), self.nremotes)
         # create Pipe connections to send/recv data from subprocesses,
         self.remotes, self.work_remotes = zip(*[Pipe() for _ in range(self.nremotes)])
-        self.ps = [Process(target=shareworker, args=(work_remote, remote, CloudpickleWrapper(env_fn)))
-                   for (work_remote, remote, env_fn) in zip(self.work_remotes, self.remotes, env_fns)]
+        self.ps = [
+            Process(
+                target=shareworker,
+                args=(work_remote, remote, CloudpickleWrapper(env_fn), self.snapshot_buffer_size),
+            )
+            for (work_remote, remote, env_fn) in zip(self.work_remotes, self.remotes, env_fns)
+        ]
         for p in self.ps:
             p.daemon = True  # if the main process crashes, we should not cause things to hang
             with clear_mpi_env_vars():
@@ -444,12 +553,42 @@ class ShareSubprocVecEnv(SubprocVecEnv, ShareVecEnv):
         self.remotes[0].send(('get_num_agents', None))
         self.num_agents = self.remotes[0].recv().x
 
+        if self.snapshot_buffer_size > 0:
+            for remote in self.remotes:
+                remote.send(('get_aerotaf_snapshot_buffer', None))
+            worker_buffers = [remote.recv() for remote in self.remotes]
+            self.snapshot_num_agents = int(worker_buffers[0]["num_agents"])
+            self.snapshot_views = [None] * nenvs
+            for worker_i, metadata in enumerate(worker_buffers):
+                if metadata is None:
+                    raise RuntimeError("AeroTAF shared snapshot buffer was not created")
+                if int(metadata["num_agents"]) != self.snapshot_num_agents:
+                    raise ValueError("all AeroTAF workers must have the same agent count")
+                shared = shared_memory.SharedMemory(name=metadata["name"])
+                view = np.ndarray(
+                    tuple(metadata["shape"]),
+                    dtype=np.float32,
+                    buffer=shared.buf,
+                )
+                self.snapshot_memories.append(shared)
+                for local_i, global_i in enumerate(self.env_indices[worker_i]):
+                    self.snapshot_views[int(global_i)] = view[local_i]
+
     def step_wait(self):
         self._assert_not_closed()
         results = [remote.recv() for remote in self.remotes]
         results = self._flatten_series(results) # [[tuple] * in_series] * nremotes => [tuple] * nenvs
         self.waiting = False
         obs, share_obs, rewards, dones, infos = zip(*results) 
+        infos = list(infos)
+        if self.snapshot_views:
+            for env_i, info in enumerate(infos):
+                if isinstance(info, dict):
+                    info["AeroTAF_snapshot"] = _aerotaf_snapshot_view(
+                        self.snapshot_views[env_i][self.snapshot_step],
+                        self.snapshot_num_agents,
+                    )
+            self.snapshot_step = (self.snapshot_step + 1) % self.snapshot_buffer_size
         return self._flatten(obs), self._flatten(share_obs), self._flatten(rewards), self._flatten(dones), np.array(infos)
 
     def reset(self):
@@ -459,4 +598,11 @@ class ShareSubprocVecEnv(SubprocVecEnv, ShareVecEnv):
         results = [remote.recv() for remote in self.remotes]
         results = self._flatten_series(results)
         obs, share_obs = zip(*results)
+        self.snapshot_step = 0
         return self._flatten(obs), self._flatten(share_obs)
+
+    def close_extras(self):
+        super().close_extras()
+        for shared in self.snapshot_memories:
+            shared.close()
+        self.snapshot_memories.clear()

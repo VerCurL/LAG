@@ -43,6 +43,12 @@ class PPOAeroTAFTrainer:
         )
         self.train_calls = 0
         self.aerotaf_gradient_updates = 0
+        self.aerotaf_amp = bool(
+            getattr(args, "AeroTAF_training_amp", False) and device.type == "cuda"
+        )
+        self.aerotaf_scaler = torch.amp.GradScaler(
+            "cuda", enabled=self.aerotaf_amp
+        )
 
     @staticmethod
     def _validate_args(args):
@@ -50,6 +56,7 @@ class PPOAeroTAFTrainer:
             "AeroTAF_history_windows": args.AeroTAF_history_windows,
             "AeroTAF_epoch": args.AeroTAF_epoch,
             "AeroTAF_mini_batch_size": args.AeroTAF_mini_batch_size,
+            "AeroTAF_window_bucket_size": args.AeroTAF_window_bucket_size,
             "AeroTAF_inference_batch_size": args.AeroTAF_inference_batch_size,
         }
         invalid = {key: value for key, value in positive.items() if int(value) <= 0}
@@ -62,35 +69,50 @@ class PPOAeroTAFTrainer:
         if args.CFC_softmax_tau <= 0.0:
             raise ValueError("--CFC-softmax-tau must be positive")
 
-    def _forward_aerotaf(self, policy, dataset, indices):
-        obs, actions = dataset.stack_windows(indices)
+    def _forward_aerotaf(self, policy, dataset, indices, seq_len):
+        obs, actions, valid_mask = dataset.stack_padded_windows(indices, seq_len)
         batch_size, seq_len, num_agents = obs.shape[:3]
         obs = check(obs.reshape(batch_size * seq_len * num_agents, -1)).to(**self.tpdv)
         actions = check(actions.reshape(batch_size * seq_len * num_agents, -1)).to(**self.tpdv)
         threat_target, attack_target, categories = dataset.targets(indices)
         threat_target = check(threat_target).to(**self.tpdv)
         attack_target = check(attack_target).to(**self.tpdv)
-        threat_pred, attack_pred, _ = policy.evaluate_AeroTAF(obs, actions, seq_len=seq_len)
+        threat_pred, attack_pred, _ = policy.evaluate_AeroTAF(
+            obs,
+            actions,
+            seq_len=seq_len,
+            valid_mask=valid_mask,
+        )
         return threat_pred, attack_pred, threat_target, attack_target, categories
 
-    def _aerotaf_update(self, policy, dataset, indices):
-        threat_pred, attack_pred, threat_target, attack_target, categories = self._forward_aerotaf(
-            policy, dataset, indices
-        )
-        threat_loss = F.mse_loss(threat_pred, threat_target)
-        attack_loss = F.mse_loss(attack_pred, attack_target)
-        loss = (
-            self.args.AeroTAF_threat_loss_weight * threat_loss
-            + self.args.AeroTAF_attack_loss_weight * attack_loss
-        )
+    def _aerotaf_update(self, policy, dataset, indices, seq_len):
+        use_amp = self.aerotaf_amp
+        with torch.autocast(device_type=self.device.type, dtype=torch.float16, enabled=use_amp):
+            threat_pred, attack_pred, threat_target, attack_target, categories = self._forward_aerotaf(
+                policy, dataset, indices, seq_len
+            )
+            threat_loss = F.mse_loss(threat_pred, threat_target)
+            attack_loss = F.mse_loss(attack_pred, attack_target)
+            loss = (
+                self.args.AeroTAF_threat_loss_weight * threat_loss
+                + self.args.AeroTAF_attack_loss_weight * attack_loss
+            )
 
         policy.AeroTAF_optimizer.zero_grad()
-        loss.backward()
+        if use_amp:
+            self.aerotaf_scaler.scale(loss).backward()
+            self.aerotaf_scaler.unscale_(policy.AeroTAF_optimizer)
+        else:
+            loss.backward()
         if self.use_max_grad_norm:
             grad_norm = nn.utils.clip_grad_norm_(policy.AeroTAF.parameters(), self.max_grad_norm).item()
         else:
             grad_norm = get_gard_norm(policy.AeroTAF.parameters())
-        policy.AeroTAF_optimizer.step()
+        if use_amp:
+            self.aerotaf_scaler.step(policy.AeroTAF_optimizer)
+            self.aerotaf_scaler.update()
+        else:
+            policy.AeroTAF_optimizer.step()
         self.aerotaf_gradient_updates += 1
 
         return {
@@ -123,9 +145,10 @@ class PPOAeroTAFTrainer:
                 selected,
                 self.args.AeroTAF_mini_batch_size,
                 seed=self.args.seed + self.train_calls * 1009 + epoch,
+                window_bucket_size=self.args.AeroTAF_window_bucket_size,
             )
-            for indices, _ in batches:
-                result = self._aerotaf_update(policy, dataset, indices)
+            for indices, seq_len in batches:
+                result = self._aerotaf_update(policy, dataset, indices, seq_len)
                 updates += 1
                 totals["AeroTAF_loss"] += result["loss"]
                 totals["AeroTAF_threat_loss"] += result["threat_loss"]
@@ -215,10 +238,18 @@ class PPOAeroTAFTrainer:
         obs = check(dataset.obs).to(**self.tpdv)
         actions = check(dataset.actions).to(**self.tpdv)
         segment_starts = check(dataset.segment_starts).to(device=self.device, dtype=torch.long)
-        fact_threat = np.empty(len(dataset), dtype=np.float32)
-        fact_attack = np.empty(len(dataset), dtype=np.float32)
-        cf_threat = np.empty((len(dataset), self.num_agents), dtype=np.float32)
-        cf_attack = np.empty_like(cf_threat)
+        # Keep all batch outputs on the inference device.  Copying every batch
+        # to NumPy would synchronize CUDA once per batch and makes the CFC
+        # path needlessly serialized.  The reward redistribution below only
+        # needs host arrays, so transfer once after all variants are predicted.
+        fact_threat_device = torch.empty(
+            len(dataset), device=self.device, dtype=torch.float32
+        )
+        fact_attack_device = torch.empty_like(fact_threat_device)
+        cf_threat_device = torch.empty(
+            (len(dataset), self.num_agents), device=self.device, dtype=torch.float32
+        )
+        cf_attack_device = torch.empty_like(cf_threat_device)
         action_count = len(self.counterfactual_actions)
         use_amp = bool(getattr(self.args, "AeroTAF_inference_amp", False) and self.device.type == "cuda")
 
@@ -245,15 +276,27 @@ class PPOAeroTAFTrainer:
                 )
                 threat = threat.squeeze(-1).float()
                 attack = attack.squeeze(-1).float()
-                fact_threat[start:stop] = _t2n(threat[:, 0])
-                fact_attack[start:stop] = _t2n(attack[:, 0])
-                cf_threat[start:stop] = _t2n(
-                    threat[:, 1:].reshape(stop - start, self.num_agents, action_count).mean(dim=-1)
+                fact_threat_device[start:stop] = threat[:, 0]
+                fact_attack_device[start:stop] = attack[:, 0]
+                cf_threat_device[start:stop] = (
+                    threat[:, 1:]
+                    .reshape(stop - start, self.num_agents, action_count)
+                    .mean(dim=-1)
                 )
-                cf_attack[start:stop] = _t2n(
-                    attack[:, 1:].reshape(stop - start, self.num_agents, action_count).mean(dim=-1)
+                cf_attack_device[start:stop] = (
+                    attack[:, 1:]
+                    .reshape(stop - start, self.num_agents, action_count)
+                    .mean(dim=-1)
                 )
-        return fact_threat, fact_attack, cf_threat, cf_attack
+        return tuple(
+            output.cpu().numpy()
+            for output in (
+                fact_threat_device,
+                fact_attack_device,
+                cf_threat_device,
+                cf_attack_device,
+            )
+        )
 
     @staticmethod
     def _masked_softmax(values, active_masks, tau, eps=1e-8):

@@ -142,9 +142,12 @@ class OnlineAeroTAFDataset:
         rng.shuffle(indices)
         return indices
 
-    def grouped_batches(self, indices, batch_size, seed=None):
+    def grouped_batches(self, indices, batch_size, seed=None, window_bucket_size=1):
         rng = np.random.default_rng(seed)
         indices = np.asarray(indices, dtype=np.int64)
+        bucket_size = int(window_bucket_size)
+        if bucket_size <= 0:
+            raise ValueError("AeroTAF window bucket size must be positive")
         env_i = indices // self.time_steps
         time_i = indices % self.time_steps
         starts = np.maximum(
@@ -152,13 +155,51 @@ class OnlineAeroTAFDataset:
             time_i - self.history_windows + 1,
         )
         window_lengths = time_i - starts + 1
-        unique_lengths = np.unique(window_lengths)
-        rng.shuffle(unique_lengths)
-        for seq_len in unique_lengths:
-            group = indices[window_lengths == seq_len].copy()
+        padded_lengths = np.minimum(
+            ((window_lengths - 1) // bucket_size + 1) * bucket_size,
+            self.history_windows,
+        )
+        unique_padded_lengths = np.unique(padded_lengths)
+        rng.shuffle(unique_padded_lengths)
+        for seq_len in unique_padded_lengths:
+            group = indices[padded_lengths == seq_len].copy()
             rng.shuffle(group)
             for start in range(0, len(group), int(batch_size)):
                 yield group[start : start + int(batch_size)], int(seq_len)
+
+    def stack_padded_windows(self, indices, padded_length):
+        """Stack left-padded windows and return the temporal validity mask."""
+        indices = np.asarray(indices, dtype=np.int64)
+        if indices.size == 0:
+            raise ValueError("cannot stack an empty AeroTAF window batch")
+
+        seq_len = int(padded_length)
+        if seq_len <= 0 or seq_len > self.history_windows:
+            raise ValueError(
+                f"invalid AeroTAF padded window length {seq_len}; "
+                f"expected [1, {self.history_windows}]"
+            )
+
+        env_i = indices // self.time_steps
+        time_i = indices % self.time_steps
+        segment_starts = self.segment_starts[env_i, time_i]
+        actual_starts = np.maximum(
+            segment_starts,
+            time_i - self.history_windows + 1,
+        )
+        actual_lengths = time_i - actual_starts + 1
+        if np.any(actual_lengths > seq_len):
+            raise ValueError(
+                "AeroTAF padded window is shorter than an included history"
+            )
+
+        offsets = np.arange(seq_len - 1, -1, -1, dtype=np.int64)
+        time_grid = time_i[:, None] - offsets[None]
+        valid_mask = time_grid >= actual_starts[:, None]
+        safe_time_grid = np.maximum(time_grid, actual_starts[:, None])
+        obs = self.obs[env_i[:, None], safe_time_grid]
+        actions = self.actions[env_i[:, None], safe_time_grid]
+        return obs, actions, valid_mask
 
     def stack_windows(self, indices, counterfactual_kind=None, counterfactual_agent=None):
         indices = np.asarray(indices, dtype=np.int64)

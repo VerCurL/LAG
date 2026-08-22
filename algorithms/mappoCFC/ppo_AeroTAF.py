@@ -27,14 +27,20 @@ class PPOAeroTAF(nn.Module):
         )
         self.to(device)
 
-    def forward(self, obs, actions, seq_len, time_offset=0):
+    def forward(self, obs, actions, seq_len, time_offset=0, valid_mask=None):
         obs = check(obs).to(**self.tpdv)
         actions = check(actions).to(**self.tpdv)
+        if valid_mask is not None:
+            valid_mask = check(valid_mask).to(
+                device=self.tpdv["device"],
+                dtype=torch.bool,
+            )
         _, threat_output, attack_output = self.AeroTAF(
             obs,
             actions,
             seq_len=seq_len,
             time_offset=time_offset,
+            valid_mask=valid_mask,
         )
         return threat_output, attack_output, self.AeroTAF.record_info
 

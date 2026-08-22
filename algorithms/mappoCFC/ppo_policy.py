@@ -65,8 +65,21 @@ class PPOAeroTAFPolicy:
         values, _ = self.critic(cent_obs, rnn_states_critic, masks)
         return values, action_log_probs, dist_entropy
 
-    def evaluate_AeroTAF(self, obs, actions, seq_len, time_offset=0):
-        return self.AeroTAF(obs, actions, seq_len=seq_len, time_offset=time_offset)
+    def evaluate_AeroTAF(
+        self,
+        obs,
+        actions,
+        seq_len,
+        time_offset=0,
+        valid_mask=None,
+    ):
+        return self.AeroTAF(
+            obs,
+            actions,
+            seq_len=seq_len,
+            time_offset=time_offset,
+            valid_mask=valid_mask,
+        )
 
     def build_AeroTAF_trajectory_cache(self, obs, actions):
         return self.AeroTAF.build_trajectory_cache(obs, actions)
