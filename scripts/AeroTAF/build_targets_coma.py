@@ -76,6 +76,8 @@ CF_ACTION_NAMES = (
     "invert_heading",
     "invert_altitude",
     "invert_velocity",
+    "shoot",
+    "no_shoot",
 )
 RENDERED_FACTUAL_TACVIEW_PATHS = set()
 
@@ -248,7 +250,6 @@ def load_restore_state(restore_file, state_index):
 
 def counterfactual_action(kind, current_action, previous_action):
     action = np.asarray(current_action, dtype=np.int64).copy()
-    shoot = int(action[3]) if action.shape[0] > 3 else 0
 
     if kind == "previous":
         action[:3] = np.asarray(previous_action, dtype=np.int64)[:3]
@@ -264,11 +265,17 @@ def counterfactual_action(kind, current_action, previous_action):
         action[0] = 2 - action[0]
     elif kind == "invert_velocity":
         action[2] = 2 - action[2]
+    elif kind == "shoot":
+        if action.shape[0] <= 3:
+            raise ValueError("shoot counterfactual requires a shoot action dimension")
+        action[3] = 1
+    elif kind == "no_shoot":
+        if action.shape[0] <= 3:
+            raise ValueError("no_shoot counterfactual requires a shoot action dimension")
+        action[3] = 0
     else:
         raise ValueError(f"Unknown counterfactual action kind: {kind}")
 
-    if action.shape[0] > 3:
-        action[3] = shoot
     return action
 
 
@@ -801,7 +808,7 @@ def get_parser():
     parser = argparse.ArgumentParser(description="Build COMA-style AeroTAF counterfactual val/test target datasets.")
     parser.add_argument("--dataset-dir", type=str, required=True, help="Processed dataset directory containing val/test/all_target npz files.")
     parser.add_argument("--output-dir", type=str, default="", help="Output directory. Defaults to dataset_dir/coma_counterfactual_K{K}.")
-    parser.add_argument("--splits", type=str, default="val test", help="Space-separated splits to process.")
+    parser.add_argument("--splits", type=str, default="train val test", help="Space-separated splits to process.")
     parser.add_argument("--num-agents-total", type=int, default=8, help="Total aircraft count; ego count is total/2.")
     parser.add_argument("--deterministic", action="store_true", default=True, help="Use deterministic actor actions during replay/rollout.")
     parser.add_argument("--stochastic", action="store_false", dest="deterministic", help="Use stochastic actor actions.")
@@ -860,7 +867,7 @@ def main(args):
     logging.info(f"dataset dir : {normalize_path(dataset_dir)}")
     logging.info(f"output dir  : {normalize_path(output_dir)}")
     logging.info(f"splits      : {splits}")
-    logging.info(f"cf actions  : {list(CF_ACTION_NAMES)}")
+    logging.info(f"cf actions  : {list(CF_ACTION_NAMES)} (shoot/no_shoot are passed through the environment launch rules)")
     logging.info(f"K/gamma     : {all_args.field_k_step}/{all_args.field_gamma}")
     logging.info(f"workers     : {all_args.num_workers}")
     logging.info(f"restore     : {normalize_path(resolve_project_path(all_args.restore_dir)) if all_args.restore_dir else 'disabled, replay from seed/model to t'}")
@@ -893,7 +900,7 @@ def main(args):
             "other_ego_agents": "keep factual action at t",
             "enemy_agents": "policy action at t and future steps",
             "future_policy": "ego/enemy actors continue closed-loop after the intervention step",
-            "shoot_dimension": "always kept equal to factual shoot action for all counterfactual kinds",
+            "shoot_dimension": "preserved for maneuver counterfactuals; explicitly set to 1/0 for shoot/no_shoot",
         },
         "field_params": {
             "field_k_step": all_args.field_k_step,
@@ -915,7 +922,7 @@ if __name__ == "__main__":
     default_args = [
         "--dataset-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/fkr-300vs500/processed_detail_index_k_target_K50",
         "--restore-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/fkr-300vs500/processed_detail_index_k_target_K50/restore_states",
-        "--splits", "val test",
+        "--splits", "train val test",
         "--field-k-step", "50",
         "--field-gamma", "0.96",
         "--num-agents-total", "8",

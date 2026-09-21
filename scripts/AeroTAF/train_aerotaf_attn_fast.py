@@ -18,6 +18,7 @@ try:
     import torch
     import torch.nn as nn
     import torch.nn.functional as F
+    from torch.utils.data import ConcatDataset
 except ModuleNotFoundError as exc:
     logging.info(f"Error: missing dependency: {exc}")
     logging.info("Please activate the same Python environment used by this project, then run this script again.")
@@ -347,15 +348,28 @@ def main(args):
         ),
     }
     counterfactual_datasets = {}
+    training_dataset = datasets["train"]
     if all_args.coma_dir:
         coma_dir = resolve_project_path(all_args.coma_dir)
-        counterfactual_datasets = {
-            "val": load_counterfactual_datasets(coma_dir, "val", datasets["val"]),
-            "test": load_counterfactual_datasets(coma_dir, "test", datasets["test"]),
-        }
+        for split_name in ("train", "val", "test"):
+            split_paths = [coma_dir / f"{split_name}_{action_name}.npz" for action_name in COMA_ACTION_NAMES]
+            if all(path.exists() for path in split_paths):
+                factual_dataset = datasets[split_name]
+                counterfactual_datasets[split_name] = load_counterfactual_datasets(
+                    coma_dir, split_name, factual_dataset
+                )
+            elif split_name == "train":
+                logging.warning(
+                    "COMA train datasets are incomplete; training will use factual samples only. "
+                    "Build them with build_targets_coma.py --splits train val test."
+                )
+        if "train" in counterfactual_datasets:
+            training_dataset = ConcatDataset(
+                [datasets["train"], *counterfactual_datasets["train"].values()]
+            )
     if datasets["train"].num_agents != all_args.num_agents:
         raise ValueError(f"--num-agents={all_args.num_agents}, but raw data has {datasets['train'].num_agents} agents")
-    all_args.effective_mini_epoch = max(1, min(int(all_args.mini_epoch), len(datasets["train"])))
+    all_args.effective_mini_epoch = max(1, min(int(all_args.mini_epoch), len(training_dataset)))
     all_args.eval_batch_size = max(1, int(np.ceil(len(datasets["train"]) / all_args.effective_mini_epoch)))
 
     obs_space, act_space = build_spaces(datasets["train"])
@@ -395,7 +409,7 @@ def main(args):
     logging.info(f"test cats   : {format_counts(datasets['test'].category_counts(active=False))}")
     if counterfactual_datasets:
         logging.info(f"coma dir    : {normalize_path(resolve_project_path(all_args.coma_dir))}")
-        for split_name in ("val", "test"):
+        for split_name in counterfactual_datasets:
             counts = ", ".join(
                 f"{action_name}={len(counterfactual_datasets[split_name][action_name])}"
                 for action_name in COMA_ACTION_NAMES
@@ -411,17 +425,18 @@ def main(args):
         start_time = time.time()
         datasets["train"].set_epoch_sample(all_args.stable_sample_ratio, all_args.seed, epoch, shuffle=True)
         datasets["val"].set_epoch_sample(all_args.stable_sample_ratio, all_args.seed + 100000, epoch, shuffle=True)
-        all_args.effective_mini_epoch = max(1, min(int(all_args.mini_epoch), len(datasets["train"])))
+        all_args.effective_mini_epoch = max(1, min(int(all_args.mini_epoch), len(training_dataset)))
         all_args.eval_batch_size = max(1, int(np.ceil(len(datasets["train"]) / all_args.effective_mini_epoch)))
 
         logging.info(
             f"[E{epoch:03d}/{all_args.epochs:03d}] "
-            f"train_active={len(datasets['train'])} {format_counts(datasets['train'].category_counts(active=True))} | "
+            f"train_active={len(datasets['train'])} factual + {len(training_dataset) - len(datasets['train'])} counterfactual "
+            f"| train_total={len(training_dataset)} | "
             f"val_active={len(datasets['val'])} {format_counts(datasets['val'].category_counts(active=True))} | "
             f"mini_epoch={all_args.effective_mini_epoch} | windows/update~{all_args.eval_batch_size}"
         )
 
-        train_loader = build_train_loader(datasets["train"], all_args, device, epoch)
+        train_loader = build_train_loader(training_dataset, all_args, device, epoch)
         train_metrics = train_one_epoch(model, train_loader, device, all_args, optimizer)
         val_loader = build_eval_loader(datasets["val"], all_args, device)
         val_metrics = evaluate(model, val_loader, device, all_args)
@@ -432,7 +447,7 @@ def main(args):
                 device,
                 all_args,
             )
-            if counterfactual_datasets
+            if "val" in counterfactual_datasets
             else {}
         )
         train_category_losses = evaluate_raw_losses_by_category(model, datasets["train"], device, all_args, active=True)
@@ -490,7 +505,7 @@ def main(args):
             device,
             all_args,
         )
-        if counterfactual_datasets
+        if "test" in counterfactual_datasets
         else {}
     )
     test_report = dict(test_metrics)

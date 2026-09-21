@@ -18,6 +18,8 @@ COUNTERFACTUAL_ACTION_NAMES = (
     "invert_heading",
     "invert_altitude",
     "invert_velocity",
+    "shoot",
+    "no_shoot",
 )
 
 
@@ -49,10 +51,18 @@ def build_counterfactual_action(kind, current_action, previous_action):
         action[..., 0] = 2 - action[..., 0]
     elif kind == "invert_velocity":
         action[..., 2] = 2 - action[..., 2]
+    elif kind == "shoot":
+        if action.shape[-1] <= 3:
+            raise ValueError("shoot counterfactual requires a shoot action dimension")
+        action[..., 3] = 1
+    elif kind == "no_shoot":
+        if action.shape[-1] <= 3:
+            raise ValueError("no_shoot counterfactual requires a shoot action dimension")
+        action[..., 3] = 0
     else:
         raise ValueError(f"unknown counterfactual action: {kind}")
 
-    if shoot is not None:
+    if shoot is not None and kind not in ("shoot", "no_shoot"):
         action[..., 3] = shoot
     return action
 

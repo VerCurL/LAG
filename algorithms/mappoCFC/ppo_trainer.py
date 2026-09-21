@@ -229,6 +229,14 @@ class PPOAeroTAFTrainer:
                     action[:, 0] = 2 - current[:, 0]
                 elif action_name == "invert_velocity":
                     action[:, 2] = 2 - current[:, 2]
+                elif action_name == "shoot":
+                    if action_dim <= 3:
+                        raise ValueError("shoot counterfactual requires a shoot action dimension")
+                    action[:, 3] = 1
+                elif action_name == "no_shoot":
+                    if action_dim <= 3:
+                        raise ValueError("no_shoot counterfactual requires a shoot action dimension")
+                    action[:, 3] = 0
                 else:
                     raise ValueError(f"unknown counterfactual action: {action_name}")
         return variants
