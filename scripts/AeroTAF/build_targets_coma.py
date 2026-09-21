@@ -808,7 +808,7 @@ def get_parser():
     parser = argparse.ArgumentParser(description="Build COMA-style AeroTAF counterfactual val/test target datasets.")
     parser.add_argument("--dataset-dir", type=str, required=True, help="Processed dataset directory containing val/test/all_target npz files.")
     parser.add_argument("--output-dir", type=str, default="", help="Output directory. Defaults to dataset_dir/coma_counterfactual_K{K}.")
-    parser.add_argument("--splits", type=str, default="train val test", help="Space-separated splits to process.")
+    parser.add_argument("--splits", type=str, default="val test", help="Space-separated splits to process.")
     parser.add_argument("--num-agents-total", type=int, default=8, help="Total aircraft count; ego count is total/2.")
     parser.add_argument("--deterministic", action="store_true", default=True, help="Use deterministic actor actions during replay/rollout.")
     parser.add_argument("--stochastic", action="store_false", dest="deterministic", help="Use stochastic actor actions.")
@@ -922,7 +922,7 @@ if __name__ == "__main__":
     default_args = [
         "--dataset-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/fkr-300vs500/processed_detail_index_k_target_K50",
         "--restore-dir", "datasets/aerotaf/4v4_shoot_mappo_pool/fkr-300vs500/processed_detail_index_k_target_K50/restore_states",
-        "--splits", "train val test",
+        "--splits", "val test",
         "--field-k-step", "50",
         "--field-gamma", "0.96",
         "--num-agents-total", "8",
