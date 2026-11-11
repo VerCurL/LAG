@@ -11,7 +11,7 @@ import numpy as np
 from pathlib import Path
 from datetime import datetime
 import setproctitle
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))))
 from config import get_config
 from utils.logger import AlgorithmsLogger
 from runner.share_jsbsim_runner import ShareJSBSimRunner
@@ -30,7 +30,15 @@ def make_train_env(all_args):
     if all_args.n_rollout_threads == 1:
         return ShareDummyVecEnv([get_env_fn(0)])
     else:
-        return ShareSubprocVecEnv([get_env_fn(i) for i in range(all_args.n_rollout_threads)])
+        snapshot_buffer_size = (
+            all_args.buffer_size
+            if all_args.algorithm_name in {"mappoCFC", "mappoCFC_legacy"}
+            else 0
+        )
+        return ShareSubprocVecEnv(
+            [get_env_fn(i) for i in range(all_args.n_rollout_threads)],
+            snapshot_buffer_size=snapshot_buffer_size,
+        )
 
 
 def make_eval_env(all_args):
@@ -43,7 +51,15 @@ def make_eval_env(all_args):
     if all_args.n_eval_rollout_threads == 1:
         return ShareDummyVecEnv([get_env_fn(0)])
     else:
-        return ShareSubprocVecEnv([get_env_fn(i) for i in range(all_args.n_eval_rollout_threads)])
+        snapshot_buffer_size = (
+            all_args.buffer_size
+            if all_args.algorithm_name in {"mappoCFC", "mappoCFC_legacy"}
+            else 0
+        )
+        return ShareSubprocVecEnv(
+            [get_env_fn(i) for i in range(all_args.n_eval_rollout_threads)],
+            snapshot_buffer_size=snapshot_buffer_size,
+        )
 
 
 def parse_args(args, parser):
@@ -187,12 +203,16 @@ if __name__ == "__main__":
         '--AeroTAF-kstep', '100',
         '--AeroTAF-field-gamma', '0.95',
         '--AeroTAF-epoch', '1',
-        '--AeroTAF-mini-batch-size', '256',
+        '--AeroTAF-mini-batch-size', '512',
+        '--AeroTAF-window-bucket-size', '16',
         '--AeroTAF-inference-batch-size', '512',
+        '--AeroTAF-inference-amp',
+        '--AeroTAF-training-amp',
         '--AeroTAF-stable-sample-ratio', '0.05',
         '--AeroTAF-lr', '3e-5',
         '--AeroTAF-weight-decay', '1e-4',
-        '--CFC-counterfactual-actions', 'previous',
+        '--CFC-counterfactual-actions',
+        'previous,no_op,invert_maneuver,invert_heading,invert_altitude,invert_velocity,shoot,no_shoot',
         '--CFC-softmax-tau', '0.2',
         '--CFC-reward-blend', '1.0',
         '--use-feature-normalization',

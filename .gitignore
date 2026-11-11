@@ -147,3 +147,5 @@ backup/
 # other
 datasets/
 research/
+/.codex/
+/.agents/
