@@ -1,6 +1,6 @@
 # 架构总览
 
-LAGLayer3 采用分层控制架构，并把仿真、感知、武器、安全和学习流程分开。默认仿真和飞控 60 Hz、执行层 5 Hz、首脑层 1 Hz，关键事件可以触发首脑重规划。完整设计决策见 [重构设计决策](./restructuring_decisions.md)。
+LAGLayer3 采用分层控制架构，并把仿真、感知、武器、安全和学习流程分开。默认仿真和飞控 60 Hz、执行层 5 Hz、首脑层 1 Hz，关键事件可以触发首脑重规划。完整设计决策见 [重构设计决策](./restructuring_decisions.md)，源码边界见 [目录结构设计](./directory_structure.md)。
 
 ```text
 World State

@@ -20,6 +20,7 @@
 - [新 AI 交接说明](./implementation_handoff.md)：没有当前对话上下文时的阅读顺序和实现约束。
 - [待决策问题](./open_questions.md)：不能自行假设的未决设计。
 - [重构设计决策](./restructuring_decisions.md)：Q1–Q110 已确认的分层、网络、仿真、训练和数据设计。
+- [目录结构设计](./directory_structure.md)：源码模块、Provider、训练图、工具和数据目录边界。
 
 架构性的取舍记录在 [ADR](./adr/README.md) 中。领域术语统一见仓库根目录的 [GLOSSARY.md](../GLOSSARY.md)。
 
