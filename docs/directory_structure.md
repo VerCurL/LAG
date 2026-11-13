@@ -8,7 +8,8 @@
 LAGLayer3/
 ├── src/laglayer3/          # 运行时代码和训练可复用模块
 ├── configs/                # 场景、协议、Provider 和训练配置
-├── tools/                  # 数据生成、训练、评估和诊断入口
+├── scripts/                # 数据生成、训练、仿真和评估等大流程入口
+├── tools/                  # 诊断、检查、转换等小工具
 ├── tests/                  # 单元、契约、集成和回归测试
 ├── docs/                   # 设计、ADR、迁移和实验文档
 ├── datasets/               # 本地生成数据，默认 gitignored
@@ -415,10 +416,10 @@ config/
 
 config 只负责加载、校验和版本，不在配置模块中实现策略逻辑。
 
-## 3. 工具入口
+## 3. 大流程脚本
 
 ~~~text
-tools/
+scripts/
 ├── simulation/
 │   ├── run_local_episode.py
 │   ├── replay_snapshot.py
@@ -436,16 +437,27 @@ tools/
 │   ├── evaluate_episode.py
 │   ├── evaluate_checkpoint.py
 │   └── compare_checkpoints.py
-└── diagnostics/
-    ├── inspect_dataset.py
-    ├── inspect_route.py
-    ├── inspect_moe.py
-    └── inspect_trace.py
+└── run_pipeline.py
 ~~~
 
-工具只负责命令行参数、配置加载和调用深模块。业务逻辑不应重新写在 tools 中。
+scripts 负责调用多个模块完成大流程，例如生成教师数据、运行训练、执行完整评估或回放一局。业务逻辑仍然放在 src/laglayer3 中，scripts 只负责命令行参数、配置加载、流程编排和结果保存。
 
-## 4. 配置和数据目录
+## 4. 小工具
+
+~~~text
+tools/
+├── inspect_dataset.py
+├── inspect_route.py
+├── inspect_moe.py
+├── inspect_trace.py
+├── convert_snapshot.py
+├── validate_config.py
+└── check_manifest.py
+~~~
+
+tools 只做小范围、可独立运行的检查、转换和诊断，不启动完整训练流程，也不复制业务逻辑。
+
+## 5. 配置和数据目录
 
 ~~~text
 configs/
@@ -482,7 +494,7 @@ checkpoints/
 
 数据集和 checkpoint 通过 schema、场景、Provider、checkpoint、航迹来源和随机种子生成 dataset_id。训练发现数据缺失或版本不匹配时直接失败。
 
-## 5. 依赖方向
+## 6. 依赖方向
 
 推荐依赖方向：
 
@@ -496,7 +508,8 @@ policies / execution / flight_control
 runtime / evaluation
 
 learning → domain + simulation + policies + execution + evaluation
-tools → config + runtime + learning + evaluation
+scripts → config + runtime + learning + evaluation
+tools → config + domain + simulation + evaluation
 ~~~
 
 关键约束：
@@ -505,10 +518,11 @@ tools → config + runtime + learning + evaluation
 - policies 不直接依赖 JSBSim 或飞控内部类；
 - execution 不依赖 WeaponManager 的内部实现；
 - learning 不反向成为 runtime 的必需依赖；
-- tools 不复制业务逻辑；
+- scripts 只编排大流程，不复制业务逻辑；
+- tools 只实现小工具，不承担训练和评估流程；
 - 通用 utils 目录不作为复杂逻辑的归宿，逻辑应放在拥有它的模块中。
 
-## 6. 第一阶段实际创建顺序
+## 7. 第一阶段实际创建顺序
 
 第一阶段不必一次创建所有文件。建议按深模块的 Interface 顺序创建：
 
