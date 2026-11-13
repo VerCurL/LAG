@@ -1,0 +1,41 @@
+schema_version: laglayer3.config.v1
+
+runtime:
+  simulation_hz: 60
+  execution_hz: 5
+  head_hz: 1
+
+route:
+  horizon_seconds: 20.0
+  interval_seconds: 1.0
+  frame: body_aligned_local
+
+head:
+  provider: fixed_route
+  trainable: false
+  general_experts: 2
+  route_experts: 8
+  weapon_experts: 8
+  top_k: 2
+
+execution:
+  provider: fixed_route
+  trainable: false
+  action_space: [3, 5, 3]
+  route_window_points: 10
+
+flight_control:
+  provider: bsl_aggressive
+  trainable: false
+  diagnostics: true
+
+simulation:
+  backend: jsbsim
+  data_root: third_party/jsbsim_data
+  aircraft_model: f16
+  step_seconds: 0.0166666667
+  time_limit_seconds: 900.0
+
+training:
+  trainable_nodes: []
+  gradient_boundaries: true

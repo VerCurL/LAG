@@ -1,0 +1,215 @@
+{
+  "experiment": "C62-V3",
+  "controller": "pid",
+  "host": "127.0.0.1",
+  "port": 18366,
+  "control_dt_sec": 0.2,
+  "physics_dt_sec": 0.016666666666666666,
+  "command_start_sec": 5.0,
+  "command_end_sec": 35.0,
+  "references": {
+    "red": {
+      "heading_deg": 90.0,
+      "height_m": 8534.4,
+      "eas_mps": 101.590961664
+    },
+    "blue": {
+      "heading_deg": 270.0,
+      "height_m": 8534.4,
+      "eas_mps": 101.590961664
+    }
+  },
+  "cases": [
+    {
+      "id": "heading_plus_5deg",
+      "axis": "heading_deg",
+      "offset": 5.0,
+      "kind": "response",
+      "duration_sec": 95.0,
+      "actions": 475,
+      "frames": 476,
+      "transport_event": "init",
+      "score_windows": {
+        "command": [
+          20.0,
+          35.0
+        ],
+        "recovery": [
+          80.0,
+          95.0
+        ]
+      },
+      "score_samples": 75
+    }
+  ],
+  "acceptance": {
+    "heading_mae_deg": 2.0,
+    "height_mae_m": 20.0,
+    "eas_mae_mps": 1.0
+  },
+  "observed_domain": {
+    "height_m": [
+      2500.0,
+      15000.0
+    ],
+    "eas_mps": [
+      70.0,
+      150.0
+    ],
+    "alpha_deg": [
+      -20.0,
+      20.0
+    ],
+    "beta_deg": [
+      -10.0,
+      10.0
+    ],
+    "roll_deg": [
+      -75.0,
+      75.0
+    ],
+    "pitch_deg": [
+      -45.0,
+      45.0
+    ]
+  },
+  "clock_contract": {
+    "schema": "V1-binary32-grid-to-logical-control-time",
+    "native_dt_binary32": 0.01666666753590107,
+    "native_steps_per_action": 12,
+    "check": "binary32(raw_dt)==binary32(1/60); binary32(raw_time)==binary32(endpoint_index*12*binary32(1/60)); monotonic raw time and both aircraft in the same expected bin",
+    "logical_time": "only state.time_sec passed to frozen runtime is explicitly mapped to endpoint_index*0.2; all physical fields and raw wire/frames remain unchanged",
+    "scope": "observed binary32-bin compatibility, not proof of internal implementation or sub-bin precision",
+    "static_review": "scripts/results/diagnostics/2026-10-19-C50-V1-clock-design-verified/clock_review.json"
+  },
+  "initial_reference": "C49-E6 frame0 actual red/red_0 and blue/blue_0; original untrimmed initialization, not offline post-trim equilibrium",
+  "initial_state_checker": "competition/flight_control_eas/platform_reset_v1.py::INITIAL_FIELDS/DEFAULT_TOLERANCES; all source bytes frozen in registration",
+  "initial_default_absolute_tolerance": 1e-05,
+  "initial_default_relative_tolerance": 1e-06,
+  "initial_override_tolerances": {
+    "simulation/sim-time-sec": [
+      0.0,
+      0.0
+    ],
+    "position/h-sl-ft": [
+      0.01,
+      0.0
+    ],
+    "position/lat-geod-deg": [
+      1e-07,
+      0.0
+    ],
+    "position/long-gc-deg": [
+      1e-07,
+      0.0
+    ],
+    "velocities/ve-fps": [
+      0.001,
+      0.0
+    ],
+    "velocities/u-fps": [
+      0.01,
+      0.0
+    ],
+    "velocities/v-fps": [
+      0.01,
+      0.0
+    ],
+    "velocities/w-fps": [
+      0.01,
+      0.0
+    ],
+    "attitude/psi-deg": [
+      0.0001,
+      0.0
+    ],
+    "attitude/roll-rad": [
+      1e-06,
+      0.0
+    ],
+    "attitude/pitch-rad": [
+      1e-06,
+      0.0
+    ],
+    "velocities/p-rad_sec": [
+      1e-06,
+      0.0
+    ],
+    "velocities/q-rad_sec": [
+      1e-06,
+      0.0
+    ],
+    "velocities/r-rad_sec": [
+      1e-06,
+      0.0
+    ],
+    "propulsion/tank/contents-lbs": [
+      0.01,
+      0.0
+    ],
+    "propulsion/tank/pct-full": [
+      0.001,
+      0.0
+    ],
+    "propulsion/engine/thrust-lbs": [
+      0.1,
+      0.0
+    ],
+    "LifeCurrent": [
+      0.0,
+      0.0
+    ],
+    "DeathEvent": [
+      0.0,
+      0.0
+    ]
+  },
+  "initial_normalized_fcs_and_gear_absolute_tolerance": 1e-06,
+  "reset_policy": "one new owned platform process; single init; fresh independent PID and clock per aircraft; no resets",
+  "failure_policy": "retain single-case denominator and actual prefix; no repair or retry under this identity",
+  "gate_policy": "one complete episode; both aircraft and command/recovery windows pass original gates; source/resource/owned cleanup checked",
+  "startup_minimum_sec": 20.0,
+  "startup_timeout_sec": 50.0,
+  "socket_timeout_sec": 10.0,
+  "wall_budget_sec": 300.0,
+  "max_response_bytes": 16777216,
+  "red_num": 1,
+  "blue_num": 1,
+  "red_mode": 0,
+  "blue_mode": 0,
+  "scene": 4,
+  "play_mode": 1,
+  "budget": {
+    "platform_processes": 1,
+    "episodes": 1,
+    "frames": 476,
+    "joint_actions": 475,
+    "controller_calls": 950,
+    "training_steps": 0
+  },
+  "weapons_disabled": true,
+  "online_trim": false,
+  "hidden_trim_observed": false,
+  "hidden_trim_basis": "bind completed E2 mapped-input proof and M1 local observations; send only original mode0 A/E/R/T and no-weapon fields; platform does not expose hidden trim",
+  "no_TAS_reconstruction": true,
+  "no_CG_load_inference": true,
+  "gains_changed": false,
+  "high_maneuver_capability_claim": false,
+  "candidate_experiment": "C50-M1-PID",
+  "candidate_speed_kp": 0.034839412687137215,
+  "candidate_count": 1,
+  "candidate_speed_ki_unchanged": 0.003150280248930945,
+  "requires_M1_seven_case_audited_pass": true,
+  "requires_V1_clock_reset_resource_cleanup_engineering_evidence": false,
+  "V1_LQR_tracking_gate_used_as_PID_prerequisite": false,
+  "root_execution_authorization_required": true,
+  "configuration_policy": "identical completed C50-V2 M1 configuration; no new gains",
+  "gains_relative_to_M1": "unchanged; M1 speed.kp candidate differs from historical S0/V0 PID",
+  "purpose": "user-requested finite PID platform flight demonstration; actual 5Hz Tacview export; not official worker Agent admission",
+  "visible_window": true,
+  "wall_pacing_dt_sec": 0.2,
+  "window_size": [
+    1280,
+    720
+  ]
+}
