@@ -1,4 +1,4 @@
-"""Deterministic head Provider used for the first local end-to-end loop."""
+"""用于本地闭环测试的确定性首脑策略。"""
 
 from typing import Dict, Mapping
 
@@ -6,9 +6,9 @@ from laglayer3.domain.models import RoutePrediction, TeamObservation, WeaponInte
 
 
 class FixedRouteHeadProvider:
-    """中文说明：定义本模块负责的 FixedRouteHeadProvider 数据或行为。"""
+    """为每架飞机生成保持当前高度和速度的直线航迹。"""
     def __init__(self, horizon_seconds: float = 20.0, interval_seconds: float = 1.0) -> None:
-        """中文说明：初始化对象配置、依赖和运行状态。"""
+        """设置航迹预测时域和相邻航迹点的时间间隔。"""
         if horizon_seconds <= 0 or interval_seconds <= 0:
             raise ValueError("route horizon and interval must be positive")
         self.horizon_seconds = float(horizon_seconds)
@@ -16,11 +16,11 @@ class FixedRouteHeadProvider:
         self.reset()
 
     def reset(self) -> None:
-        """中文说明：清理本模块的运行状态和循环记忆。"""
+        """清除上一次首脑决策的时间记录。"""
         self.last_timestamp = None
 
     def decide(self, observation: TeamObservation, timestamp: float) -> Mapping[str, object]:
-        """中文说明：根据团队观测生成当前首脑决策。"""
+        """根据当前飞机状态生成直线航迹和空武器意图。"""
         routes: Dict[str, RoutePrediction] = {}
         weapons: Dict[str, WeaponIntent] = {}
         count = max(1, int(round(self.horizon_seconds / self.interval_seconds)))

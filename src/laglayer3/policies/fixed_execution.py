@@ -1,16 +1,16 @@
-"""Simple route-following Provider for smoke tests and contract validation."""
+"""用于 smoke 测试和契约验证的简单航迹跟踪策略。"""
 
 from laglayer3.domain.models import ExecutionAction, LocalObservation, RoutePrediction
 
 
 class FixedRouteExecutionProvider:
-    """中文说明：定义本模块负责的 FixedRouteExecutionProvider 数据或行为。"""
+    """根据首个航迹点生成基础的高度、航向和速度调整。"""
     def reset(self, aircraft_id: str) -> None:
-        """中文说明：清理本模块的运行状态和循环记忆。"""
+        """清理指定飞机的执行状态。"""
         return None
 
     def act(self, observation: LocalObservation, route: RoutePrediction) -> ExecutionAction:
-        """中文说明：根据局部观测和首脑航迹生成单机执行动作。"""
+        """根据当前飞机状态和航迹首点生成离散执行动作。"""
         aircraft = observation.aircraft
         if not route.points:
             return ExecutionAction(1, 2, 1)

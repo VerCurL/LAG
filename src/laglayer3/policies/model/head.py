@@ -1,4 +1,4 @@
-"""Configurable team head network template with hierarchical MoE branches."""
+"""带分层 MoE 分支的团队首脑网络模板。"""
 
 from typing import Dict, Tuple
 
@@ -7,9 +7,9 @@ from torch import nn
 
 
 class SparseMoE(nn.Module):
-    """中文说明：定义本模块负责的 SparseMoE 数据或行为。"""
+    """使用可配置 Top-K 路由组合多个专家输出。"""
     def __init__(self, input_dim: int, hidden_dim: int, experts: int, top_k: int) -> None:
-        """中文说明：初始化对象配置、依赖和运行状态。"""
+        """创建专家网络、路由器并校验 Top-K 配置。"""
         super().__init__()
         if experts <= 0 or top_k <= 0 or top_k > experts:
             raise ValueError("experts and top_k must satisfy 1 <= top_k <= experts")
@@ -20,7 +20,7 @@ class SparseMoE(nn.Module):
         self.top_k = top_k
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """中文说明：执行一次网络前向计算并返回预测结果。"""
+        """计算路由权重、选择专家并返回混合特征和专家索引。"""
         logits = self.router(x)
         values, indices = torch.topk(logits, self.top_k, dim=-1)
         weights = torch.softmax(values, dim=-1)
@@ -31,7 +31,7 @@ class SparseMoE(nn.Module):
 
 
 class TeamHeadNetwork(nn.Module):
-    """A first usable template; output heads stay independent for diagnostics."""
+    """把团队实体编码为航迹和武器预测的首脑网络。"""
 
     def __init__(
         self,
@@ -43,7 +43,7 @@ class TeamHeadNetwork(nn.Module):
         weapon_experts: int = 8,
         top_k: int = 2,
     ) -> None:
-        """中文说明：初始化对象配置、依赖和运行状态。"""
+        """创建实体编码器、团队 Transformer、分支 MoE 和输出头。"""
         super().__init__()
         self.route_points = int(route_points)
         self.entity_encoder = nn.Sequential(nn.Linear(entity_dim, model_dim), nn.GELU(), nn.LayerNorm(model_dim))
@@ -60,7 +60,7 @@ class TeamHeadNetwork(nn.Module):
         self.target = nn.Linear(model_dim, 8)
 
     def forward(self, entities: torch.Tensor, mask: torch.Tensor = None) -> Dict[str, torch.Tensor]:
-        """中文说明：执行一次网络前向计算并返回预测结果。"""
+        """编码团队实体，分别计算航迹、武器和专家路由结果。"""
         x = self.entity_encoder(entities)
         if mask is not None:
             x = self.team_encoder(x, src_key_padding_mask=~mask.bool())
