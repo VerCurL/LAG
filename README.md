@@ -1,39 +1,123 @@
 # LAGLayer3
 
-LAGLayer3 is a layered 4v4 air-combat control framework. The current first implementation contains the domain contracts, relative route representation, Provider seams, a configurable head/execution network template, a local simulation contract, the copied bsl_aggressive controller, and a short local smoke loop.
+LAGLayer3 是一个面向 4v4 空战的分层控制框架。当前版本包含领域对象、相对航迹表示、Provider 接口、首脑和执行层网络模板、本地 JSBSIM 适配器，以及迁移后的 bsl_aggressive 飞控。
 
-## Environment
+## 从零创建环境
 
-Use the existing Conda environment:
+项目使用 Conda 管理 Python 环境。下面命令会创建名为 LagLayer3 的环境：
 
-```powershell
-conda run -n jsbsim python ...
-```
+~~~powershell
+conda create -n LagLayer3 python=3.8 -y
+conda activate LagLayer3
+~~~
 
-The environment currently provides Python 3.8, JSBSim 1.1.6, PyTorch, Gymnasium, NumPy and PyYAML.
+如果本机已经存在 LagLayer3 环境，可以直接执行：
 
-## Smoke run
+~~~powershell
+conda activate LagLayer3
+~~~
 
-```powershell
+## 安装依赖
+
+先确认当前 Python 来自 LagLayer3 环境：
+
+~~~powershell
+python --version
+where.exe python
+~~~
+
+安装项目依赖和项目本身：
+
+~~~powershell
+python -m pip install --no-build-isolation --no-deps -e .
+~~~
+
+当前脚本入口会自动加入项目的 src 目录，因此可以直接从项目根目录运行。项目包名仍然是 laglayer3。需要在其他项目中导入时，再使用当前 LagLayer3 环境安装 editable 包。
+
+检查安装结果：
+
+~~~powershell
+python -c "import laglayer3; print(laglayer3.__version__); print(laglayer3.__file__)"
+python -c "import jsbsim, torch, gymnasium, yaml, numpy; print('JSBSim, PyTorch, Gymnasium, PyYAML and NumPy are ready')"
+~~~
+
+如果从自定义工作目录启动 Python 模块，可以设置源码路径：
+
+~~~powershell
 $env:PYTHONPATH = "src"
-conda run -n jsbsim python scripts/smoke_local.py --steps 120
-conda run -n jsbsim python scripts/validate_config.py configs/default.yaml
-```
+~~~
 
-The local adapter provides both a deterministic kinematic smoke backend and a JSBSim backend. The JSBSim backend uses the vendored data under third_party/jsbsim_data and currently drives the F16 model through the route-action contract.
+## JSBSim 数据
 
-## Source layout
+项目已经包含本地 JSBSim 数据目录：
 
-The architecture and implementation order are documented in:
+~~~text
+third_party/jsbsim_data/
+~~~
 
-- docs/restructuring_decisions.md
-- docs/directory_structure.md
-- docs/implementation_handoff.md
+默认配置使用这个目录。配置文件是 [configs/default.yaml](configs/default.yaml)。其中默认使用本地 JSBSim、F16 模型、60 Hz 仿真、5 Hz 执行层和 1 Hz 首脑层。
 
-The copied bsl_aggressive implementation lives under:
+如果从其他工作目录启动脚本，请把 simulation.data_root 改成 JSBSim 数据目录的绝对路径，或者从项目根目录运行命令。
 
-```text
+## 校验配置
+
+在项目根目录执行：
+
+~~~powershell
+python scripts/validate_config.py configs/default.yaml
+~~~
+
+预期输出：
+
+~~~text
+valid configuration: configs/default.yaml
+~~~
+
+## 运行本地 smoke
+
+使用确定性运动学后端进行快速接口检查：
+
+~~~powershell
+python scripts/smoke_local.py --steps 120 --backend kinematic
+~~~
+
+使用真实 JSBSim F16 后端运行短回合：
+
+~~~powershell
+python scripts/smoke_local.py --steps 120 --backend jsbsim
+~~~
+
+预期结果包含：
+
+~~~text
+timestamp=2.000 aircraft=4 termination=None
+~~~
+
+smoke_local.py 运行固定首脑 Provider、固定航迹执行 Provider 和本地仿真。当前 smoke 用于验证接口、时间推进和状态快照，训练入口会在后续阶段逐步接入。
+
+## bsl_aggressive
+
+bsl_aggressive 位于：
+
+~~~text
 src/laglayer3/flight_control/adapters/bsl_aggressive/
-```
+~~~
 
-The public seam is BslAggressiveAdapter. Its copied weights and vendor files remain inside the new project.
+公开适配入口是：
+
+~~~python
+from laglayer3.flight_control.adapters.bsl_aggressive_adapter import BslAggressiveAdapter
+~~~
+
+控制链使用冻结 Actor、40 维观测、GRU、名义控制、残差组合和 QP 投影，最终输出副翼、升降舵、方向舵和油门控制量。权重和必要的运行文件已经包含在项目中。
+
+## 项目文档
+
+架构和实现顺序见：
+
+- [重构设计决策](docs/restructuring_decisions.md)
+- [目录结构设计](docs/directory_structure.md)
+- [接口契约](docs/interfaces.md)
+- [仿真设计](docs/simulation_design.md)
+- [实现交接说明](docs/implementation_handoff.md)
+

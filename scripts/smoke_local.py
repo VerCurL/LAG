@@ -1,6 +1,10 @@
 """Run the first dependency-light LAGLayer3 local loop."""
 
 import argparse
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from laglayer3.domain.models import AircraftState, ScenarioInitialization, TeamObservation
 from laglayer3.policies.fixed_execution import FixedRouteExecutionProvider
