@@ -6,69 +6,13 @@
       "original_sha256": "e2989cdc476ebb14d5d434f630d63247d10f284b691d379e234e2802c12cbea5",
       "integrated_sha256": "e2989cdc476ebb14d5d434f630d63247d10f284b691d379e234e2802c12cbea5"
     },
-    "competition/flight_control_agent/bridge.py": {
-      "original_sha256": "a582cff53d6da86951cdb193f231a89612ca1d8df6b09219566f5a84408ca7fc",
-      "integrated_sha256": "a5908f251241b0dd1be6239ae6981b02811f1da02124e86b180e01e48466dd67"
-    },
     "competition/flight_control_agent/__init__.py": {
       "original_sha256": "1664c6b6009acd2f1ad0f6abf46c71dc6301921513721011446d0b8747c73c7e",
       "integrated_sha256": "1664c6b6009acd2f1ad0f6abf46c71dc6301921513721011446d0b8747c73c7e"
     },
-    "competition/flight_control_eas/actuator_basis.py": {
-      "original_sha256": "60e0f07efa7a17bd56cb55b5e2c8800850dc694546ad5d597e92c69cbda0f676",
-      "integrated_sha256": "60e0f07efa7a17bd56cb55b5e2c8800850dc694546ad5d597e92c69cbda0f676"
-    },
-    "competition/flight_control_eas/closed_loop.py": {
-      "original_sha256": "273a959e287f24bd0abd911dca9eaa1631b56c1aa43517613ab5a8f6256ceaa1",
-      "integrated_sha256": "8754e96027e525a2bf395466909415a105a265bfc2485b9cdeb099fcd350cc50"
-    },
-    "competition/flight_control_eas/contracts.py": {
-      "original_sha256": "641d4548d3e55266c1acd2d9aa21fafc66a97f4cd4ca015c7d3679362229195d",
-      "integrated_sha256": "641d4548d3e55266c1acd2d9aa21fafc66a97f4cd4ca015c7d3679362229195d"
-    },
-    "competition/flight_control_eas/evaluation.py": {
-      "original_sha256": "546a7e85ebb58c4fbfcb2398782b0a981bf916ca0e466560c62b99c3c4daa1be",
-      "integrated_sha256": "546a7e85ebb58c4fbfcb2398782b0a981bf916ca0e466560c62b99c3c4daa1be"
-    },
-    "competition/flight_control_eas/evidence.py": {
-      "original_sha256": "0f1c5da7feb2c431f6830d89a498a3e4eb79cc0f723fe3cd91444348af696c9b",
-      "integrated_sha256": "0f1c5da7feb2c431f6830d89a498a3e4eb79cc0f723fe3cd91444348af696c9b"
-    },
-    "competition/flight_control_eas/fresh_actuator_center.py": {
-      "original_sha256": "849191fa046145d738bea907c9a4cec3e7fb47010b6895f5f0d2a9221bd7a1cc",
-      "integrated_sha256": "849191fa046145d738bea907c9a4cec3e7fb47010b6895f5f0d2a9221bd7a1cc"
-    },
-    "competition/flight_control_eas/lqr.py": {
-      "original_sha256": "362630a7c56316583b3267df1c2fa719dc9e04a17fff066946a0fe1063864375",
-      "integrated_sha256": "3a6be9dca5302237a4696c51caa2e79bbd49cfbbd5854eb1968662b4d2961a67"
-    },
-    "competition/flight_control_eas/model.py": {
-      "original_sha256": "6c2695a7e2c3dfb9c2d4db305ed502dc03fddf9a3cf8412f7c136ee4eb5539d6",
-      "integrated_sha256": "fcb9b3acb28b473cbc3e6ce8af9f9845d18a8aca4c0ca4ba6883fbe38f2a974a"
-    },
-    "competition/flight_control_eas/pid.py": {
-      "original_sha256": "e4c1d0e77fc6a0459988f9034b67b15cc0b6e920d19cd867df89da697323ece6",
-      "integrated_sha256": "09cef4c715c6d37769706de7c226e62743de8f199bdd411fcf378fe1062a7333"
-    },
-    "competition/flight_control_eas/platform_clock_v1.py": {
-      "original_sha256": "12464c218b3acba81247465cfc1fd4d5b6e78dfb10b9592d977c0d8302cd4226",
-      "integrated_sha256": "12464c218b3acba81247465cfc1fd4d5b6e78dfb10b9592d977c0d8302cd4226"
-    },
-    "competition/flight_control_eas/platform_reset_v1.py": {
-      "original_sha256": "fceef911edc7795e23934f38add95d84e6214e22b97238ae883df57660dd0385",
-      "integrated_sha256": "fceef911edc7795e23934f38add95d84e6214e22b97238ae883df57660dd0385"
-    },
-    "competition/flight_control_eas/runtime.py": {
-      "original_sha256": "eaccdfbf99678e5b7631467e9c10532e967482c60c9d7d2c0e54e9cc71fa4f5e",
-      "integrated_sha256": "eaccdfbf99678e5b7631467e9c10532e967482c60c9d7d2c0e54e9cc71fa4f5e"
-    },
     "competition/flight_control_eas/__init__.py": {
       "original_sha256": "f4f9b44f52ccbb35e469f59215acc0b3d3103330899fc295c8e55949f5beba6e",
       "integrated_sha256": "f4f9b44f52ccbb35e469f59215acc0b3d3103330899fc295c8e55949f5beba6e"
-    },
-    "competition/flight_control_eas_development/pid_speed_proportional.py": {
-      "original_sha256": "0cf6ddb75de8e8126c921c87583327d04deb6761920492c0aed124bb0b558822",
-      "integrated_sha256": "7254743cf1ce38fe1763bf37ce07d0347104ed35524c81129c9ab442ad4d33af"
     },
     "competition/flight_control_eas_development/__init__.py": {
       "original_sha256": "7dfce06183e63c65dabb3bef21a588da8b2f3bc4c0e74b7518f385ffa81f769e",
@@ -94,10 +38,6 @@
       "original_sha256": "d0601f80b9eac62eb6a97ac67830973f3e9cbf9cde953dee5cb312247e473b90",
       "integrated_sha256": "d0601f80b9eac62eb6a97ac67830973f3e9cbf9cde953dee5cb312247e473b90"
     },
-    "envs/env_wrappers.py": {
-      "original_sha256": "8a0c76ff662ad0fb7b37107c7d569cc733e5f43ad9314b4be85a95181fd6125c",
-      "integrated_sha256": "62fc1777d6eeab93f99b7f0b1cdf254220f5407b921c2a232fc3f8b1f95a1866"
-    },
     "envs/JSBSim/__init__.py": {
       "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "integrated_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -105,10 +45,6 @@
     "envs/JSBSim/core/catalog.py": {
       "original_sha256": "e298aab6ffe40bdf1d977d6926e3733320c5ce1935699e4bd7e9fec5647e70f5",
       "integrated_sha256": "69c6fc211957c900c897f462a307faf9c55dc53b01d05f2cca845cf6163f0d3d"
-    },
-    "envs/JSBSim/core/render_tacview.py": {
-      "original_sha256": "6895d2d2443fe11ea5d8ef6244f461214df9be95e1bee8e1f83dc7d50c0d24ba",
-      "integrated_sha256": "4134bf92ccdc05b6cd215c13f0ab375a3f7b9453e2e43ed72b33cbc70f18d088"
     },
     "envs/JSBSim/core/simulatior.py": {
       "original_sha256": "98d4d4be8c46890ae04c52752a7fcc73f908841957f33efb2032f603f39618a8",
@@ -118,22 +54,6 @@
       "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "integrated_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
-    "envs/JSBSim/decision/adaptive_kf.py": {
-      "original_sha256": "d92fa54de61111d427230894f6184a70ef6805b3eb2aa380d6db386fd80822b2",
-      "integrated_sha256": "4169a860754f84ef14c1a1af0461307de584b1a2681e1ba70b00ca7b0488b733"
-    },
-    "envs/JSBSim/decision/mode_manager.py": {
-      "original_sha256": "b48deb51b077c291f75ff2e6d3bc0764d918b28f675d2b8588bbb84b2cd8f2b1",
-      "integrated_sha256": "155e8e6e6d0abe7787a6a13083f34f186880e3500558d3eaef09aecf1b900672"
-    },
-    "envs/JSBSim/decision/tactical_pipeline.py": {
-      "original_sha256": "bfd1532d66490b9b125011e49740e991e478cd270fd0b6d2dcc22f6793ed7f2a",
-      "integrated_sha256": "608c05e24656731e3670e7fbdf81c4df7aa9733002a3b8cb53d8e18009cb7f6c"
-    },
-    "envs/JSBSim/decision/threat_assessment.py": {
-      "original_sha256": "8d1a409d413e03a3eb83d87dee5bc7f30c8ec3814847dbf1c99f75bfd99e801c",
-      "integrated_sha256": "986c2078ad0ace971dd0d24b1be12f44ee9495456560dd2ddfefee52d92cbdd5"
-    },
     "envs/JSBSim/decision/__init__.py": {
       "original_sha256": "0fd68b13e234bac690b07aff1b7db5228c056449d1a993ed5b9ad105634ab1df",
       "integrated_sha256": "0ee548f8190eda8118743cfa27bc9c94dd2a2efae0e539cf3ef489f25b4bd51d"
@@ -142,445 +62,25 @@
       "original_sha256": "fa5c720c4a6afdc4a12a1b6502c5486960f6c6b066af30b34f0b0d6d476868cc",
       "integrated_sha256": "0ea7c35e0f1bf0e7681b262e6cda013a2ff3daee18d8dc1ad86613d97e904772"
     },
-    "envs/JSBSim/envs/multiplecombat_env.py": {
-      "original_sha256": "8438d6aef8773b1d096f5345b4500d80d8e4027da5b5ed3c2b40cc437d4c5988",
-      "integrated_sha256": "0e611559d8b85c9c3ca44c8f6caf706a4cc904850f89e2f299e6a0796be717b0"
-    },
-    "envs/JSBSim/envs/singlecombat_env.py": {
-      "original_sha256": "02b446f79e9237dd27b761a5bd3ffa82fec65cb95fab88169c59123e5e74f90b",
-      "integrated_sha256": "48cea3e25ad4e67679d6c5ad230796ffc0a033e187d4543c1ad5821396aa1b3e"
-    },
     "envs/JSBSim/envs/singlecontrol_env.py": {
       "original_sha256": "50b752ec64969572af015da6d2ac4da11f05930ac7d15478a054f75e94b979ac",
-      "integrated_sha256": "b0ea7850c5054b1f84f4415b950e50059e6864b2de2b04178b483ae584f2c656"
+      "integrated_sha256": "0abd8230ed03be7b78da1d291876e1c49d2a57b1203061372239f0ed81d6c79b"
     },
     "envs/JSBSim/envs/__init__.py": {
       "original_sha256": "8c5dc7ecba3f2347faedb1afa3835320b4012d650eda3103c805c681541a37e3",
-      "integrated_sha256": "d28045284d71507fcb44116b8fcc61bfd3fb9d631596102e9e454dea8ecc0a57"
-    },
-    "envs/JSBSim/human_agent/agent_base.py": {
-      "original_sha256": "7132c07b4356070927346cd65ca781862b5c418656d7a5abddd088140a43facf",
-      "integrated_sha256": "08ecfbfa66e5115f22191e3e912ef1a2ea1e23db808c384f40c8c844dc95a800"
-    },
-    "envs/JSBSim/human_agent/HumanAgent.py": {
-      "original_sha256": "81ca96aad00e89ad079f8bc514fd2e5da3935eeee5098f5a87f55c81c0305e7b",
-      "integrated_sha256": "fc2bcd3695bd9dbbd03d3526e08a229ebc092ada5be0155f3d52fad58ceb444a"
+      "integrated_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     "envs/JSBSim/human_agent/__init__.py": {
       "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "integrated_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
-    "envs/JSBSim/human_task/HumanFreeFlyTask.py": {
-      "original_sha256": "7a65cfff1575f02d301e000ab3a73c1841d6440e0203c1dc20b8e60c058f2ac9",
-      "integrated_sha256": "c6f58381d62b99730689e7dcbd8f707c6c366d05224f609c5af2c6011478e024"
-    },
-    "envs/JSBSim/human_task/HumanSingleCombatTask.py": {
-      "original_sha256": "4e3ba836d6582035f3da12daf78d0f3a4d7c0194fcc2bb937133a24595d70dd8",
-      "integrated_sha256": "b86ac65c48a8e5ab8bed6a4364d4b24302da5867b58feaac088d27c4b411fd6c"
-    },
     "envs/JSBSim/human_task/__init__.py": {
       "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "integrated_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
-    "envs/JSBSim/model/baseline.py": {
-      "original_sha256": "80f26a9dae64ce2e79045ba47a970140802b65f23cebae924683fdd466223935",
-      "integrated_sha256": "0ecf50373807e55c67484055605bdfa5c4bad29a3d43f50fc4d768d5d2bf4ac9"
-    },
-    "envs/JSBSim/model/baseline_actor.py": {
-      "original_sha256": "cdaf325a8c28ab29889e7a1f146a4ec71152361f115a73c8ea2c6e2e49d8d18e",
-      "integrated_sha256": "0b937f5c52cf3a3847c9e6b3e076d7c908da372afb4430fb01f73d286732ba45"
-    },
-    "envs/JSBSim/reward_functions/altitude_reward.py": {
-      "original_sha256": "f73b1d8812d958ecbb7c2adba8164d348f390d053e075badcb744e9e4a9854c7",
-      "integrated_sha256": "4520a3eeb7213bf1fe90a443e772c5bef3f83192978ff16dc14cffb56a59889d"
-    },
-    "envs/JSBSim/reward_functions/anti_loiter_reward.py": {
-      "original_sha256": "17d3c86089863a36561410261843d1e853107dc69afd0132ec89184e9db8f19c",
-      "integrated_sha256": "eaa9bc14562568b7c290569e46bb991c711bef4b523103069fcef2152c26fa9a"
-    },
-    "envs/JSBSim/reward_functions/attitude_smoothness_reward.py": {
-      "original_sha256": "32b568dd8bfef82516547257606d2f8cb55b0259d13b4c6c378b9edd65723aff",
-      "integrated_sha256": "f35c8a3dd4de56d2d6dae9bffb7797664ff0421044be2631f4d258b15ac10b1b"
-    },
-    "envs/JSBSim/reward_functions/baiyepower_energy_diagnostic.py": {
-      "original_sha256": "7986c11c67a508e66c12af9740a2032269dbe7a17540d14757e01af8306bd2e4",
-      "integrated_sha256": "7986c11c67a508e66c12af9740a2032269dbe7a17540d14757e01af8306bd2e4"
-    },
-    "envs/JSBSim/reward_functions/baiyepower_upright_reward.py": {
-      "original_sha256": "cea6ca3f2db108124d6250abce26aeb80f1e9348db66aff35629f3abda766b4c",
-      "integrated_sha256": "cea6ca3f2db108124d6250abce26aeb80f1e9348db66aff35629f3abda766b4c"
-    },
-    "envs/JSBSim/reward_functions/baiyepower_v2_direction_reward.py": {
-      "original_sha256": "55f7d0fc235353b9b93202f8bd4781240267209f8467967e55565e2abf7c0d85",
-      "integrated_sha256": "55f7d0fc235353b9b93202f8bd4781240267209f8467967e55565e2abf7c0d85"
-    },
-    "envs/JSBSim/reward_functions/baiyepower_v2_energy_reward.py": {
-      "original_sha256": "03d49a78c38ceded948475e3583a63b2499c9bdfdc37c810d46b39cb6d8001c8",
-      "integrated_sha256": "03d49a78c38ceded948475e3583a63b2499c9bdfdc37c810d46b39cb6d8001c8"
-    },
-    "envs/JSBSim/reward_functions/baiyepower_v2_safety_reward.py": {
-      "original_sha256": "e88572c8dd14d5e0594e1c2d5806473cf95c3a243be291cd5fd9ab2278aadc07",
-      "integrated_sha256": "e88572c8dd14d5e0594e1c2d5806473cf95c3a243be291cd5fd9ab2278aadc07"
-    },
-    "envs/JSBSim/reward_functions/control_smoothness_reward.py": {
-      "original_sha256": "4f119b4442b83c7385b7a505c0026ca5f4ce4d33a07cb0b0f04740155ef66e36",
-      "integrated_sha256": "c77b52a5a555d2f66510b5ed7e34e87865a8ecd9103732f76249a4dbe5d42e08"
-    },
-    "envs/JSBSim/reward_functions/elevator_second_diff_reward.py": {
-      "original_sha256": "78f36b8b14aa2bfb06904d658a742f3a7c150778bd78283b79ca4f7686f9acaa",
-      "integrated_sha256": "78f36b8b14aa2bfb06904d658a742f3a7c150778bd78283b79ca4f7686f9acaa"
-    },
-    "envs/JSBSim/reward_functions/event_driven_reward.py": {
-      "original_sha256": "c6aad641ae0c3b5ff3b089e5fce37854d66384ab86b9a43dc2a282d95e701f98",
-      "integrated_sha256": "09551b7784720db7aa2d7841648bf1f34f01fb421c6dcf69bae1c2a27843f32d"
-    },
-    "envs/JSBSim/reward_functions/heading_reward.py": {
-      "original_sha256": "2ff510e8cd726f81d3951921e837bd06ba25c4ce8d64c034c22a80556e8f5a62",
-      "integrated_sha256": "583e1e3e659d43a6342caf389ca636bf3931b5db743ccdeb25e99c16bed5403f"
-    },
-    "envs/JSBSim/reward_functions/longitudinal_damping_reward.py": {
-      "original_sha256": "29945d0fed60aaa82082d48cccc9c2baf37034adef7a238cb269669370f8d380",
-      "integrated_sha256": "29945d0fed60aaa82082d48cccc9c2baf37034adef7a238cb269669370f8d380"
-    },
-    "envs/JSBSim/reward_functions/longitudinal_mimo_stability_reward.py": {
-      "original_sha256": "deba25e7d581e3bc022885df66494bedad82989c010abcb83b73706edf896483",
-      "integrated_sha256": "d18920ea587558bb188dc63cd4d3d63452af204bd38dc345eb974aeef6ae077a"
-    },
-    "envs/JSBSim/reward_functions/missile_posture_reward.py": {
-      "original_sha256": "211340a8df1d84904172e16e926907c17a8f6f686f1d1591620bea1b75c460c4",
-      "integrated_sha256": "6081f9956be02fca40d5e30adff6e6e3e2048ece4ea9b1c7798cc2a71e217369"
-    },
-    "envs/JSBSim/reward_functions/missile_right_evasion_reward.py": {
-      "original_sha256": "db47eee05dae360bebad141abd773c79fa01a6e0baf712006597221baef0bb74",
-      "integrated_sha256": "3a856eef3724806be634926256b9106232d0c47746832d3f7ca327ca268f0200"
-    },
-    "envs/JSBSim/reward_functions/posture_reward.py": {
-      "original_sha256": "03b21ee6c8bab2f2e2240dd0749b0144ad9be98a6493ebe213893c7c7fe82a43",
-      "integrated_sha256": "2e1ad8aeb8bc68b52dd86ec96592ca53ab958bc6feb1c932944b5e7a49137e5a"
-    },
-    "envs/JSBSim/reward_functions/power_momentum_reward.py": {
-      "original_sha256": "95c3b879f4b1c5245fb992b611ef88feac2c0c0f40d4aefb0a592944eb5e1596",
-      "integrated_sha256": "95c3b879f4b1c5245fb992b611ef88feac2c0c0f40d4aefb0a592944eb5e1596"
-    },
-    "envs/JSBSim/reward_functions/qp_align_reward.py": {
-      "original_sha256": "4c7f0611bb07bd53f0a6ad2dfb9d8cd3afcfde09e363395d8149ee38ccc8a5b8",
-      "integrated_sha256": "4c7f0611bb07bd53f0a6ad2dfb9d8cd3afcfde09e363395d8149ee38ccc8a5b8"
-    },
-    "envs/JSBSim/reward_functions/relative_altitude_reward.py": {
-      "original_sha256": "2bcd43822c9cb6c5848e17cb6f1ce3beca8c1f6d685877a6a9ebbf54156fb18d",
-      "integrated_sha256": "9e24c8c2af05e036884b7d329e670d20cea5bbe8abd005dbd5301164847205da"
-    },
-    "envs/JSBSim/reward_functions/reward_function_base.py": {
-      "original_sha256": "d243c1b5777aef42339e082440410e0f40c9ae54ff76e92ae57fce09c851f560",
-      "integrated_sha256": "cbdedbbc431cdb2fcfe220a0c24a601f0c5ef60563bb71be000ab687e171bdaf"
-    },
-    "envs/JSBSim/reward_functions/shoot_penalty_reward.py": {
-      "original_sha256": "c26def562dd48d2825ef4629d2c49dc1ad92204beb7ff49b54d7136e3ada185a",
-      "integrated_sha256": "8e214baa70edf34ffacc37976b39c22eb50fd7f309b096e98532ff873af799bd"
-    },
-    "envs/JSBSim/reward_functions/target_delta_smoothness_reward.py": {
-      "original_sha256": "4cb629f560743a31604566aa55e108fc8dbe8ffcb82438a083c16ba15866b48e",
-      "integrated_sha256": "4cb629f560743a31604566aa55e108fc8dbe8ffcb82438a083c16ba15866b48e"
-    },
-    "envs/JSBSim/reward_functions/trim_balance_reward.py": {
-      "original_sha256": "0e10063df6fa29f77f9a8b2204c580c94d35f1a9893127184a84b29c7d418685",
-      "integrated_sha256": "f7dc744c21cf6a8f70c6114b9df6f83a50d3b29b63d4de9612060b9514d3887c"
-    },
     "envs/JSBSim/reward_functions/__init__.py": {
       "original_sha256": "acabc4e8f37e3a5bbd0d10b194da21e598185ce1fe49f272a008b1786d9c6226",
-      "integrated_sha256": "fb0b76121be5db4196ad5ccead8e625628bbb36a636d1858df227b1ba154aa8e"
-    },
-    "envs/JSBSim/tasks/analytic_hierarchical_singlecombat_task.py": {
-      "original_sha256": "66c85155a0d779254544b61861ffd35427c98ae071a1532656e51e82d4656185",
-      "integrated_sha256": "66c85155a0d779254544b61861ffd35427c98ae071a1532656e51e82d4656185"
-    },
-    "envs/JSBSim/tasks/baiyepower_aileron_flaperon_system_id_c8_sid_task.py": {
-      "original_sha256": "f45822279c03139c69a7240fe8f5095bf51045edb75a10198e783b2bbe0e73b4",
-      "integrated_sha256": "f45822279c03139c69a7240fe8f5095bf51045edb75a10198e783b2bbe0e73b4"
-    },
-    "envs/JSBSim/tasks/baiyepower_authority_routed_c10_d10_task.py": {
-      "original_sha256": "3e389e1190509123aeb1077b82a93aa5872327de0e48ac304e85753ea5f55971",
-      "integrated_sha256": "3e389e1190509123aeb1077b82a93aa5872327de0e48ac304e85753ea5f55971"
-    },
-    "envs/JSBSim/tasks/baiyepower_authority_routed_c10_r3_task.py": {
-      "original_sha256": "2b5db933a571c5c5e07df74dc50ec0b6bbb8db13acd1cf6b0c4af6fb74ace60f",
-      "integrated_sha256": "2b5db933a571c5c5e07df74dc50ec0b6bbb8db13acd1cf6b0c4af6fb74ace60f"
-    },
-    "envs/JSBSim/tasks/baiyepower_authority_routed_c10_s1_task.py": {
-      "original_sha256": "3d402a1672c53f3f3dfdb1ba994647e2914048e12f2818809e7f0771b505799d",
-      "integrated_sha256": "3d402a1672c53f3f3dfdb1ba994647e2914048e12f2818809e7f0771b505799d"
-    },
-    "envs/JSBSim/tasks/baiyepower_coordinated_command_c3_v1_task.py": {
-      "original_sha256": "1a4e0a29044702adb4641e0b33dde4a59907669ad2d7b4953d6543bf0b9365d0",
-      "integrated_sha256": "1a4e0a29044702adb4641e0b33dde4a59907669ad2d7b4953d6543bf0b9365d0"
-    },
-    "envs/JSBSim/tasks/baiyepower_coordinated_command_c3_v2_task.py": {
-      "original_sha256": "4877f14b26fc698a964f89ae13df041fe7bfe0dcce961cff6eaf0eee5ce51a06",
-      "integrated_sha256": "4877f14b26fc698a964f89ae13df041fe7bfe0dcce961cff6eaf0eee5ce51a06"
-    },
-    "envs/JSBSim/tasks/baiyepower_coordinated_residual_c1_r1_task.py": {
-      "original_sha256": "646c18601586b072cceb7cfd610183f699ab461d541472f535391251fad325f5",
-      "integrated_sha256": "646c18601586b072cceb7cfd610183f699ab461d541472f535391251fad325f5"
-    },
-    "envs/JSBSim/tasks/baiyepower_coordinated_residual_c1_task.py": {
-      "original_sha256": "8269a8129f090e1fd638f7001b78ed7b02b448e5fd4e2f891c3b61f6d4e20a9f",
-      "integrated_sha256": "f6d90c063d43e87e674e79e57cb4913cb0ad555ff75536c423b565a7ba751513"
-    },
-    "envs/JSBSim/tasks/baiyepower_coordinated_residual_c2_t1_task.py": {
-      "original_sha256": "7e4f1802b762fc26e2ce21f8c39c2482b1bf2b32b97970a30d399e113f1e7b1e",
-      "integrated_sha256": "7e4f1802b762fc26e2ce21f8c39c2482b1bf2b32b97970a30d399e113f1e7b1e"
-    },
-    "envs/JSBSim/tasks/baiyepower_coordinated_residual_c2_t2_task.py": {
-      "original_sha256": "d7f06f7a7739b58b160f2844a34f152943758d736127522b625b760a16022538",
-      "integrated_sha256": "d7f06f7a7739b58b160f2844a34f152943758d736127522b625b760a16022538"
-    },
-    "envs/JSBSim/tasks/baiyepower_direction_invariant_c10_r4_task.py": {
-      "original_sha256": "ce20b9fa81c1ea4053caafad2f52830e7a3f25c5f1805db825ee971f484c99d4",
-      "integrated_sha256": "ce20b9fa81c1ea4053caafad2f52830e7a3f25c5f1805db825ee971f484c99d4"
-    },
-    "envs/JSBSim/tasks/baiyepower_direction_invariant_c10_s2_task.py": {
-      "original_sha256": "1f10bfecc1501982107b732c791aa19798371906f4265634ed1d800f2813a2ad",
-      "integrated_sha256": "1f10bfecc1501982107b732c791aa19798371906f4265634ed1d800f2813a2ad"
-    },
-    "envs/JSBSim/tasks/baiyepower_direct_flight_path_c26_n6_task.py": {
-      "original_sha256": "685efd510235ad0a90d525c6e907e187290af1df30a7b22eb0f728d48739f8bc",
-      "integrated_sha256": "685efd510235ad0a90d525c6e907e187290af1df30a7b22eb0f728d48739f8bc"
-    },
-    "envs/JSBSim/tasks/baiyepower_direct_student_c21_d26_task.py": {
-      "original_sha256": "79532552cb8dcad521542bcdf9efe244c08a550ea75386d35cbe408a7bafb4f3",
-      "integrated_sha256": "79532552cb8dcad521542bcdf9efe244c08a550ea75386d35cbe408a7bafb4f3"
-    },
-    "envs/JSBSim/tasks/baiyepower_direct_student_c21_s0_task.py": {
-      "original_sha256": "69fc2a248f3f8809c39d2f1e8d8b333578b8dec9fd0ee628b4f70bd68dbda5aa",
-      "integrated_sha256": "69fc2a248f3f8809c39d2f1e8d8b333578b8dec9fd0ee628b4f70bd68dbda5aa"
-    },
-    "envs/JSBSim/tasks/baiyepower_direct_student_c21_s17_task.py": {
-      "original_sha256": "dd59a105d1323ecba4ea3f083f0ee9ea980921f9256248e9791a3fb967213662",
-      "integrated_sha256": "dd59a105d1323ecba4ea3f083f0ee9ea980921f9256248e9791a3fb967213662"
-    },
-    "envs/JSBSim/tasks/baiyepower_direct_student_c21_s1_task.py": {
-      "original_sha256": "0848e017a60cfaac17b2a8a2930bccdc8f68a32a4a2a00bf809ffe13ac94308a",
-      "integrated_sha256": "0848e017a60cfaac17b2a8a2930bccdc8f68a32a4a2a00bf809ffe13ac94308a"
-    },
-    "envs/JSBSim/tasks/baiyepower_direct_student_c21_s2_task.py": {
-      "original_sha256": "dcd6b6f3ddc415ddde5aa596c0608e9c382d52601047a03ae8003cc4068706f0",
-      "integrated_sha256": "dcd6b6f3ddc415ddde5aa596c0608e9c382d52601047a03ae8003cc4068706f0"
-    },
-    "envs/JSBSim/tasks/baiyepower_direct_student_c21_s3_task.py": {
-      "original_sha256": "6a7fb15d3c9716792e2ecb99a0757001e34f83ecd38e392e0877beae4c94c4b0",
-      "integrated_sha256": "6a7fb15d3c9716792e2ecb99a0757001e34f83ecd38e392e0877beae4c94c4b0"
-    },
-    "envs/JSBSim/tasks/baiyepower_direct_student_c21_s4_task.py": {
-      "original_sha256": "aa0606a28925f04dd198312e4dfe5af672b967725a1d00b5fc2916989f38ac5f",
-      "integrated_sha256": "aa0606a28925f04dd198312e4dfe5af672b967725a1d00b5fc2916989f38ac5f"
-    },
-    "envs/JSBSim/tasks/baiyepower_direct_student_c21_s5_task.py": {
-      "original_sha256": "6fb0f4e773658fcf906d74a7e8c1876106e286409cd11aa31b51fc02c4156947",
-      "integrated_sha256": "6fb0f4e773658fcf906d74a7e8c1876106e286409cd11aa31b51fc02c4156947"
-    },
-    "envs/JSBSim/tasks/baiyepower_direct_student_c21_s6_task.py": {
-      "original_sha256": "b4b22001841db27d3f703de1f9285be631c5ce210b67b93e509f868eb7ab2ecf",
-      "integrated_sha256": "b4b22001841db27d3f703de1f9285be631c5ce210b67b93e509f868eb7ab2ecf"
-    },
-    "envs/JSBSim/tasks/baiyepower_direct_student_c21_s7_task.py": {
-      "original_sha256": "fbbddce81ff97484956c0b73feae7ccfd43f43e4ce6f3653362d4b325baff119",
-      "integrated_sha256": "fbbddce81ff97484956c0b73feae7ccfd43f43e4ce6f3653362d4b325baff119"
-    },
-    "envs/JSBSim/tasks/baiyepower_energy_adaptive_c5_n1_task.py": {
-      "original_sha256": "cc1933d58364b673b7f9c3b13211a7725938154acba2ee708ab446b8ab0ff0f4",
-      "integrated_sha256": "cc1933d58364b673b7f9c3b13211a7725938154acba2ee708ab446b8ab0ff0f4"
-    },
-    "envs/JSBSim/tasks/baiyepower_energy_adaptive_c5_n2_task.py": {
-      "original_sha256": "388e54eac32d077e6d9a9d65fcea85e18f6ea374b66f2991156d7f6a789de6cd",
-      "integrated_sha256": "388e54eac32d077e6d9a9d65fcea85e18f6ea374b66f2991156d7f6a789de6cd"
-    },
-    "envs/JSBSim/tasks/baiyepower_energy_allocator_c4_n0_task.py": {
-      "original_sha256": "8cdb2a90854761370509d8bcd0ccaa2809da38e7d55875fca5d87df8ec4f1c0f",
-      "integrated_sha256": "8cdb2a90854761370509d8bcd0ccaa2809da38e7d55875fca5d87df8ec4f1c0f"
-    },
-    "envs/JSBSim/tasks/baiyepower_energy_allocator_c4_n1_task.py": {
-      "original_sha256": "a1301b478116112e74326aaa6e219d071c0adfeeea9301387286f705a5e45966",
-      "integrated_sha256": "a1301b478116112e74326aaa6e219d071c0adfeeea9301387286f705a5e45966"
-    },
-    "envs/JSBSim/tasks/baiyepower_energy_balance_probe_c10_d6_task.py": {
-      "original_sha256": "f1b24e96c730b0e3eb6d5b1582cfefd02df0120c3105354095429442e72cea5f",
-      "integrated_sha256": "f1b24e96c730b0e3eb6d5b1582cfefd02df0120c3105354095429442e72cea5f"
-    },
-    "envs/JSBSim/tasks/baiyepower_energy_balance_system_id_c7_sid_task.py": {
-      "original_sha256": "51d692e7997b2840d6890bf586ebfd8085d92495ef843336b56c0e612781d5b0",
-      "integrated_sha256": "51d692e7997b2840d6890bf586ebfd8085d92495ef843336b56c0e612781d5b0"
-    },
-    "envs/JSBSim/tasks/baiyepower_energy_calibrated_c5_n0_task.py": {
-      "original_sha256": "a3fdf5aa8cf0edee3e9697e5ec2127659dce3d432a65e0d6fe56608799edd39a",
-      "integrated_sha256": "a3fdf5aa8cf0edee3e9697e5ec2127659dce3d432a65e0d6fe56608799edd39a"
-    },
-    "envs/JSBSim/tasks/baiyepower_energy_command_c10_r1_task.py": {
-      "original_sha256": "20f1ddbfd023deec650a0518aaa5f9fa9373e7dbee92529262803b8954a07f0b",
-      "integrated_sha256": "20f1ddbfd023deec650a0518aaa5f9fa9373e7dbee92529262803b8954a07f0b"
-    },
-    "envs/JSBSim/tasks/baiyepower_energy_command_c10_r2_task.py": {
-      "original_sha256": "ebaadece3bc295a561d7d87057ad1c493dec51b2c743d6902343828bb9535ad6",
-      "integrated_sha256": "ebaadece3bc295a561d7d87057ad1c493dec51b2c743d6902343828bb9535ad6"
-    },
-    "envs/JSBSim/tasks/baiyepower_energy_command_c10_s0_task.py": {
-      "original_sha256": "55116057d31a2f8d912a79a602071d405c7a04ef266d12fde0237696e273ad5a",
-      "integrated_sha256": "55116057d31a2f8d912a79a602071d405c7a04ef266d12fde0237696e273ad5a"
-    },
-    "envs/JSBSim/tasks/baiyepower_energy_exchange_c7_r0_task.py": {
-      "original_sha256": "cfb7837061b80bc90d4ac0862071fa078ce32cebe4648da7776d6632cd2da0e8",
-      "integrated_sha256": "cfb7837061b80bc90d4ac0862071fa078ce32cebe4648da7776d6632cd2da0e8"
-    },
-    "envs/JSBSim/tasks/baiyepower_energy_momentum_c41_task.py": {
-      "original_sha256": "c1e3b3438fde8943d0a9c00931de5bab094538e318b7a0b52d2f593a1970d4c9",
-      "integrated_sha256": "c1e3b3438fde8943d0a9c00931de5bab094538e318b7a0b52d2f593a1970d4c9"
-    },
-    "envs/JSBSim/tasks/baiyepower_exact_anchor_c16_d6_task.py": {
-      "original_sha256": "585496e41e7a835955f96aa2d891d008d2c64dc75e73aa2b998b585c18acc27d",
-      "integrated_sha256": "585496e41e7a835955f96aa2d891d008d2c64dc75e73aa2b998b585c18acc27d"
-    },
-    "envs/JSBSim/tasks/baiyepower_exchange_holdout_c16_v1_task.py": {
-      "original_sha256": "d637598ce16e7985f7119f087934a8adb38bf625b42afe91ee020f663f725013",
-      "integrated_sha256": "d637598ce16e7985f7119f087934a8adb38bf625b42afe91ee020f663f725013"
-    },
-    "envs/JSBSim/tasks/baiyepower_extended_exchange_c16_d4_task.py": {
-      "original_sha256": "f37331d15508974ef892ef81d265e52db21313c682459da74d39fd9e19695769",
-      "integrated_sha256": "f37331d15508974ef892ef81d265e52db21313c682459da74d39fd9e19695769"
-    },
-    "envs/JSBSim/tasks/baiyepower_extended_gain_c12_d0_task.py": {
-      "original_sha256": "d539f6bfcc4ed213834d050033cb6be04ed79dd2905cf87f0b543ba04146a75d",
-      "integrated_sha256": "d539f6bfcc4ed213834d050033cb6be04ed79dd2905cf87f0b543ba04146a75d"
-    },
-    "envs/JSBSim/tasks/baiyepower_fixed_gain_c12_r0_task.py": {
-      "original_sha256": "24a279a16f5e3764cc0f567986f45b2a8dd64db9fd74e7df834c88035e340798",
-      "integrated_sha256": "24a279a16f5e3764cc0f567986f45b2a8dd64db9fd74e7df834c88035e340798"
-    },
-    "envs/JSBSim/tasks/baiyepower_fixed_gain_c12_r1_task.py": {
-      "original_sha256": "46d79a7c504ec0c5c558f952bb81971cadefa11894ab4a5030f9b1e62c11cc6c",
-      "integrated_sha256": "46d79a7c504ec0c5c558f952bb81971cadefa11894ab4a5030f9b1e62c11cc6c"
-    },
-    "envs/JSBSim/tasks/baiyepower_maneuver_c28_task.py": {
-      "original_sha256": "bf00b8ae7db19ea0462552575641781d7d51f84bc788c44d7a80f793ef552c76",
-      "integrated_sha256": "bf00b8ae7db19ea0462552575641781d7d51f84bc788c44d7a80f793ef552c76"
-    },
-    "envs/JSBSim/tasks/baiyepower_maneuver_c31_v1_task.py": {
-      "original_sha256": "0809d3aa7604e040713cbbdde71ecfb932f41bdc06b893208489e0f95067c1b6",
-      "integrated_sha256": "0809d3aa7604e040713cbbdde71ecfb932f41bdc06b893208489e0f95067c1b6"
-    },
-    "envs/JSBSim/tasks/baiyepower_maneuver_c31_v2_task.py": {
-      "original_sha256": "4b6d720051e0b805f116b5cd2e73f486d10cc5686155ca5fcdc3cb2365b66a54",
-      "integrated_sha256": "4b6d720051e0b805f116b5cd2e73f486d10cc5686155ca5fcdc3cb2365b66a54"
-    },
-    "envs/JSBSim/tasks/baiyepower_maneuver_c31_v3_task.py": {
-      "original_sha256": "32f3ce5c22770107af0e89d2386154f60358209bf5b377bd2d45fb0fe6aee551",
-      "integrated_sha256": "32f3ce5c22770107af0e89d2386154f60358209bf5b377bd2d45fb0fe6aee551"
-    },
-    "envs/JSBSim/tasks/baiyepower_maneuver_c31_v4_task.py": {
-      "original_sha256": "66df294cbae8944cf23b29552d0bbb91222dbadcbc2ddf59791fe6b83866f2e0",
-      "integrated_sha256": "66df294cbae8944cf23b29552d0bbb91222dbadcbc2ddf59791fe6b83866f2e0"
-    },
-    "envs/JSBSim/tasks/baiyepower_maneuver_c31_v5_task.py": {
-      "original_sha256": "51453930e9be0e11d2bfa9fe022ca5c07f8da0d306e961675c78313b335056bf",
-      "integrated_sha256": "51453930e9be0e11d2bfa9fe022ca5c07f8da0d306e961675c78313b335056bf"
-    },
-    "envs/JSBSim/tasks/baiyepower_narrow_exchange_c16_d5_task.py": {
-      "original_sha256": "88272d9d0bc3ec3b301f10e578d5b6426ec0970d32d6d7876743c1f4c10632a7",
-      "integrated_sha256": "88272d9d0bc3ec3b301f10e578d5b6426ec0970d32d6d7876743c1f4c10632a7"
-    },
-    "envs/JSBSim/tasks/baiyepower_pitch_response_c26_sid0_task.py": {
-      "original_sha256": "3c82143dad3a96fcaa762454d03f3a75f087163940207f815a6bc4bb9bd9ae62",
-      "integrated_sha256": "3c82143dad3a96fcaa762454d03f3a75f087163940207f815a6bc4bb9bd9ae62"
-    },
-    "envs/JSBSim/tasks/baiyepower_pitch_response_c26_sid1_task.py": {
-      "original_sha256": "4dd95dd8bfe8b06b19a60914ca2d514aedd0fe23a9c7b5b6b110dfdddccd9ca0",
-      "integrated_sha256": "4dd95dd8bfe8b06b19a60914ca2d514aedd0fe23a9c7b5b6b110dfdddccd9ca0"
-    },
-    "envs/JSBSim/tasks/baiyepower_rate_climb_structured_c14_r0_task.py": {
-      "original_sha256": "d64d9c1c834902667847abf365573a72a740d1c5401871facec39377b5ff25a8",
-      "integrated_sha256": "d64d9c1c834902667847abf365573a72a740d1c5401871facec39377b5ff25a8"
-    },
-    "envs/JSBSim/tasks/baiyepower_rate_climb_structured_c14_s0_task.py": {
-      "original_sha256": "19637bf384bc3aa20b0a9b937f77b405d35ff25ceaa003329a2de43872872fc0",
-      "integrated_sha256": "19637bf384bc3aa20b0a9b937f77b405d35ff25ceaa003329a2de43872872fc0"
-    },
-    "envs/JSBSim/tasks/baiyepower_recentered_residual_c17_r0_task.py": {
-      "original_sha256": "ba3e40807998acfc400f800f8d213355da8d8c82ddee791af5422b4b393bf881",
-      "integrated_sha256": "ba3e40807998acfc400f800f8d213355da8d8c82ddee791af5422b4b393bf881"
-    },
-    "envs/JSBSim/tasks/baiyepower_recentered_residual_c17_s0_task.py": {
-      "original_sha256": "6338fd8c3214b7167b1271ba3529dbc9fe21bb184a59a391bff238033e18a6c1",
-      "integrated_sha256": "6338fd8c3214b7167b1271ba3529dbc9fe21bb184a59a391bff238033e18a6c1"
-    },
-    "envs/JSBSim/tasks/baiyepower_rudder_system_id_c6_sid_task.py": {
-      "original_sha256": "a871bec0e5a1ed7d5a022a2decd568c9adac977555de6ddad4cc3380e48e6865",
-      "integrated_sha256": "a871bec0e5a1ed7d5a022a2decd568c9adac977555de6ddad4cc3380e48e6865"
-    },
-    "envs/JSBSim/tasks/baiyepower_sideslip_control_c6_r0_task.py": {
-      "original_sha256": "b8a42f7c6f58d422df778baa31559e663b7c98ad690a5fec741b03ef696d7858",
-      "integrated_sha256": "b8a42f7c6f58d422df778baa31559e663b7c98ad690a5fec741b03ef696d7858"
-    },
-    "envs/JSBSim/tasks/baiyepower_sideslip_control_c6_r1_task.py": {
-      "original_sha256": "fb06c7cb1fc14180e0a03b3d4cc4724a5fc039c95e92daeb8707cb52f9ec8eae",
-      "integrated_sha256": "fb06c7cb1fc14180e0a03b3d4cc4724a5fc039c95e92daeb8707cb52f9ec8eae"
-    },
-    "envs/JSBSim/tasks/baiyepower_sign_constrained_c11_r0_task.py": {
-      "original_sha256": "d3a2c6605e44b6399f21e2f4be45aaa3d64de77df2b6ed8de4e9fd46103ce05f",
-      "integrated_sha256": "d3a2c6605e44b6399f21e2f4be45aaa3d64de77df2b6ed8de4e9fd46103ce05f"
-    },
-    "envs/JSBSim/tasks/baiyepower_sign_constrained_c11_s0_task.py": {
-      "original_sha256": "3bb1b3b482b5be73d8c1a18ea788f911e663851af0e9e8cffbbf107e25cc7743",
-      "integrated_sha256": "3bb1b3b482b5be73d8c1a18ea788f911e663851af0e9e8cffbbf107e25cc7743"
-    },
-    "envs/JSBSim/tasks/baiyepower_structured_feedback_c13_r0_task.py": {
-      "original_sha256": "c8a914281fc465f79362adbf6418e65140e1a2d6c33843654f9307a7d90bf64f",
-      "integrated_sha256": "c8a914281fc465f79362adbf6418e65140e1a2d6c33843654f9307a7d90bf64f"
-    },
-    "envs/JSBSim/tasks/baiyepower_structured_feedback_c13_s1_task.py": {
-      "original_sha256": "e244559afa6f2fd921289aae3554b5c709504dea86e63f07bf6420e9f5903f25",
-      "integrated_sha256": "e244559afa6f2fd921289aae3554b5c709504dea86e63f07bf6420e9f5903f25"
-    },
-    "envs/JSBSim/tasks/baiyepower_structured_residual_c13_s0_task.py": {
-      "original_sha256": "d1e3f6abb90bf17166e207007f2811a87dafa1241a8e8d04747faedfdf33ac1e",
-      "integrated_sha256": "d1e3f6abb90bf17166e207007f2811a87dafa1241a8e8d04747faedfdf33ac1e"
-    },
-    "envs/JSBSim/tasks/baiyepower_target_rates_o1_task.py": {
-      "original_sha256": "33f34965ab199ba4b766dc9e2eecfd36ae43be602aa67a95e1d7e76f978cec86",
-      "integrated_sha256": "a2fc013755da09fdb5d9746f9fa8cfb1b45625e87b401f167ae72349ebbdcc84"
-    },
-    "envs/JSBSim/tasks/baiyepower_task.py": {
-      "original_sha256": "72e056cc5ca427d7149b3228b232a5acd5d736cf71d53268d0cd35029fd34052",
-      "integrated_sha256": "72e056cc5ca427d7149b3228b232a5acd5d736cf71d53268d0cd35029fd34052"
-    },
-    "envs/JSBSim/tasks/baiyepower_three_authority_c15_r0_task.py": {
-      "original_sha256": "df7c4d7e36afd8f0aea94725872c591eb77d2889be796508ded3076a76fe68ac",
-      "integrated_sha256": "df7c4d7e36afd8f0aea94725872c591eb77d2889be796508ded3076a76fe68ac"
-    },
-    "envs/JSBSim/tasks/baiyepower_three_authority_c15_s0_task.py": {
-      "original_sha256": "37a853c5d549a2e1c8c21b32404219946d6664d4b3421ba1e61fa90a1a9bc8b7",
-      "integrated_sha256": "37a853c5d549a2e1c8c21b32404219946d6664d4b3421ba1e61fa90a1a9bc8b7"
-    },
-    "envs/JSBSim/tasks/baiyepower_two_authority_c16_r0_task.py": {
-      "original_sha256": "f5a74110162050ede3650951688f63d2bab2ecc539772fff91d5231ada089d03",
-      "integrated_sha256": "f5a74110162050ede3650951688f63d2bab2ecc539772fff91d5231ada089d03"
-    },
-    "envs/JSBSim/tasks/baiyepower_two_authority_c16_s0_task.py": {
-      "original_sha256": "e228b306766f3356b2a1c9b344b6629e93d2b7064e8dc19ecd8298c3287ed7c5",
-      "integrated_sha256": "e228b306766f3356b2a1c9b344b6629e93d2b7064e8dc19ecd8298c3287ed7c5"
-    },
-    "envs/JSBSim/tasks/baiyepower_upright_v1_task.py": {
-      "original_sha256": "11605277a30863a7fe7481b0a1a87904aba1c2806a0ca965ebe80852f424424c",
-      "integrated_sha256": "11605277a30863a7fe7481b0a1a87904aba1c2806a0ca965ebe80852f424424c"
-    },
-    "envs/JSBSim/tasks/baiyepower_v2_task.py": {
-      "original_sha256": "2673d3180dfeb4093da6afe00b5963eb9306957127d5e156b2082f2c57eafb53",
-      "integrated_sha256": "4ecb32e534a67781e4165a34f010f2a850d35a72d0ba21e9f7402983fa4ae2de"
-    },
-    "envs/JSBSim/tasks/c23_hybrid_hierarchical_singlecombat_task.py": {
-      "original_sha256": "9a70312691cc69ef8dac3eec1baae6db4009bcab6c0efe8d3b0fdf3674849987",
-      "integrated_sha256": "f4e6dcbfd05c516b6f356926069d574a4dfd7f03f7e95c2347b8b01cfeb7929f"
-    },
-    "envs/JSBSim/tasks/c27_governed_hybrid_task.py": {
-      "original_sha256": "1b844e2ac67af273b49bb478575ba5e463770fa94735fdfee6c9b53befd16498",
-      "integrated_sha256": "1b844e2ac67af273b49bb478575ba5e463770fa94735fdfee6c9b53befd16498"
+      "integrated_sha256": "faee8cb6f74bed90a741d855f2ab144e7b203530d5045f80b579db5d28e4e181"
     },
     "envs/JSBSim/tasks/heading_discrete_c25_task.py": {
       "original_sha256": "70e2e0b88aaf04423d65bfb64c878911a3de6ce3567ecac8e7b43b90a413ccb6",
@@ -588,19 +88,7 @@
     },
     "envs/JSBSim/tasks/heading_task.py": {
       "original_sha256": "3eacd1303a7e64c251754230d322ef3586c416e97dcb924a961b61525e036baf",
-      "integrated_sha256": "45fdcc5a0b9d7730d5d5e05efb521318ea4e6c2cf45c3d3c73becb28feceaa43"
-    },
-    "envs/JSBSim/tasks/multiplecombat_task.py": {
-      "original_sha256": "9937194b25746f8a982931d0fb8a9a08038413902b7dc4bd8c1d876f0720db57",
-      "integrated_sha256": "66e0308d52b26728fd4d553e16e033d3a19ee54edaa1a4d78149fa610d2ca3ee"
-    },
-    "envs/JSBSim/tasks/singlecombat_task.py": {
-      "original_sha256": "7226c3ed2ef9f16e5191ca994fbc93d59d52a0f2b2f5d6844d43e83fc3a1a5e8",
-      "integrated_sha256": "f244b7ad287017a8c4120de2d285207c78be65be0ee47f33d4a2470d069c5307"
-    },
-    "envs/JSBSim/tasks/singlecombat_with_missle_task.py": {
-      "original_sha256": "a25d6dbed40425ef9eedc3ad0d6ff13cf09849c7c53954f7d50906f6792daedb",
-      "integrated_sha256": "7129a80257be8fc5c18570776b6d3dbaf5dab7d3192fc9c2b6ced3fc19fe24da"
+      "integrated_sha256": "2b6c29786337f7a39bfaa843176480a0ceb87732260c14fe597f9ba3dd4aa9a9"
     },
     "envs/JSBSim/tasks/task_base.py": {
       "original_sha256": "46b7d6918a77e11983c1568fd7ac980589997c93cc6bef033fb3e625f7eab2d2",
@@ -608,43 +96,11 @@
     },
     "envs/JSBSim/tasks/__init__.py": {
       "original_sha256": "1c00dec8d2fb0aeddf7a64b023bb5b504300361520bbe97e1fcd9e260a4d31a6",
-      "integrated_sha256": "42dbc571973cfb8ad0f5dfb736184bf07115ddfb9a105ce79a0facf4c3599176"
-    },
-    "envs/JSBSim/termination_conditions/baiyepower_unreach_heading.py": {
-      "original_sha256": "d3f6196de2c0682b2548de239ca516b0b1e6e4f3ba8e88d21525f5247a7fced2",
-      "integrated_sha256": "d3f6196de2c0682b2548de239ca516b0b1e6e4f3ba8e88d21525f5247a7fced2"
-    },
-    "envs/JSBSim/termination_conditions/extreme_state.py": {
-      "original_sha256": "5435ea798990a92ca5fc8948d0c21f1950d0eb3c55f497963c8cfbba882d7236",
-      "integrated_sha256": "4c4da3c67a49abc79233277bb213cea624f8b3358c52dfcdd5a6ef00dfc4d2e9"
-    },
-    "envs/JSBSim/termination_conditions/low_altitude.py": {
-      "original_sha256": "56a337aa318bb4335ca229e654188205cb59825ae026c567fbe55af70ef7207f",
-      "integrated_sha256": "39552117d3e25d25249bccef5374f564a0835b16feae3311fd4702210b2bb355"
-    },
-    "envs/JSBSim/termination_conditions/overload.py": {
-      "original_sha256": "44a6fd86c03a391c50e800dd9b898bbc24a3c2c4ab9aebdfc89bd813740fa5bf",
-      "integrated_sha256": "e3265153e767a4ecf78c2c96669c28379274934ef3f5db2b4f5449aa4cc37adc"
-    },
-    "envs/JSBSim/termination_conditions/safe_return.py": {
-      "original_sha256": "185ce70694e99fb05d6d6cb99bb0225715e7c384cf5ad36e34d5bf9fb2cd67b6",
-      "integrated_sha256": "387b54d9adca27a5668ee399a2b49112ac8f22df20727f4fbbb05e78fe57a47d"
-    },
-    "envs/JSBSim/termination_conditions/termination_condition_base.py": {
-      "original_sha256": "25c7d5b2fdb0c986b36a8c71989eb4e8976f8550ad2e28ef1dc4865be71c120f",
-      "integrated_sha256": "82866f05b69a3f491c6edc45364dca8c22f42ffbbb9b50b5fed0437a685caaf5"
-    },
-    "envs/JSBSim/termination_conditions/timeout.py": {
-      "original_sha256": "3c839b973adb5167203717d98ec42fab7a129c8dfc9431f641ca7428242c9759",
-      "integrated_sha256": "fbd13826a7a8edc1d3159ab7c46af22555f387595d8ebb6e9a9fb49e5acc8513"
-    },
-    "envs/JSBSim/termination_conditions/unreach_heading.py": {
-      "original_sha256": "a2f10f415ea5bcc9805c0374c3af62bf4976ec2523fc8dd9adce91dba49edf95",
-      "integrated_sha256": "805e6feb495ac94fa1b1bffaeb7e5906c3ab4296582d95b8bf7a93b2ae570d03"
+      "integrated_sha256": "dc389f0e02d6c522cb25380c199b9f4c350c80bb2a00b2f0ef2927081d2ffaa2"
     },
     "envs/JSBSim/termination_conditions/__init__.py": {
       "original_sha256": "d2d345d24c7d2811404717acd7608e72c30158880cc370437bdaae78ade53ad9",
-      "integrated_sha256": "619d375c0a0ae8d15fefc3c0a87420303b6286c96abfb35ff8f8175afd18ab51"
+      "integrated_sha256": "2db40e54cf00c39a0b7d6e2f19d51538aaa29c023a9978cebb584987dc8781c7"
     },
     "envs/JSBSim/utils/action_projector.py": {
       "original_sha256": "046982d95fb73000375c2812d163ea578cbc1da96c9f99dbe32ef4c2fa0f8ec3",
@@ -654,10 +110,6 @@
       "original_sha256": "a25069bb9c7c5b2d9f8767b2502add26c6b76d8c929de5fe95379f77b42e55e1",
       "integrated_sha256": "a25069bb9c7c5b2d9f8767b2502add26c6b76d8c929de5fe95379f77b42e55e1"
     },
-    "envs/JSBSim/utils/baiyepower_physics.py": {
-      "original_sha256": "13df21a40212905e94e993cc70bdac17a46cfb825c09d4b1a437c9226f358971",
-      "integrated_sha256": "13df21a40212905e94e993cc70bdac17a46cfb825c09d4b1a437c9226f358971"
-    },
     "envs/JSBSim/utils/baiyepower_v2_physics.py": {
       "original_sha256": "221759063c38b72db1d37e7f9feefef714ac3c3fbd4d517cfeedac8c3f574d91",
       "integrated_sha256": "221759063c38b72db1d37e7f9feefef714ac3c3fbd4d517cfeedac8c3f574d91"
@@ -665,14 +117,6 @@
     "envs/JSBSim/utils/coordinated_action.py": {
       "original_sha256": "057e623cda1edf7fbef208205d086e88c9b7c5db80ea19c43ac04ec863302193",
       "integrated_sha256": "8a1dfc52fb91c23dc64cc694268fea61a0ae642b6a53d4b87b4b6b8204962abb"
-    },
-    "envs/JSBSim/utils/energy_height_transition_kernel.py": {
-      "original_sha256": "c47094984fa6173d998c2e30afb6325d3739e5ca0fe750933033926e19043378",
-      "integrated_sha256": "c47094984fa6173d998c2e30afb6325d3739e5ca0fe750933033926e19043378"
-    },
-    "envs/JSBSim/utils/energy_momentum_kernel.py": {
-      "original_sha256": "723a3035455ccd136193bef32a70b75336ed19bda9b2c8fe29971d7aa02745ab",
-      "integrated_sha256": "723a3035455ccd136193bef32a70b75336ed19bda9b2c8fe29971d7aa02745ab"
     },
     "envs/JSBSim/utils/flight_path_geometry.py": {
       "original_sha256": "47d60d70d0444015e6b1e208f89a1b83cab24d9c7a644aba85fdc4d3a41ed563",
@@ -682,25 +126,9 @@
       "original_sha256": "876e4f7cd1e50d01e1dc65e59dc8aaee2cb52bb110ae64fd48958407acd192c6",
       "integrated_sha256": "266441ddcf8af4007f50e57732fb6242b27f247e4299bb16d47861f1cf9984f9"
     },
-    "envs/JSBSim/utils/maneuver_governor.py": {
-      "original_sha256": "4298c7d9f0c8128e82543cacb0d199110aac2fb61b703cae68a42772acae64f9",
-      "integrated_sha256": "4298c7d9f0c8128e82543cacb0d199110aac2fb61b703cae68a42772acae64f9"
-    },
-    "envs/JSBSim/utils/oscillation_metrics.py": {
-      "original_sha256": "0396015217cf567e0d0fd47031227dfb80c8bb7ceb5f713b23add18ebccb4d1c",
-      "integrated_sha256": "0396015217cf567e0d0fd47031227dfb80c8bb7ceb5f713b23add18ebccb4d1c"
-    },
     "envs/JSBSim/utils/pull_dive_reference.py": {
       "original_sha256": "10a68ad28ef7dc695f4ce76f028cd9f985a545826f43974489de195862525ca3",
       "integrated_sha256": "10a68ad28ef7dc695f4ce76f028cd9f985a545826f43974489de195862525ca3"
-    },
-    "envs/JSBSim/utils/reference_weighted_speed_kernel.py": {
-      "original_sha256": "b16778d3eeafe8830edc02dcf2694a9003780cf8ed14bbbfc2afa66a52d9f9d7",
-      "integrated_sha256": "b16778d3eeafe8830edc02dcf2694a9003780cf8ed14bbbfc2afa66a52d9f9d7"
-    },
-    "envs/JSBSim/utils/runtime_identity.py": {
-      "original_sha256": "9f7414c9a29834b45ea49a4ea9a4a6219699ce8ae639d84707ffd0c5f37744ef",
-      "integrated_sha256": "9f7414c9a29834b45ea49a4ea9a4a6219699ce8ae639d84707ffd0c5f37744ef"
     },
     "envs/JSBSim/utils/steady_bank_feedback.py": {
       "original_sha256": "4e176d0edf1cdec1ac9c011915b77a6f59cb9f0e65161e93436e2f22b8156298",
@@ -709,10 +137,6 @@
     "envs/JSBSim/utils/target_rate_observation.py": {
       "original_sha256": "d3934837a326d057c553052c70f253f8d1c807d1f7468af313d1914654ae8d16",
       "integrated_sha256": "d65f8192b39c2876f14afb150a0a0d0df64a33bd5c3473eb44f2a1e5bd43a6e6"
-    },
-    "envs/JSBSim/utils/tracking_metrics.py": {
-      "original_sha256": "c7994ba068c3f839dee29b47d14250aaa0445e37a76329363ba52e356fa79575",
-      "integrated_sha256": "c7994ba068c3f839dee29b47d14250aaa0445e37a76329363ba52e356fa79575"
     },
     "envs/JSBSim/utils/turn_bank_feedback.py": {
       "original_sha256": "df5068603a7a358cfba8ae83783ca9a561df2d125f40c3308df3d5e8fa54aa7d",
@@ -742,22 +166,6 @@
       "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "integrated_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
-    "algorithms/mappo/ppo_actor.py": {
-      "original_sha256": "47d22245558b209e9345039098c28dba5d9e3b43d10a91f99781843942ce634c",
-      "integrated_sha256": "f70e1b676ac57e1493549f2fa0f25c58db62ca7f263aa5607744daa20a473e72"
-    },
-    "algorithms/mappo/ppo_critic.py": {
-      "original_sha256": "e32f5543086dae97e6061eacc4cb38260d0bca302fe4306ab77913780706f6bf",
-      "integrated_sha256": "45675ce11f5a4fddf30ea2dbc108dae617f96ba271f063a8a99978a32b507c4e"
-    },
-    "algorithms/mappo/ppo_policy.py": {
-      "original_sha256": "5c0efbef77bfea758715b47c2107b43e3c020ac1412fa40c41e89bcd5c428fa0",
-      "integrated_sha256": "0843c898e2befb2d865ee76dce72ac122afb9bf7b451d0841d5c1fcc1f028472"
-    },
-    "algorithms/mappo/ppo_trainer.py": {
-      "original_sha256": "a5764f626fd6c910418eec5c2508050f0ccd31351cdb23c5a2690a4649d5a158",
-      "integrated_sha256": "43b03a13b903f9092044a6cb4f32335bb885475ad77982b7fc6908da67707791"
-    },
     "algorithms/ppo/ppo_actor.py": {
       "original_sha256": "a1fb670165b196ec35bb2fec2ea1cda844d251542ec9cce6a28ce5c684351b19",
       "integrated_sha256": "0544bf07d06cdc3c83f773b7a719b7c8b80aa42801fa8245440e18bff04dcbe6"
@@ -770,25 +178,13 @@
       "original_sha256": "557a2206a44aaa8a0e3f38e77db51d8762d600a0ae8bc531ad2c56fe83159916",
       "integrated_sha256": "61e683d57a38fbacdfda1c1f869611969dd3eb60a74b336879abc2288ebd3f7c"
     },
-    "algorithms/ppo/ppo_trainer.py": {
-      "original_sha256": "757bf510db94c706dc4835485a4911bdeb52c086cbce5c5b0ef11709adf0395d",
-      "integrated_sha256": "dc9093044ee1802b7f4ce311d8d7ac36db4167c1c9c9e4cf792d39c894168829"
-    },
     "algorithms/utils/act.py": {
       "original_sha256": "cd69f2d630ad6caad5ffccd4b52765fc3001a095ce1aea8fd854928baa5863ab",
       "integrated_sha256": "a9996edf6c5ee825c3b21911bd4a5112c2039d34c8e0d77d764738316885b7b3"
     },
-    "algorithms/utils/buffer.py": {
-      "original_sha256": "440874916410a4cddb7641e05a14ac6615561cb570531ebd097566d3e5abd437",
-      "integrated_sha256": "8ec8ae057c9818ec785cb49ced8ee8b9b9e2a10543335e3ce4c080399b9e8184"
-    },
     "algorithms/utils/distributions.py": {
       "original_sha256": "25f5fc35177fac21006b41b31856b3194c1491aa8f95bd54c485274a29a855bf",
       "integrated_sha256": "5bfc70c7fbc2f50f383e31bc184c6a8c300d6938078780ff8067d442741522a7"
-    },
-    "algorithms/utils/explicit_time_limit_buffer.py": {
-      "original_sha256": "fe8222568e430bdab6b5d9e8afd08a56ccd2ba129764af3e9ae43a4f5f2ddd00",
-      "integrated_sha256": "fe8222568e430bdab6b5d9e8afd08a56ccd2ba129764af3e9ae43a4f5f2ddd00"
     },
     "algorithms/utils/flatten.py": {
       "original_sha256": "99bed2c9de2aac2f4989ab2880edceb59aee470c748df6f9f72d78f39a7b9628",
@@ -802,10 +198,6 @@
       "original_sha256": "1f8ebfeebc0ea0d1835a64a6eb27550893bda3dde635206f56ee58fd58aec507",
       "integrated_sha256": "9f6a8d7ffe7ae1f5c5906196a62bab2a4a438bca715d8fd53e2b1230740e6fd0"
     },
-    "algorithms/utils/selfplay.py": {
-      "original_sha256": "3f56b150d9f2922d226adb618f82e6dc5ca5ce2811a3c12ce53da7057e8b74b0",
-      "integrated_sha256": "ce354e054745b2c18a7910b5967811e91ce3ee068ef1d7d30b0f33f0b537f924"
-    },
     "algorithms/utils/utils.py": {
       "original_sha256": "6bf283b03ff02b4bbea53c89f27e01b042b74557768c5906c4d634dd44d7fc6a",
       "integrated_sha256": "eeefa60b981107a79991c6f32a9ce8e7f57e8967e495d7ea37246295d8a73a07"
@@ -818,29 +210,9 @@
       "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "integrated_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
-    "scripts/delivery/ppo_windows/audit_flight.py": {
-      "original_sha256": "622c0326d3ad27a8ed8757046a0b712be4cbb399aa0818f2c91a31b629a4b2da",
-      "integrated_sha256": "0fa5b66d8512c6da78469c5227bc6278a2bb665dee7ea5c7dfb8b3ca3c762984"
-    },
-    "scripts/delivery/ppo_windows/builder.py": {
-      "original_sha256": "b4e2a2f3c726ff8d2c96beb68df3fa2710313a30cac1248af4bdd754ce46eb15",
-      "integrated_sha256": "985869142ce99f7560dbb7cdc3e735b94fb0570072a1c75aff5cb528ea10f7b5"
-    },
-    "scripts/delivery/ppo_windows/client.py": {
-      "original_sha256": "9f26bb5aab9d89281e56c578e0c874e9c4b2afc685b3505335865416a77cb3ca",
-      "integrated_sha256": "02e019f190cc52a0a1f3a8c74bfe8011b431c59cb2b022ef68bddb955c3560f3"
-    },
     "scripts/delivery/ppo_windows/guarded_controller.py": {
       "original_sha256": "e0af72ad8d9c06894a66dabf1a039c49bd0e636baa3664bd0e443458198a29b7",
       "integrated_sha256": "aebe73075dec4e059dbb533ad1ae492bf1c1981510ae9c4cd1fbec19475c036d"
-    },
-    "scripts/delivery/ppo_windows/inference.py": {
-      "original_sha256": "4df13c9356246c25da917040220eea62c76dc4b53fe17321ac60900bd5aae34b",
-      "integrated_sha256": "fb8fbdc265cf6eec99f8dc983840ae2df7beb0f64c5b4525394db8f83ac4fe78"
-    },
-    "scripts/delivery/ppo_windows/platform_demo.py": {
-      "original_sha256": "f4d51dfc5f59740d381430340ac3c5b909178453d2dde924262e6d61cc873640",
-      "integrated_sha256": "32c130fd0545b5eac635c0388edce6b647fb3db711926f2fbcc5debda353bd95"
     },
     "scripts/delivery/ppo_windows/__init__.py": {
       "original_sha256": "4ee57e24f080f6d17082c89b3db7af00c146ec90841dd7eff1bdda064042ade2",
@@ -891,5 +263,7 @@
     "CoordinatedResidual_total_energy_tau_sec": 5.0,
     "CoordinatedResidual_energy_balance_tau_sec": 8.0,
     "CoordinatedResidual_turn_pitch_coupling_gain": 1.0
-  }
+  },
+  "pruned_files": 157,
+  "prune_basis": "dynamic import closure of controller.py and fast_runtime.py after removing eager historical task and reward registries"
 }

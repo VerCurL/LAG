@@ -2,8 +2,6 @@ import numpy as np
 from gymnasium import spaces
 from .task_base import BaseTask
 from ..core.catalog import Catalog as c
-from ..reward_functions import AltitudeReward, AttitudeSmoothnessReward, ControlSmoothnessReward, ElevatorSecondDiffReward, HeadingReward, LongitudinalDampingReward, LongitudinalMIMOStabilityReward, PowerMomentumReward, QPAlignReward, TargetDeltaSmoothnessReward, TrimBalanceReward
-from ..termination_conditions import ExtremeState, LowAltitude, Overload, Timeout, UnreachHeading
 from ..utils.target_rate_observation import compute_route_target_rates
 
 
