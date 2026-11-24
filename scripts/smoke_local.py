@@ -10,6 +10,7 @@ from laglayer3.simulation.local_jsbsim import LocalJSBSimAdapter
 
 
 def build_initialization(count: int = 4) -> ScenarioInitialization:
+    """中文说明：构造 smoke 运行所需的初始飞机状态。"""
     aircraft = tuple(
         AircraftState(
             aircraft_id="red_{}".format(index),
@@ -26,6 +27,7 @@ def build_initialization(count: int = 4) -> ScenarioInitialization:
 
 
 def main() -> None:
+    """中文说明：解析命令行参数并运行当前脚本的主流程。"""
     parser = argparse.ArgumentParser()
     parser.add_argument("--steps", type=int, default=120)
     parser.add_argument("--backend", choices=("kinematic", "jsbsim"), default="kinematic")

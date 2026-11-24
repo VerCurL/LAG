@@ -4,6 +4,7 @@ from laglayer3.config import load_yaml_config
 
 
 def main() -> None:
+    """中文说明：解析命令行参数并运行当前脚本的主流程。"""
     parser = argparse.ArgumentParser()
     parser.add_argument("config")
     args = parser.parse_args()

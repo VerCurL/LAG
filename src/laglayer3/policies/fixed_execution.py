@@ -4,10 +4,13 @@ from laglayer3.domain.models import ExecutionAction, LocalObservation, RoutePred
 
 
 class FixedRouteExecutionProvider:
+    """中文说明：定义本模块负责的 FixedRouteExecutionProvider 数据或行为。"""
     def reset(self, aircraft_id: str) -> None:
+        """中文说明：清理本模块的运行状态和循环记忆。"""
         return None
 
     def act(self, observation: LocalObservation, route: RoutePrediction) -> ExecutionAction:
+        """中文说明：根据局部观测和首脑航迹生成单机执行动作。"""
         aircraft = observation.aircraft
         if not route.points:
             return ExecutionAction(1, 2, 1)

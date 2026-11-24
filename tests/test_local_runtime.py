@@ -6,6 +6,7 @@ from laglayer3.simulation.local_jsbsim import LocalJSBSimAdapter
 
 
 def test_local_runtime_produces_snapshot():
+    """中文说明：执行 test_local_runtime_produces_snapshot 的公开流程。"""
     aircraft = AircraftState(
         aircraft_id="red_0",
         side="red",

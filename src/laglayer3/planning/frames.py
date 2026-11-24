@@ -5,6 +5,7 @@ from typing import Tuple
 
 
 def _rotation(heading_deg: float) -> Tuple[float, float]:
+    """中文说明：计算局部航迹坐标系所需的航向旋转量。"""
     angle = math.radians(heading_deg)
     return math.cos(angle), math.sin(angle)
 
@@ -44,6 +45,7 @@ def body_aligned_route_point(
     origin_ned_m: Tuple[float, float, float],
     origin_heading_deg: float,
 ) -> Tuple[float, float, float, float]:
+    """中文说明：生成一个机体对齐局部坐标中的航迹点。"""
     forward, right, _down = ned_to_route_frame(
         position_ned_m, origin_ned_m, origin_heading_deg
     )

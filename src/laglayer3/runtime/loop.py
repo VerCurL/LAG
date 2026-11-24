@@ -9,6 +9,7 @@ from laglayer3.simulation.interface import SimulationAdapter
 
 
 class LayeredRuntime:
+    """中文说明：定义本模块负责的 LayeredRuntime 数据或行为。"""
     def __init__(
         self,
         simulation: SimulationAdapter,
@@ -17,6 +18,7 @@ class LayeredRuntime:
         head_period_seconds: float = 1.0,
         execution_period_seconds: float = 0.2,
     ) -> None:
+        """中文说明：初始化对象配置、依赖和运行状态。"""
         self.simulation = simulation
         self.head = head or FixedRouteHeadProvider()
         self.execution = execution or FixedRouteExecutionProvider()
@@ -27,6 +29,7 @@ class LayeredRuntime:
         self.next_execution_time = 0.0
 
     def reset(self, initialization):
+        """中文说明：清理本模块的运行状态和循环记忆。"""
         snapshot = self.simulation.reset(initialization)
         self.head.reset()
         self.routes = {}
@@ -35,6 +38,7 @@ class LayeredRuntime:
         return snapshot
 
     def step(self, observation: TeamObservation):
+        """中文说明：推进一次仿真或执行周期并返回最新状态。"""
         timestamp = observation.timestamp
         if timestamp >= self.next_head_time - 1e-9:
             decision = self.head.decide(observation, timestamp)

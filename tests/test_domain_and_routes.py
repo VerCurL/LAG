@@ -4,6 +4,7 @@ from laglayer3.planning.routes import RouteValidator
 
 
 def test_body_aligned_frame_round_trip():
+    """中文说明：执行 test_body_aligned_frame_round_trip 的公开流程。"""
     origin = (10.0, 20.0, -100.0)
     point = (15.0, 25.0, -95.0)
     local = ned_to_route_frame(point, origin, 90.0)
@@ -12,6 +13,7 @@ def test_body_aligned_frame_round_trip():
 
 
 def test_route_validator_rejects_invalid_speed():
+    """中文说明：执行 test_route_validator_rejects_invalid_speed 的公开流程。"""
     route = RoutePrediction(
         aircraft_id="red_0",
         points=((10.0, 0.0, 8000.0, 10.0),),

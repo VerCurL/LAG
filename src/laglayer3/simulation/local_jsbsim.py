@@ -21,6 +21,7 @@ from laglayer3.domain.models import (
 
 
 class LocalJSBSimAdapter:
+    """中文说明：定义本模块负责的 LocalJSBSimAdapter 数据或行为。"""
     def __init__(
         self,
         step_seconds: float = 1.0 / 60.0,
@@ -29,6 +30,7 @@ class LocalJSBSimAdapter:
         data_root: Optional[str] = None,
         model: str = "f16",
     ) -> None:
+        """中文说明：初始化对象配置、依赖和运行状态。"""
         if step_seconds <= 0:
             raise ValueError("step_seconds must be positive")
         self.step_seconds = float(step_seconds)
@@ -44,6 +46,7 @@ class LocalJSBSimAdapter:
         self._reason: Optional[str] = None
 
     def reset(self, initialization: ScenarioInitialization) -> SimulationSnapshot:
+        """中文说明：清理本模块的运行状态和循环记忆。"""
         self._snapshot = SimulationSnapshot(
             timestamp=float(initialization.timestamp),
             aircraft=tuple(copy.deepcopy(initialization.aircraft)),
@@ -72,6 +75,7 @@ class LocalJSBSimAdapter:
         return self._snapshot
 
     def step(self, commands: Mapping[str, ExecutionAction]) -> SimulationSnapshot:
+        """中文说明：推进一次仿真或执行周期并返回最新状态。"""
         if self._snapshot is None:
             raise RuntimeError("reset must be called before step")
         if self._done:
@@ -104,16 +108,19 @@ class LocalJSBSimAdapter:
         return self._snapshot
 
     def snapshot(self) -> SimulationSnapshot:
+        """中文说明：返回当前仿真状态的独立快照。"""
         if self._snapshot is None:
             raise RuntimeError("simulation has not been reset")
         return copy.deepcopy(self._snapshot)
 
     def restore(self, snapshot: SimulationSnapshot) -> None:
+        """中文说明：从快照恢复仿真内部状态。"""
         self._snapshot = copy.deepcopy(snapshot)
         self._done = any(event.name in {"time_limit", "all_aircraft_destroyed"} for event in snapshot.events)
         self._reason = snapshot.events[-1].name if self._done and snapshot.events else None
 
     def termination_status(self) -> TerminationStatus:
+        """中文说明：返回当前仿真是否结束及结束原因。"""
         return TerminationStatus(
             terminated=self._done,
             reason=self._reason,
@@ -123,6 +130,7 @@ class LocalJSBSimAdapter:
 
     @staticmethod
     def _integrate_aircraft(aircraft: AircraftState, action: ExecutionAction, dt: float) -> AircraftState:
+        """中文说明：使用轻量运动学模型推进单架飞机状态。"""
         altitude_delta = float(action.altitude - 1) * 10.0
         heading_delta = float(action.heading - 2) * 5.0
         speed_delta = float(action.speed - 1) * 5.0
