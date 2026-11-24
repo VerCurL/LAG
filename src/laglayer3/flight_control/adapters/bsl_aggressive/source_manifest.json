@@ -6,18 +6,6 @@
       "original_sha256": "e2989cdc476ebb14d5d434f630d63247d10f284b691d379e234e2802c12cbea5",
       "integrated_sha256": "e2989cdc476ebb14d5d434f630d63247d10f284b691d379e234e2802c12cbea5"
     },
-    "competition/flight_control_agent/__init__.py": {
-      "original_sha256": "1664c6b6009acd2f1ad0f6abf46c71dc6301921513721011446d0b8747c73c7e",
-      "integrated_sha256": "1664c6b6009acd2f1ad0f6abf46c71dc6301921513721011446d0b8747c73c7e"
-    },
-    "competition/flight_control_eas/__init__.py": {
-      "original_sha256": "f4f9b44f52ccbb35e469f59215acc0b3d3103330899fc295c8e55949f5beba6e",
-      "integrated_sha256": "f4f9b44f52ccbb35e469f59215acc0b3d3103330899fc295c8e55949f5beba6e"
-    },
-    "competition/flight_control_eas_development/__init__.py": {
-      "original_sha256": "7dfce06183e63c65dabb3bef21a588da8b2f3bc4c0e74b7518f385ffa81f769e",
-      "integrated_sha256": "7dfce06183e63c65dabb3bef21a588da8b2f3bc4c0e74b7518f385ffa81f769e"
-    },
     "competition/flight_control_ppo_delivery/actor.py": {
       "original_sha256": "e3d474eb770d6fe79bb7d179b513fb61a2ed3a1027d327f23ff8707d047a9670",
       "integrated_sha256": "5186a63aa6da542bbf2b7869e7eeb4adfa6aec3dbd2e4ff42f1a34356f657d56"
@@ -54,10 +42,6 @@
       "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "integrated_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
-    "envs/JSBSim/decision/__init__.py": {
-      "original_sha256": "0fd68b13e234bac690b07aff1b7db5228c056449d1a993ed5b9ad105634ab1df",
-      "integrated_sha256": "0ee548f8190eda8118743cfa27bc9c94dd2a2efae0e539cf3ef489f25b4bd51d"
-    },
     "envs/JSBSim/envs/env_base.py": {
       "original_sha256": "fa5c720c4a6afdc4a12a1b6502c5486960f6c6b066af30b34f0b0d6d476868cc",
       "integrated_sha256": "0ea7c35e0f1bf0e7681b262e6cda013a2ff3daee18d8dc1ad86613d97e904772"
@@ -69,18 +53,6 @@
     "envs/JSBSim/envs/__init__.py": {
       "original_sha256": "8c5dc7ecba3f2347faedb1afa3835320b4012d650eda3103c805c681541a37e3",
       "integrated_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    },
-    "envs/JSBSim/human_agent/__init__.py": {
-      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "integrated_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    },
-    "envs/JSBSim/human_task/__init__.py": {
-      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "integrated_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    },
-    "envs/JSBSim/reward_functions/__init__.py": {
-      "original_sha256": "acabc4e8f37e3a5bbd0d10b194da21e598185ce1fe49f272a008b1786d9c6226",
-      "integrated_sha256": "faee8cb6f74bed90a741d855f2ab144e7b203530d5045f80b579db5d28e4e181"
     },
     "envs/JSBSim/tasks/heading_discrete_c25_task.py": {
       "original_sha256": "70e2e0b88aaf04423d65bfb64c878911a3de6ce3567ecac8e7b43b90a413ccb6",
@@ -97,10 +69,6 @@
     "envs/JSBSim/tasks/__init__.py": {
       "original_sha256": "1c00dec8d2fb0aeddf7a64b023bb5b504300361520bbe97e1fcd9e260a4d31a6",
       "integrated_sha256": "dc389f0e02d6c522cb25380c199b9f4c350c80bb2a00b2f0ef2927081d2ffaa2"
-    },
-    "envs/JSBSim/termination_conditions/__init__.py": {
-      "original_sha256": "d2d345d24c7d2811404717acd7608e72c30158880cc370437bdaae78ade53ad9",
-      "integrated_sha256": "2db40e54cf00c39a0b7d6e2f19d51538aaa29c023a9978cebb584987dc8781c7"
     },
     "envs/JSBSim/utils/action_projector.py": {
       "original_sha256": "046982d95fb73000375c2812d163ea578cbc1da96c9f99dbe32ef4c2fa0f8ec3",
@@ -265,5 +233,17 @@
     "CoordinatedResidual_turn_pitch_coupling_gain": 1.0
   },
   "pruned_files": 157,
-  "prune_basis": "dynamic import closure of controller.py and fast_runtime.py after removing eager historical task and reward registries"
+  "prune_basis": "dynamic import closure of controller.py and fast_runtime.py after removing eager historical task and reward registries",
+  "pruned_empty_packages": [
+    "envs\\JSBSim\\termination_conditions",
+    "envs\\JSBSim\\reward_functions",
+    "envs\\JSBSim\\model",
+    "envs\\JSBSim\\human_task",
+    "envs\\JSBSim\\human_agent",
+    "envs\\JSBSim\\decision",
+    "competition\\flight_control_eas_development",
+    "competition\\flight_control_eas",
+    "competition\\flight_control_agent",
+    "algorithms\\mappo"
+  ]
 }
