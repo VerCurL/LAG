@@ -1,1 +1,1 @@
-"""Training graph and layer-specific learning modules."""
+"""训练图和分层学习模块。"""

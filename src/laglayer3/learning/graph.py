@@ -1,12 +1,12 @@
-"""Small configurable TrainingGraph for frozen/trainable Provider nodes."""
+"""用于管理冻结节点和可训练节点的分层训练图。"""
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, Mapping, Optional
+from typing import Any, Dict, Iterable
 
 
 @dataclass
 class TrainingNode:
-    """中文说明：定义本模块负责的 TrainingNode 数据或行为。"""
+    """记录一个 Provider 的训练状态、梯度边界和附加元数据。"""
     name: str
     provider: Any
     trainable: bool = False
@@ -14,7 +14,7 @@ class TrainingNode:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def set_trainable(self, trainable: bool) -> None:
-        """中文说明：设置训练节点是否参与梯度更新。"""
+        """设置节点是否参与本轮梯度更新，并同步底层模型模式。"""
         self.trainable = bool(trainable)
         if self.trainable and hasattr(self.provider, "train"):
             self.provider.train()
@@ -25,19 +25,19 @@ class TrainingNode:
 
 
 class TrainingGraph:
-    """中文说明：定义本模块负责的 TrainingGraph 数据或行为。"""
+    """协调多个分层 Provider 的冻结、训练和版本记录。"""
     def __init__(self, nodes: Iterable[TrainingNode] = ()) -> None:
-        """中文说明：初始化对象配置、依赖和运行状态。"""
+        """注册初始训练节点并建立按名称索引。"""
         self.nodes = {node.name: node for node in nodes}
 
     def add(self, node: TrainingNode) -> None:
-        """中文说明：向训练图注册一个新的训练节点。"""
+        """添加一个节点，并拒绝重复的节点名称。"""
         if node.name in self.nodes:
             raise ValueError("duplicate training node: {}".format(node.name))
         self.nodes[node.name] = node
 
     def configure(self, trainable: Iterable[str]) -> None:
-        """中文说明：根据节点名称配置本轮训练对象。"""
+        """根据节点名称设置本轮参与训练的 Provider。"""
         trainable_set = set(trainable)
         unknown = trainable_set.difference(self.nodes)
         if unknown:
@@ -46,7 +46,7 @@ class TrainingGraph:
             node.set_trainable(name in trainable_set)
 
     def manifest(self) -> Dict[str, Dict[str, Any]]:
-        """中文说明：生成当前训练图的冻结和版本清单。"""
+        """生成记录训练状态、梯度边界和节点元数据的清单。"""
         return {
             name: {
                 "trainable": node.trainable,
