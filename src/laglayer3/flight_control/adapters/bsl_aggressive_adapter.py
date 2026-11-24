@@ -11,7 +11,7 @@ from laglayer3.domain.models import ExecutionAction
 class BslAggressiveAdapter:
     """Translate LAGLayer3 execution actions into the copied BSL controller."""
 
-    def __init__(self, model_path: Optional[str] = None, diagnostics: bool = True) -> None:
+    def __init__(self, model_path: Optional[str] = None) -> None:
         from .bsl_aggressive.controller import AggressiveBSLFlightController
 
         root = Path(__file__).resolve().parent / "bsl_aggressive"
@@ -25,7 +25,6 @@ class BslAggressiveAdapter:
             feet_to_meters=0.3048,
             model_path=str(path),
             settings=settings,
-            diagnostics=diagnostics,
         )
 
     def reset(self) -> None:

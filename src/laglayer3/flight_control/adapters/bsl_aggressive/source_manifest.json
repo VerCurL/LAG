@@ -8,7 +8,7 @@
     },
     "competition/flight_control_ppo_delivery/actor.py": {
       "original_sha256": "e3d474eb770d6fe79bb7d179b513fb61a2ed3a1027d327f23ff8707d047a9670",
-      "integrated_sha256": "5186a63aa6da542bbf2b7869e7eeb4adfa6aec3dbd2e4ff42f1a34356f657d56"
+      "integrated_sha256": "d9fad74b2ec483d624a18cc7d2b0c9b83c5394de28e92f86492a4637185767c9"
     },
     "competition/flight_control_ppo_delivery/config.py": {
       "original_sha256": "064024de6f766fd88a45bb9163a9a864a9af5376fc5493bb904f71c64d665a81",
@@ -134,18 +134,6 @@
       "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "integrated_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
-    "algorithms/ppo/ppo_actor.py": {
-      "original_sha256": "a1fb670165b196ec35bb2fec2ea1cda844d251542ec9cce6a28ce5c684351b19",
-      "integrated_sha256": "0544bf07d06cdc3c83f773b7a719b7c8b80aa42801fa8245440e18bff04dcbe6"
-    },
-    "algorithms/ppo/ppo_critic.py": {
-      "original_sha256": "c1fe60c0c49745dd1f548c3eba5f45c616f4f6666e2df7e55b39e2aaf6706a85",
-      "integrated_sha256": "326aea32f3375e53a919622b9daba6692dca27c8c89f7a80e7cfa80b3af602b9"
-    },
-    "algorithms/ppo/ppo_policy.py": {
-      "original_sha256": "557a2206a44aaa8a0e3f38e77db51d8762d600a0ae8bc531ad2c56fe83159916",
-      "integrated_sha256": "61e683d57a38fbacdfda1c1f869611969dd3eb60a74b336879abc2288ebd3f7c"
-    },
     "algorithms/utils/act.py": {
       "original_sha256": "cd69f2d630ad6caad5ffccd4b52765fc3001a095ce1aea8fd854928baa5863ab",
       "integrated_sha256": "a9996edf6c5ee825c3b21911bd4a5112c2039d34c8e0d77d764738316885b7b3"
@@ -177,14 +165,6 @@
     "scripts/delivery/__init__.py": {
       "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "integrated_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    },
-    "scripts/delivery/ppo_windows/guarded_controller.py": {
-      "original_sha256": "e0af72ad8d9c06894a66dabf1a039c49bd0e636baa3664bd0e443458198a29b7",
-      "integrated_sha256": "aebe73075dec4e059dbb533ad1ae492bf1c1981510ae9c4cd1fbec19475c036d"
-    },
-    "scripts/delivery/ppo_windows/__init__.py": {
-      "original_sha256": "4ee57e24f080f6d17082c89b3db7af00c146ec90841dd7eff1bdda064042ade2",
-      "integrated_sha256": "4ee57e24f080f6d17082c89b3db7af00c146ec90841dd7eff1bdda064042ade2"
     },
     "scripts/experiments/c45_policy_observation.py": {
       "original_sha256": "b96453de6113208566c08eb8d2c8fcaa2da510667e3c9f4dffc3b4a341f5231e",
@@ -233,7 +213,7 @@
     "CoordinatedResidual_turn_pitch_coupling_gain": 1.0
   },
   "pruned_files": 157,
-  "prune_basis": "dynamic import closure of controller.py and fast_runtime.py after removing eager historical task and reward registries",
+  "prune_basis": "single actor GRU, observation, nominal residual composition and one QP path",
   "pruned_empty_packages": [
     "envs\\JSBSim\\termination_conditions",
     "envs\\JSBSim\\reward_functions",
@@ -245,5 +225,6 @@
     "competition\\flight_control_eas",
     "competition\\flight_control_agent",
     "algorithms\\mappo"
-  ]
+  ],
+  "runtime_mode": "deployment_inference_only"
 }

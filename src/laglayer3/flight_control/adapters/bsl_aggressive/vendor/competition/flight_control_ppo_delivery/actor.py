@@ -49,14 +49,10 @@ class ActorDelivery:
 
     def act(self):
         if self.hidden is None:raise RuntimeError("explicit aircraft episode reset required")
-        before=self.hidden.copy();mask_before=self.mask.copy()
         with torch.no_grad():
-            action,post=self.policy.act(self.controller.observation()[None,:],before,mask_before,deterministic=True)
+            action,post=self.policy.act(self.controller.observation()[None,:],self.hidden,self.mask,deterministic=True)
         self.actor_forward_evaluations+=1
         actual=action.detach().cpu().numpy().reshape(4)
         result=self.controller.apply(actual)
         self.hidden=post.detach().cpu().numpy().copy();self.mask.fill(1.)
-        result.update(actor_state_before=before,actor_state_post=self.hidden.copy(),mask_before=mask_before,
-            deterministic=True,actor_forward_evaluations=self.actor_forward_evaluations,
-            critic_forward_evaluations=0,PID_fallback=False)
         return result
