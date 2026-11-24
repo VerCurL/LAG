@@ -1,4 +1,4 @@
-"""Small JSBSim aircraft backend used behind LocalJSBSimAdapter."""
+"""供 LocalJSBSimAdapter 调用的单机 JSBSim 后端。"""
 
 import math
 from pathlib import Path
@@ -13,9 +13,9 @@ FT_TO_M = 0.3048
 
 
 class JSBSimAircraft:
-    """中文说明：定义本模块负责的 JSBSimAircraft 数据或行为。"""
+    """封装一架 JSBSim 飞机及其当前动力学状态。"""
     def __init__(self, aircraft: AircraftState, data_root: str, model: str = "f16", dt: float = 1.0 / 60.0):
-        """中文说明：初始化对象配置、依赖和运行状态。"""
+        """加载飞机模型，设置积分步长并应用初始条件。"""
         self.aircraft = aircraft
         self.data_root = str(Path(data_root).resolve())
         self.model = model
@@ -28,7 +28,7 @@ class JSBSimAircraft:
         self._initialize()
 
     def _initialize(self) -> None:
-        """中文说明：初始化 JSBSim 飞机模型和初始条件。"""
+        """写入初始位置、姿态和速度，并启动发动机稳态。"""
         heading = math.radians(self.aircraft.heading_deg)
         speed_fps = self.aircraft.speed_mps / FT_TO_M
         values = {
@@ -55,9 +55,11 @@ class JSBSimAircraft:
         propulsion.get_steady_state()
 
     def command(self, action: ExecutionAction) -> None:
-        # This direct mapping is a contract smoke path. The production path
-        # calls BslAggressiveAdapter before these platform properties.
-        """中文说明：把离散执行动作写入 JSBSim 控制属性。"""
+        """把离散执行动作转换为 JSBSim 的基础控制属性。
+
+        这里的映射用于本地契约和 smoke 测试。接入完整飞控时，调用方应
+        先通过飞控适配器生成最终平台控制量。
+        """
         values = {
             "fcs/aileron-cmd-norm": (action.heading - 2) / 2.0,
             "fcs/elevator-cmd-norm": (action.altitude - 1) / 1.0,
@@ -68,14 +70,14 @@ class JSBSimAircraft:
             self.fdm.set_property_value(name, float(max(-1.0, min(1.0, value))))
 
     def step(self, action: ExecutionAction) -> AircraftState:
-        """中文说明：推进一次仿真或执行周期并返回最新状态。"""
+        """推进一个 JSBSim 积分步并读取新的飞机状态。"""
         self.command(action)
         if not self.fdm.run():
             raise RuntimeError("JSBSim aircraft step failed")
         return self.state()
 
     def state(self) -> AircraftState:
-        """中文说明：读取 JSBSim 当前状态并转换为领域对象。"""
+        """读取 JSBSim 属性并转换为 AircraftState。"""
         get = self.fdm.get_property_value
         speed = math.sqrt(
             sum(get(name) ** 2 for name in ("velocities/v-north-fps", "velocities/v-east-fps", "velocities/v-down-fps"))
