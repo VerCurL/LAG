@@ -1,11 +1,11 @@
-"""Coordinate transforms for decision-time body-aligned route frames."""
+"""决策时刻机体对齐局部航迹坐标的转换函数。"""
 
 import math
 from typing import Tuple
 
 
 def _rotation(heading_deg: float) -> Tuple[float, float]:
-    """中文说明：计算局部航迹坐标系所需的航向旋转量。"""
+    """计算局部航迹坐标系所需的航向旋转量。"""
     angle = math.radians(heading_deg)
     return math.cos(angle), math.sin(angle)
 
@@ -15,7 +15,7 @@ def ned_to_route_frame(
     origin_ned_m: Tuple[float, float, float],
     origin_heading_deg: float,
 ) -> Tuple[float, float, float]:
-    """Convert NED position to forward/right/down relative to the origin."""
+    """把 NED 位置转换为相对原点的前向、右向和向下坐标。"""
     dn = position_ned_m[0] - origin_ned_m[0]
     de = position_ned_m[1] - origin_ned_m[1]
     dd = position_ned_m[2] - origin_ned_m[2]
@@ -28,7 +28,7 @@ def route_frame_to_ned(
     origin_ned_m: Tuple[float, float, float],
     origin_heading_deg: float,
 ) -> Tuple[float, float, float]:
-    """Convert a forward/right/down point back into NED."""
+    """把前向、右向和向下坐标转换回 NED 位置。"""
     forward, right, down = point
     c, s = _rotation(origin_heading_deg)
     return (
@@ -45,7 +45,7 @@ def body_aligned_route_point(
     origin_ned_m: Tuple[float, float, float],
     origin_heading_deg: float,
 ) -> Tuple[float, float, float, float]:
-    """中文说明：生成一个机体对齐局部坐标中的航迹点。"""
+    """根据位置、高度和速度生成机体对齐坐标中的航迹点。"""
     forward, right, _down = ned_to_route_frame(
         position_ned_m, origin_ned_m, origin_heading_deg
     )
