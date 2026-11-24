@@ -1,4 +1,9 @@
-"""Three-frequency runtime loop for the first end-to-end smoke path."""
+"""分层运行时调度器。
+
+该模块统一推进仿真、首脑层和执行层的不同时间尺度。首脑层默认每秒
+重新规划一次，执行层默认每 0.2 秒生成一次动作，仿真器由适配器按自身
+步长推进。
+"""
 
 from typing import Dict, Mapping
 
@@ -9,7 +14,7 @@ from laglayer3.simulation.interface import SimulationAdapter
 
 
 class LayeredRuntime:
-    """中文说明：定义本模块负责的 LayeredRuntime 数据或行为。"""
+    """协调首脑 Provider、执行 Provider 和仿真适配器。"""
     def __init__(
         self,
         simulation: SimulationAdapter,
@@ -18,7 +23,7 @@ class LayeredRuntime:
         head_period_seconds: float = 1.0,
         execution_period_seconds: float = 0.2,
     ) -> None:
-        """中文说明：初始化对象配置、依赖和运行状态。"""
+        """注入运行依赖并设置首脑层和执行层的决策周期。"""
         self.simulation = simulation
         self.head = head or FixedRouteHeadProvider()
         self.execution = execution or FixedRouteExecutionProvider()
@@ -29,7 +34,7 @@ class LayeredRuntime:
         self.next_execution_time = 0.0
 
     def reset(self, initialization):
-        """中文说明：清理本模块的运行状态和循环记忆。"""
+        """重置仿真、首脑 Provider、路线缓存和两个调度时钟。"""
         snapshot = self.simulation.reset(initialization)
         self.head.reset()
         self.routes = {}
@@ -38,7 +43,12 @@ class LayeredRuntime:
         return snapshot
 
     def step(self, observation: TeamObservation):
-        """中文说明：推进一次仿真或执行周期并返回最新状态。"""
+        """根据当前时间决定是否重规划、是否更新执行动作，并推进仿真。
+
+        首脑层更新时会覆盖当前团队路线。执行层只消费已生成的路线，
+        没有路线的飞机本轮不生成动作。关键事件触发重规划的接口会在
+        后续事件调度模块接入后复用这里的首脑更新时间。
+        """
         timestamp = observation.timestamp
         if timestamp >= self.next_head_time - 1e-9:
             decision = self.head.decide(observation, timestamp)
