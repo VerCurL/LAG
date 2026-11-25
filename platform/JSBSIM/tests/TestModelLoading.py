@@ -150,7 +150,7 @@ class TestModelLoading(JSBSimTestCase):
 
         self.ProcessAndCompare('aerodynamics')
         self.ProcessAndCompare('autopilot')
-        self.ProcessAndCompare('flight_control')
+        self.ProcessAndCompare('control')
         self.ProcessAndCompare('ground_reactions')
         self.ProcessAndCompare('mass_balance')
         self.ProcessAndCompare('metrics')

@@ -106,7 +106,7 @@ class CheckTrim(JSBSimTestCase):
         aircraft_tree, aircraft_name, _ = CopyAircraftDef(script_path,
                                                           self.sandbox)
         root = aircraft_tree.getroot()
-        elevator_actuator = root.find("flight_control/channel/actuator[@name='fcs/elevator-actuator']")
+        elevator_actuator = root.find("control/channel/actuator[@name='fcs/elevator-actuator']")
         delay = et.SubElement(elevator_actuator, 'delay')
         delay.text = '0.1'
         aircraft_tree.write(self.sandbox('aircraft', aircraft_name,

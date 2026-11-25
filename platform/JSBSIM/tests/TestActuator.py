@@ -106,7 +106,7 @@ class TestActuator(JSBSimTestCase):
         # Now the copy of the aircraft definition file will be altered: the
         # <rate_limit> element is split in two: one with the 'decr' sense, the
         # other with 'incr' sense.
-        actuator_element = self.tree.getroot().find('flight_control/channel/actuator//rate_limit/..')
+        actuator_element = self.tree.getroot().find('control/channel/actuator//rate_limit/..')
         rate_element = actuator_element.find('rate_limit')
         rate_element.attrib['sense'] = 'decr'
         new_rate_element = et.SubElement(actuator_element, 'rate_limit')
@@ -145,7 +145,7 @@ class TestActuator(JSBSimTestCase):
         tree = et.parse(os.path.join(self.path_to_jsbsim_aircrafts,
                                      self.aircraft_name+'.xml'))
         root = tree.getroot()
-        flight_control_element = root.find('flight_control')
+        flight_control_element = root.find('control')
         actuator_element = flight_control_element.find('channel/actuator//rate_limit/..')
         rate_element = actuator_element.find('rate_limit')
         property = et.SubElement(flight_control_element, 'property')
@@ -169,7 +169,7 @@ class TestActuator(JSBSimTestCase):
     def prepare_actuator(self):
         tree = et.parse(os.path.join(self.path_to_jsbsim_aircrafts,
                                      self.aircraft_name+'.xml'))
-        flight_control_element = tree.getroot().find('flight_control')
+        flight_control_element = tree.getroot().find('control')
         actuator_element = flight_control_element.find('channel/actuator//rate_limit/..')
 
         # Remove the hysteresis. We want to make sure we are measuring the
@@ -209,7 +209,7 @@ class TestActuator(JSBSimTestCase):
         # rate is triggered.
         tree, flight_control_element, actuator_element = self.prepare_actuator()
 
-        # Add the new properties to <flight_control> so that we can make
+        # Add the new properties to <control> so that we can make
         # reference to them without JSBSim complaining
         property = et.SubElement(flight_control_element, 'property')
         property.text = 'fcs/rate-limit-value'
@@ -232,7 +232,7 @@ class TestActuator(JSBSimTestCase):
         # Check when rate_limit is set by the property 'fcs/rate-limit-value'
 
         tree = et.parse(output_file)
-        flight_control_element = tree.getroot().find('flight_control')
+        flight_control_element = tree.getroot().find('control')
         actuator_element = flight_control_element.find('channel/actuator//rate_limit/..')
         rate_element = actuator_element.find('rate_limit')
         rate_element.text = 'fcs/rate-limit-value'

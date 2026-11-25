@@ -31,7 +31,7 @@ flight_control:
 
 simulation:
   backend: jsbsim
-  data_root: third_party/jsbsim_data
+  data_root: platform/JSBSIM
   aircraft_model: f16
   step_seconds: 0.0166666667
   time_limit_seconds: 900.0

@@ -270,8 +270,8 @@
  <system file="NWS"/>
 
 <!--
- <flight_control name="FCS">
- </flight_control>
+ <control name="FCS">
+ </control>
 -->
 
  <aerodynamics>

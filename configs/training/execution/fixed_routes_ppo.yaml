@@ -1,0 +1,36 @@
+
+schema_version: laglayer3.execution_training.v1
+
+route:
+  spec: configs/routes/basic_tracking.yaml
+  cache: datasets/execution/routes/basic_tracking.json
+  window_points: 10
+  names: [straight, turn_left, turn_right, climb, descend]
+
+reward:
+  weights: {position: 0.35, heading: 0.20, altitude: 0.15, speed: 0.15, energy: 0.10, action_change: 0.05}
+  scales: {position: 500, heading: 45, altitude: 200, speed: 50, energy: 10000, action_change: 8}
+  completion_tolerance: {position_error_m: 150, heading_error_deg: 15, altitude_error_m: 60, speed_error_mps: 20}
+  terminal_bonus: 1.0
+
+simulation:
+  backend: jsbsim
+  data_root: platform/JSBSIM
+  aircraft_model: f16
+  simulation_hz: 60
+  execution_hz: 5
+  controller_checkpoint:
+
+ppo:
+  learning_rate: 0.0003
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip: 0.2
+  entropy_coef: 0.01
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  rollout_steps: 256
+  update_epochs: 4
+  chunk_length: 16
+  minibatch_chunks: 4
+  hidden_dim: 128

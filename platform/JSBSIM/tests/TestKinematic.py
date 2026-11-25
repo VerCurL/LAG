@@ -124,7 +124,7 @@ class TestKinematic(JSBSimTestCase):
         # Test the <nocale/> feature
         script_path = self.sandbox.path_to_jsbsim_file('scripts', 'c1721.xml')
         tree, aircraft_name, b = CopyAircraftDef(script_path, self.sandbox)
-        kinematic_tag = tree.getroot().find('flight_control/channel/kinematic')
+        kinematic_tag = tree.getroot().find('control/channel/kinematic')
         et.SubElement(kinematic_tag, 'noscale')
         tree.write(self.sandbox('aircraft', aircraft_name,
                                 aircraft_name+'.xml'))

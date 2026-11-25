@@ -69,12 +69,41 @@ class JSBSimAircraft:
         for name, value in values.items():
             self.fdm.set_property_value(name, float(max(-1.0, min(1.0, value))))
 
+    def raw_state(self):
+        """读取 bsl_aggressive 所需的实际平台字段。"""
+        names = (
+            "simulation/sim-time-sec", "simulation/dt", "position/h-sl-ft",
+            "attitude/roll-rad", "attitude/pitch-rad", "attitude/psi-deg",
+            "aero/alpha-deg", "aero/beta-deg", "velocities/p-rad_sec",
+            "velocities/q-rad_sec", "velocities/r-rad_sec", "velocities/u-fps",
+            "velocities/v-fps", "velocities/w-fps", "velocities/v-north-fps",
+            "velocities/v-east-fps", "velocities/v-down-fps", "velocities/ve-fps",
+            "accelerations/n-pilot-z-norm", "fcs/aileron-cmd-norm",
+            "fcs/elevator-cmd-norm", "fcs/rudder-cmd-norm", "fcs/throttle-cmd-norm",
+            "fcs/left-aileron-pos-norm", "fcs/right-aileron-pos-norm",
+            "fcs/elevator-pos-norm", "fcs/rudder-pos-norm", "fcs/throttle-pos-norm",
+        )
+        return {name: float(self.fdm.get_property_value(name)) for name in names}
+
+    def apply_low_level(self, command) -> None:
+        names = (
+            "fcs/aileron-cmd-norm", "fcs/elevator-cmd-norm",
+            "fcs/rudder-cmd-norm", "fcs/throttle-cmd-norm",
+        )
+        for name, value in zip(names, command):
+            self.fdm.set_property_value(name, float(value))
+
     def step(self, action: ExecutionAction) -> AircraftState:
         """推进一个 JSBSim 积分步并读取新的飞机状态。"""
         self.command(action)
-        if not self.fdm.run():
-            raise RuntimeError("JSBSim aircraft step failed")
+        self.advance()
         return self.state()
+
+    def advance(self, steps: int = 1) -> None:
+        """保持当前控制量，推进指定数量的原生积分步。"""
+        for _ in range(steps):
+            if not self.fdm.run():
+                raise RuntimeError("JSBSim aircraft step failed")
 
     def state(self) -> AircraftState:
         """读取 JSBSim 属性并转换为 AircraftState。"""
@@ -82,7 +111,7 @@ class JSBSimAircraft:
         speed = math.sqrt(
             sum(get(name) ** 2 for name in ("velocities/v-north-fps", "velocities/v-east-fps", "velocities/v-down-fps"))
         ) * FT_TO_M
-        heading = math.degrees(get("attitude/psi-true-rad")) % 360.0
+        heading = get("attitude/psi-deg") % 360.0
         altitude = get("position/h-sl-ft") * FT_TO_M
         velocity = tuple(get(name) * FT_TO_M for name in ("velocities/v-north-fps", "velocities/v-east-fps", "velocities/v-down-fps"))
         return AircraftState(
@@ -99,5 +128,10 @@ class JSBSimAircraft:
             speed_mps=speed,
             alive=self.aircraft.alive,
             fuel=self.aircraft.fuel,
-            metadata={"backend": "jsbsim", "model": self.model},
+            metadata={
+                "backend": "jsbsim",
+                "model": self.model,
+                "roll_rad": get("attitude/roll-rad"),
+                "pitch_rad": get("attitude/pitch-rad"),
+            },
         )

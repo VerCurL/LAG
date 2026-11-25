@@ -141,7 +141,7 @@
           <z>0</z>
         </location>
         <!-- The direction that the thrust acts in is defined below in the Pointing
-             channel of the flight_control section, through the creation of a unit 
+             channel of the control section, through the creation of a unit
              pointing vector. That is, the direction specified below
              is the direction that the drag force acts in. -->
       </force>

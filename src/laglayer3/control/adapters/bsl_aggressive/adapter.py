@@ -12,7 +12,7 @@ class BslAggressiveAdapter:
     """Translate LAGLayer3 execution actions into the copied BSL controller."""
 
     def __init__(self, model_path: Optional[str] = None) -> None:
-        from .bsl_aggressive.controller import AggressiveBSLFlightController
+        from .controller import AggressiveBSLFlightController
 
         root = Path(__file__).resolve().parent / "bsl_aggressive"
         path = Path(model_path) if model_path else root / "vendor" / "assets" / "actor_best.pt"

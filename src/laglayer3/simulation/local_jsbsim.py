@@ -5,6 +5,7 @@
 """
 
 import copy
+import math
 from dataclasses import replace
 from typing import Dict, Mapping, Optional
 
@@ -27,6 +28,8 @@ class LocalJSBSimAdapter:
         backend: str = "kinematic",
         data_root: Optional[str] = None,
         model: str = "f16",
+        control_adapter=None,
+        control_interval_seconds: Optional[float] = None,
     ) -> None:
         """设置步长、终止时间和内部仿真后端。"""
         if step_seconds <= 0:
@@ -38,6 +41,18 @@ class LocalJSBSimAdapter:
         self.backend = backend
         self.data_root = data_root
         self.model = model
+        self.control_adapter = control_adapter
+        self.control_interval_seconds = float(
+            step_seconds if control_interval_seconds is None else control_interval_seconds
+        )
+        ratio = self.control_interval_seconds / self.step_seconds
+        if not math.isfinite(ratio) or ratio < 1 or not math.isclose(ratio, round(ratio)):
+            raise ValueError("control interval must be a positive multiple of the integration step")
+        if control_adapter is None and round(ratio) != 1:
+            raise ValueError("a separate control interval requires a control adapter")
+        if control_adapter is not None and backend != "jsbsim":
+            raise ValueError("the control adapter requires the JSBSim backend")
+        self._substeps = int(round(ratio))
         self._jsbsim_aircraft = {}
         self._snapshot: Optional[SimulationSnapshot] = None
         self._done = False
@@ -70,6 +85,12 @@ class LocalJSBSimAdapter:
                 )
                 for aircraft in initialization.aircraft
             }
+            if self.control_adapter is not None:
+                self.control_adapter.reset()
+                self._snapshot = replace(
+                    self._snapshot,
+                    aircraft=tuple(backend.state() for backend in self._jsbsim_aircraft.values()),
+                )
         return self._snapshot
 
     def step(self, commands: Mapping[str, ExecutionAction]) -> SimulationSnapshot:
@@ -78,17 +99,27 @@ class LocalJSBSimAdapter:
             raise RuntimeError("reset must be called before step")
         if self._done:
             raise RuntimeError("cannot step a terminated simulation")
-        dt = self.step_seconds
+        dt = self._substeps * self.step_seconds
         next_aircraft = []
         for aircraft in self._snapshot.aircraft:
             action = commands.get(aircraft.aircraft_id, ExecutionAction(1, 2, 1))
             if self.backend == "jsbsim":
-                next_aircraft.append(self._jsbsim_aircraft[aircraft.aircraft_id].step(action))
+                backend = self._jsbsim_aircraft[aircraft.aircraft_id]
+                if self.control_adapter is None:
+                    next_aircraft.append(backend.step(action))
+                else:
+                    backend.apply_low_level(
+                        self.control_adapter.control(
+                            aircraft.aircraft_id, backend.raw_state(), action
+                        )
+                    )
+                    backend.advance(self._substeps)
+                    next_aircraft.append(backend.state())
             else:
                 next_aircraft.append(self._integrate_aircraft(aircraft, action, dt))
         timestamp = self._snapshot.timestamp + dt
         events = []
-        if timestamp >= self.time_limit_seconds:
+        if timestamp >= self.time_limit_seconds - 1e-9:
             self._done = True
             self._reason = "time_limit"
             events.append(SimulationEvent("time_limit", timestamp))
@@ -113,6 +144,8 @@ class LocalJSBSimAdapter:
 
     def restore(self, snapshot: SimulationSnapshot) -> None:
         """恢复快照中的状态和终止标记。"""
+        if self.control_adapter is not None:
+            raise NotImplementedError("JSBSim and controller internal state cannot be restored from this snapshot")
         self._snapshot = copy.deepcopy(snapshot)
         self._done = any(event.name in {"time_limit", "all_aircraft_destroyed"} for event in snapshot.events)
         self._reason = snapshot.events[-1].name if self._done and snapshot.events else None

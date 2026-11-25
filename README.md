@@ -100,13 +100,13 @@ smoke_local.py 运行固定首脑 Provider、固定航迹执行 Provider 和本�
 bsl_aggressive 位于：
 
 ~~~text
-src/laglayer3/flight_control/adapters/bsl_aggressive/
+src/laglayer3/control/adapters/bsl_aggressive/
 ~~~
 
 公开适配入口是：
 
 ~~~python
-from laglayer3.flight_control.adapters.bsl_aggressive_adapter import BslAggressiveAdapter
+from laglayer3.control import BslAggressiveAdapter
 ~~~
 
 控制链使用冻结 Actor、40 维观测、GRU、名义控制、残差组合和 QP 投影，最终输出副翼、升降舵、方向舵和油门控制量。权重和必要的运行文件已经包含在项目中。
@@ -120,4 +120,33 @@ from laglayer3.flight_control.adapters.bsl_aggressive_adapter import BslAggressi
 - [接口契约](docs/interfaces.md)
 - [仿真设计](docs/simulation_design.md)
 - [实现交接说明](docs/implementation_handoff.md)
+
+## 固定航迹执行层训练
+
+先生成固定航迹缓存：
+
+~~~powershell
+$env:PYTHONPATH = "src"
+conda run -n jsbsim python scripts/training/generate_fixed_routes.py
+~~~
+
+运行 bsl_aggressive 和 JSBSim 的 5Hz 执行 smoke：
+
+~~~powershell
+conda run -n jsbsim python scripts/smoke_execution_bsl.py
+~~~
+
+启动 PPO 训练：
+
+~~~powershell
+conda run -n jsbsim python scripts/training/train_execution_ppo.py --updates 100 --output runs/execution/first_run
+~~~
+
+评估检查点：
+
+~~~powershell
+conda run -n jsbsim python scripts/evaluation/evaluate_execution.py runs/execution/first_run/execution.pt
+~~~
+
+训练环境固定使用 JSBSim 60 Hz、bsl_aggressive 5 Hz、MultiDiscrete([3,5,3]) 执行动作和配置中的六项奖励权重。训练前必须存在与航迹规格匹配的 datasets/execution/routes/basic_tracking.json。
 

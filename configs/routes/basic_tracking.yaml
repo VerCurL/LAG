@@ -1,0 +1,12 @@
+
+schema_version: laglayer3.fixed_route_spec.v1
+horizon_seconds: 20
+interval_seconds: 1
+initial_altitude_m: 8000
+initial_speed_mps: 220
+routes:
+  straight: {turn_rate_deg_s: 0, climb_rate_mps: 0}
+  turn_left: {turn_rate_deg_s: -4, climb_rate_mps: 0}
+  turn_right: {turn_rate_deg_s: 4, climb_rate_mps: 0}
+  climb: {turn_rate_deg_s: 0, climb_rate_mps: 8}
+  descend: {turn_rate_deg_s: 0, climb_rate_mps: -8}
