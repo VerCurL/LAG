@@ -1,7 +1,7 @@
-"""Stable domain values shared by runtime, adapters, policies and learning."""
+"""运行时、适配器、策略和训练模块共享的领域数据对象。"""
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Mapping, Optional, Tuple
 
 
 Vector3 = Tuple[float, float, float]
@@ -9,7 +9,7 @@ Vector3 = Tuple[float, float, float]
 
 @dataclass(frozen=True)
 class AircraftState:
-    """中文说明：定义本模块负责的 AircraftState 数据或行为。"""
+    """描述单架飞机在某一时刻的动力学和生存状态。"""
     aircraft_id: str
     side: str
     position_ned_m: Vector3
@@ -24,7 +24,7 @@ class AircraftState:
 
 @dataclass(frozen=True)
 class RoutePrediction:
-    """Future route in the decision-time, body-aligned local frame."""
+    """描述首脑层在决策时刻生成的机体对齐局部航迹。"""
 
     aircraft_id: str
     points: Tuple[Tuple[float, float, float, float], ...]
@@ -36,7 +36,7 @@ class RoutePrediction:
     schema_version: str = "route.v1"
 
     def __post_init__(self) -> None:
-        """中文说明：校验不可变领域对象创建后的字段约束。"""
+        """校验航迹间隔、点数量和每个点的四维结构。"""
         if self.interval_seconds <= 0:
             raise ValueError("route interval must be positive")
         if not self.points:
@@ -47,19 +47,19 @@ class RoutePrediction:
 
 @dataclass(frozen=True)
 class ExecutionAction:
-    """中文说明：定义本模块负责的 ExecutionAction 数据或行为。"""
+    """表示执行层输出的高度、航向和速度离散调整。"""
     altitude: int
     heading: int
     speed: int
 
     def as_tuple(self) -> Tuple[int, int, int]:
-        """中文说明：执行 as_tuple 的公开流程。"""
+        """把离散动作转换为便于适配器使用的三元组。"""
         return (self.altitude, self.heading, self.speed)
 
 
 @dataclass(frozen=True)
 class WeaponIntent:
-    """中文说明：定义本模块负责的 WeaponIntent 数据或行为。"""
+    """表示首脑层发出的武器请求及其目标和有效期。"""
     aircraft_id: str
     request: str = "none"
     weapon_type: Optional[str] = None
@@ -70,7 +70,7 @@ class WeaponIntent:
 
 @dataclass(frozen=True)
 class LocalObservation:
-    """中文说明：定义本模块负责的 LocalObservation 数据或行为。"""
+    """表示单架飞机执行层可见的局部观测和当前航迹。"""
     aircraft: AircraftState
     route: Optional[RoutePrediction] = None
     features: Tuple[float, ...] = ()
@@ -79,7 +79,7 @@ class LocalObservation:
 
 @dataclass(frozen=True)
 class TeamObservation:
-    """中文说明：定义本模块负责的 TeamObservation 数据或行为。"""
+    """表示首脑层可见的己方飞机、目标轨迹和来袭导弹信息。"""
     own_aircraft: Tuple[AircraftState, ...]
     enemy_tracks: Tuple[Mapping[str, Any], ...] = ()
     missile_tracks: Tuple[Mapping[str, Any], ...] = ()
@@ -90,7 +90,7 @@ class TeamObservation:
 
 @dataclass(frozen=True)
 class SimulationEvent:
-    """中文说明：定义本模块负责的 SimulationEvent 数据或行为。"""
+    """记录仿真过程中发生的可追踪事件。"""
     name: str
     timestamp: float
     payload: Mapping[str, Any] = field(default_factory=dict)
@@ -98,7 +98,7 @@ class SimulationEvent:
 
 @dataclass(frozen=True)
 class SimulationSnapshot:
-    """中文说明：定义本模块负责的 SimulationSnapshot 数据或行为。"""
+    """保存可用于观测、回放和恢复的仿真状态快照。"""
     timestamp: float
     aircraft: Tuple[AircraftState, ...]
     missiles: Tuple[Mapping[str, Any], ...] = ()
@@ -109,7 +109,7 @@ class SimulationSnapshot:
 
 @dataclass(frozen=True)
 class ScenarioInitialization:
-    """中文说明：定义本模块负责的 ScenarioInitialization 数据或行为。"""
+    """描述一局仿真的声明式初始飞机、导弹和感知状态。"""
     scenario_id: str
     aircraft: Tuple[AircraftState, ...]
     timestamp: float = 0.0
@@ -121,7 +121,7 @@ class ScenarioInitialization:
 
 @dataclass(frozen=True)
 class TerminationStatus:
-    """中文说明：定义本模块负责的 TerminationStatus 数据或行为。"""
+    """描述仿真是否结束、结束原因、胜方和终止事件。"""
     terminated: bool
     reason: Optional[str] = None
     winner: Optional[str] = None
@@ -130,7 +130,7 @@ class TerminationStatus:
 
 @dataclass(frozen=True)
 class ExecutionStatus:
-    """中文说明：定义本模块负责的 ExecutionStatus 数据或行为。"""
+    """描述单机航迹执行的阶段、事件和重规划请求。"""
     state: str
     task_id: Optional[str] = None
     event: Optional[str] = None
